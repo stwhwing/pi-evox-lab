@@ -1,0 +1,11 @@
+# 实验原始数据与密钥不入仓
+secrets/
+.secrets/
+*.key
+exp/
+**/sessions/
+**/transcript/
+backup-*/
+node_modules/
+__pycache__/
+*.pyc
