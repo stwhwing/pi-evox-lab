@@ -135,11 +135,12 @@ const sessBase = path.join(root, 'sessions');
 if (opts.fresh) {
   const bk = path.join(EVO_STORE, `backup-${Date.now()}`);
   fs.mkdirSync(bk, { recursive: true });
-  fs.copyFileSync(EVO_GENES, path.join(bk, 'genes.jsonl'));
-  fs.copyFileSync(EVO_REVIEW, path.join(bk, 'review.jsonl'));
-  fs.writeFileSync(EVO_GENES, '');
-  fs.writeFileSync(EVO_REVIEW, '');
-  log(`[fresh] 已备份旧资产库到 ${bk} 并清空`);
+  // 全新环境兼容：~/.evomap/assets 尚未初始化（文件不存在）时以空库起步，不报 ENOENT
+  for (const [src, name] of [[EVO_GENES, 'genes.jsonl'], [EVO_REVIEW, 'review.jsonl']]) {
+    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(bk, name));
+    fs.writeFileSync(src, '');
+  }
+  log(`[fresh] 已备份旧资产库到 ${bk} 并清空（${fs.existsSync(path.join(bk, 'genes.jsonl')) ? '含旧资产' : '原为空库'}）`);
 }
 
 // ---------- 预置陷阱数据到 LAB 根（消除 R1 一次性 file-not-found 探索噪声，使基线干净）----------
@@ -201,7 +202,7 @@ for (let r = 1; r <= opts.rounds; r++) {
   // 聚合 token
   let stats = null;
   try {
-    const out = run(`node exp/sum_tokens.js "${sessDir}" 2>/dev/null`, LAB);
+    const out = run(`node code/sum_tokens.js "${sessDir}" 2>/dev/null`, LAB);
     stats = JSON.parse(out);
   } catch (e) { log(`[round ${r}] sum_tokens 失败: ${String(e).slice(0, 200)}`); }
   results.push({ round: r, injected: r > 1, stats });
@@ -213,7 +214,11 @@ for (let r = 1; r <= opts.rounds; r++) {
       const sf = path.join(sessDir, sessFiles[0]);
       const outDir = path.join(root, 'transcript');
       fs.mkdirSync(outDir, { recursive: true });
-      run(`node adapter/pi_session_adapter.js "${sf}" --out "${outDir}" --active-only 2>/dev/null`, LAB);
+      try {
+        run(`node code/pi_session_adapter.js "${sf}" --out "${outDir}" --active-only 2>/dev/null`, LAB);
+      } catch (e) {
+        log(`[adapter] 转换失败，跳过本轮蒸馏: ${String(e).slice(0, 150)}`);
+      }
       const tr = globJsonl(outDir).find((f) => f.endsWith('.transcript.jsonl'));
       if (tr) {
         const ingestOut = run(`node_modules/.bin/evolver ingest --distill "${path.join(outDir, tr)}" 2>&1`, LAB);
