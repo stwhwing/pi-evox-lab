@@ -1,5 +1,7 @@
 # Pi × EvoX Lab — 给编码智能体装上「经验继承」闭环
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node](https://img.shields.io/badge/node-%E2%89%A5%2022-brightgreen) ![Pi 0.74.2 / Evolver 2.0.30](https://img.shields.io/badge/tested-pi%200.74.2%20%C2%B7%20evolver%202.0.30-blue) ![Upstream issues](https://img.shields.io/badge/upstream%20issues%20filed-5-orange)
+
 > Turn one agent's failures into the next run's head start — measured, not vibes.
 >
 > 一个把 **Pi（极简编码智能体）的任务执行轨迹**接入 **Evolver（GEP 自进化引擎）**、并通过受控实验量化「经验继承收益」的完整 Harness 与实证报告。
@@ -88,11 +90,12 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 | **[pi-coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)**（Pi, 0.74.2） | 被测的极简编码智能体。任务执行、session v3 格式、`before_agent_start` 扩展钩子均来自 Pi；其包内 `docs/extensions.md` 是本机权威资料。 |
 | **[@evomap/evolver](https://www.npmjs.com/package/@evomap/evolver)**（Evolver, 2.0.30） | GEP（Genome Evolution Protocol）自进化引擎：Gene/Capsule/EvolutionEvent 资产模型、`ingest --distill → review → inject` 链路、fail-closed 审核治理。感谢其严格的治理设计，使"发现缺口"成为可能。 |
 
-**本研究回馈给上游的缺口清单**（详见报告，欢迎引用为 issue 素材）：
-1. `evolver inject session-start` 只输出基因 summary 标签，不携带可执行的 `strategy` 字段——修法无法抵达下一轮（§16.1）。
-2. auto-distill 的 strategy 摘录偏向 session 末尾成功叙述，且在关键信息处截断，质量随错误密度波动（§20.3）。
-3. `evolver cycle` 的 execute/verify 对全部 runtime fail-closed（设计内），Pi 不在 runner 白名单（§19）。
-4. 适配器契约缺口：generic-chat transcript 需显式 `is_error` 标志才能产生 strong 信号（§13，已在本仓库 adapter 中修复）。
+**本研究回馈给上游的缺口清单**（均已提交为官方 issue，详见报告对应章节）：
+1. `evolver inject session-start` 只输出基因 summary 标签，不携带可执行的 `strategy` 字段——修法无法抵达下一轮（§16.1）→ [EvoMap/evolver#624](https://github.com/EvoMap/evolver/issues/624)
+2. auto-distill 的 strategy 摘录偏向 session 末尾成功叙述，且在关键信息处截断，质量随错误密度波动（§20.3）→ [EvoMap/evolver#625](https://github.com/EvoMap/evolver/issues/625)
+3. `evolver cycle` 的 execute/verify 对全部 runtime fail-closed（设计内），Pi 不在 runner 白名单（§19）→ [EvoMap/evolver#627](https://github.com/EvoMap/evolver/issues/627)
+4. 适配器契约缺口：generic-chat transcript 需显式 `is_error` 标志才能产生 strong 信号（§13，已在本仓库 adapter 中修复）→ [EvoMap/evolver#626](https://github.com/EvoMap/evolver/issues/626)
+5. pi 侧编排 DX 两则：models.json `$ENV` 插值不生效（401 字面量）+ `./package.json` 未导出 → [earendil-works/pi#9258](https://github.com/earendil-works/pi/issues/9258)
 
 如果本研究对你的工作有帮助，也请给上面两个上游项目点 star——它们是真正的主角。
 
