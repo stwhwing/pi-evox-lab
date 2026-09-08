@@ -64,6 +64,9 @@ if (!templateDir || (!taskFile && !opts.taskText)) {
 }
 const taskText = opts.taskText ?? fs.readFileSync(taskFile, 'utf8').trim();
 const apiKey = opts.apiKey ?? process.env.AGNES_CN_API_KEY;
+if (opts.autoApprove && opts.llmRefine) {
+  log('⚠️  [组合警告] --auto-approve + --llm-refine 同时启用：LLM 重写的修法将跳过人工审核直接入库并被注入后续轮次。研究演示可接受；生产环境建议去掉 --auto-approve 保留人工审核门。');
+}
 if (!opts.provider || !opts.model || !apiKey) {
   console.error('缺少 --provider / --model / --api-key（或环境变量 AGNES_CN_API_KEY）');
   process.exit(2);
