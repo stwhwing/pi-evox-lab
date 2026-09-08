@@ -27,6 +27,11 @@ import { fileURLToPath } from 'node:url';
 const LAB = path.resolve(fileURLToPath(import.meta.url), '..', '..'); // repo root (code/ 的上级)
 // 可选：指定 node 所在目录（多版本共存时用，如受管 node）。未设置则用 PATH 中的 node。
 const MANAGED_NODE = process.env.PI_NODE_HOME || '';
+// 辅助脚本布局自适应：仓库布局为 code/，evolver-lab 本机布局为 adapter/ + exp/
+const ADAPTER = fs.existsSync(path.join(LAB, 'code', 'pi_session_adapter.js'))
+  ? 'code/pi_session_adapter.js' : 'adapter/pi_session_adapter.js';
+const SUMTOK = fs.existsSync(path.join(LAB, 'code', 'sum_tokens.js'))
+  ? 'code/sum_tokens.js' : 'exp/sum_tokens.js';
 const EVO_STORE = path.join(os.homedir(), '.evomap', 'assets');
 // --llm-refine 使用的 OpenAI 兼容端点与模型（实验环境实测用 agnes-cn，可替换为任意兼容服务）
 const REFINE_URL = process.env.EVOLVER_REFINE_URL || 'https://api.agnes-ai.cn/v1/chat/completions';
@@ -166,11 +171,14 @@ for (let r = 1; r <= opts.rounds; r++) {
   fs.mkdirSync(sessDir, { recursive: true });
 
   // 注入块（R>1 时读取已审核基因）
+  // 单通道原则：若 Pi 扩展桥已激活（.pi/extensions/evolver-bridge.ts 存在），
+  // 自动走扩展注入并跳过 CLI 策略注入——双通道会把同一修法注入两遍（token 膨胀 + 行为扰动）。
+  const extBridgeActive = fs.existsSync(path.join(LAB, '.pi', 'extensions', 'evolver-bridge.ts'));
   let injectArg = '';
-  if (r > 1 && opts.extInject) {
+  if (r > 1 && (opts.extInject || extBridgeActive)) {
     // Route A 模式：不传 CLI 注入参数，由 Pi 扩展（.pi/extensions/evolver-bridge.ts）
     // 在 before_agent_start 钩子自动注入已审核基因 strategy；留痕见 ~/.evomap/assets/bridge-last-inject.txt
-    log(`[inject] R${r} 使用 Pi 扩展注入（--ext-inject），跳过 CLI append-system-prompt`);
+    log(`[inject] R${r} 使用 Pi 扩展注入（${opts.extInject ? '--ext-inject' : '自动检测：扩展桥已激活'}），跳过 CLI append-system-prompt 以避免双通道重复注入`);
   } else if (r > 1) {
     const block = run('node_modules/.bin/evolver inject session-start 2>/dev/null', LAB);
     // 关键修复：evolver inject 只吐基因的 summary 标签（如 "bash, exception"），
@@ -202,7 +210,7 @@ for (let r = 1; r <= opts.rounds; r++) {
   // 聚合 token
   let stats = null;
   try {
-    const out = run(`node code/sum_tokens.js "${sessDir}" 2>/dev/null`, LAB);
+    const out = run(`node ${SUMTOK} "${sessDir}" 2>/dev/null`, LAB);
     stats = JSON.parse(out);
   } catch (e) { log(`[round ${r}] sum_tokens 失败: ${String(e).slice(0, 200)}`); }
   results.push({ round: r, injected: r > 1, stats });
@@ -215,7 +223,7 @@ for (let r = 1; r <= opts.rounds; r++) {
       const outDir = path.join(root, 'transcript');
       fs.mkdirSync(outDir, { recursive: true });
       try {
-        run(`node code/pi_session_adapter.js "${sf}" --out "${outDir}" --active-only 2>/dev/null`, LAB);
+        run(`node ${ADAPTER} "${sf}" --out "${outDir}" --active-only 2>/dev/null`, LAB);
       } catch (e) {
         log(`[adapter] 转换失败，跳过本轮蒸馏: ${String(e).slice(0, 150)}`);
       }
