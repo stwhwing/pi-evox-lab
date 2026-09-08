@@ -9,3 +9,5 @@ backup-*/
 node_modules/
 __pycache__/
 *.pyc
+experiments/
+hits.jsonl
