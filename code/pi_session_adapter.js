@@ -193,9 +193,13 @@ function main() {
     const ctx = {};
     const messages = [];
     // env_fingerprint 头部（Capsule 固化时的环境指纹来源）
+    // 隐私（SkillSpector finding 修复）：默认不含 cwd（工作目录可泄露项目/客户身份）；
+    // 实验确需 cwd 时显式传 --include-cwd。
+    const fpParts = [`platform=${platform()}`, `arch=${arch()}`, `pi_session=${header.id}`];
+    if (args.includes('--include-cwd')) fpParts.push(`cwd=${header.cwd ?? 'unknown'}`);
     messages.push({
       role: 'system',
-      content: `env_fingerprint: platform=${platform()} arch=${arch()} pi_session=${header.id} cwd=${header.cwd ?? 'unknown'}`,
+      content: `env_fingerprint: ${fpParts.join(' ')}`,
     });
     for (const e of chain) messages.push(...convertEntry(e, ctx));
     if (ctx.model) messages[0].content += ` model=${ctx.provider ?? ''}/${ctx.model}`;
