@@ -34,8 +34,8 @@ const SUMTOK = fs.existsSync(path.join(LAB, 'code', 'sum_tokens.js'))
   ? 'code/sum_tokens.js' : 'exp/sum_tokens.js';
 const EVO_STORE = path.join(os.homedir(), '.evomap', 'assets');
 // --llm-refine 使用的 OpenAI 兼容端点与模型（实验环境实测用 agnes-cn，可替换为任意兼容服务）
-const REFINE_URL = process.env.EVOLVER_REFINE_URL || 'https://api.agnes-ai.cn/v1/chat/completions';
-const REFINE_MODEL = process.env.EVOLVER_REFINE_MODEL || 'agnes-2.5-flash';
+const REFINE_URL = process.env.EVOLVER_REFINE_URL || '';  // 必须显式配置（外发端点，防默认数据外发）
+const REFINE_MODEL = process.env.EVOLVER_REFINE_MODEL || '';  // 必须显式配置
 const EVO_GENES = path.join(EVO_STORE, 'genes.jsonl');
 const EVO_REVIEW = path.join(EVO_STORE, 'review.jsonl');
 
@@ -252,6 +252,9 @@ for (let r = 1; r <= opts.rounds; r++) {
             log('[llm-refine] store 无已审核 strategy，跳过重写');
           } else if (isRepairLike(stratRaw)) {
             log('[llm-refine] strategy 已含修法信号词，无需重写');
+          } else if (!REFINE_URL || !REFINE_MODEL) {
+            // 数据外发端点必须显式配置（SkillSpector finding 修复：不做默认外发）
+            log('[llm-refine] strategy 无修法信号，但未配置 EVOLVER_REFINE_URL / EVOLVER_REFINE_MODEL（外发端点必须显式指定），跳过重写');
           } else {
             log('[llm-refine] strategy 无修法信号（成功总结型叙述）→ LLM 重写');
             const trTxt = fs.readFileSync(path.join(outDir, tr), 'utf8').replace(/\s+/g, ' ').slice(0, 9000);
