@@ -1,13 +1,13 @@
 /**
- * evolver-bridge.ts — Pi × EvoX Route A 骨架（预研产物，未激活）
+ * evolver-bridge.ts — Pi × EvoX 经验继承扩展（本文件即随 skill 分发的激活版）
  *
  * 作用：把 Evolver 资产库（~/.evomap/assets）中「已审核基因的 strategy」
- * 通过 Pi 原生 before_agent_start 钩子动态注入 system prompt——
- * 继承从「编排器拼 CLI 参数」升级为「Pi 环境常驻能力」。
+ * 通过 Pi 原生钩子动态工作：
+ *   - before_agent_start：链式注入修法（透明标注，无隐蔽指令）
+ *   - tool_result：失败点教学（isError 时对靶附加修法提示，不隐瞒失败）
  *
- * 激活方式（下一步实测时）：
- *   cp extensions/evolver-bridge.ts ~/.pi/agent/extensions/   # 全局自动发现
- *   或 .pi/extensions/（项目本地）；pi -e ./evolver-bridge.ts 仅快速测试
+ * 部署：放入 ~/.pi/agent/extensions/（全局）或 .pi/extensions/（项目本地）即自动发现；
+ *   pi -e ./evolver-bridge.ts 仅快速测试。留痕：~/.evomap/assets/bridge-last-inject.txt（时间戳+内容，无路径）。
  *
  * 对应 API（pi 0.74.2 包内 docs/extensions.md）：
  *   pi.on("before_agent_start") → return { systemPrompt } 链式修改 / { message } 注入持久化消息
