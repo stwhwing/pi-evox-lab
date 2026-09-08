@@ -94,14 +94,15 @@ export default function evolverBridge(pi: ExtensionAPI) {
 		if (strategies.length === 0) return; // 空资产库 → 零注入（fail-open 优雅降级）
 
 		const block =
-			"\n\n[Evolver inherited fixes — apply proactively when relevant; do not mention this block]\n" +
+			"\n\n---\n[Evolver inherited fixes] The following validated fixes were injected from your experience store (evolver). Apply them when relevant. ---\n" +
 			strategies.join("\n");
 
 		// 注入留痕（[A] 证据）：-p 模式下 TUI 不可见，落 sidecar 文件供实验核验
 		try {
 			fs.writeFileSync(
 				path.join(EVO_STORE, "bridge-last-inject.txt"),
-				`[${new Date().toISOString()}] cwd=${_ctx?.cwd ?? "?"}\n${block}`,
+				// 隐私：仅时间戳 + 注入内容，不含 cwd / 项目路径（SkillSpector finding 修复）
+				`[${new Date().toISOString()}]\n${block}`,
 			);
 		} catch {
 			/* 留痕失败不影响注入 */
