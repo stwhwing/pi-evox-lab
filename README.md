@@ -69,6 +69,8 @@ python traps/make_encoding_trap.py
 
 # 2. 一条命令跑完整闭环（R1 踩坑 → 自动蒸馏 → 审核 → 修法注入 → R2 避坑 → 跨轮对比）
 export AGNES_CN_API_KEY=sk-...   # 你的 OpenAI 兼容 key
+# （可选）LLM 精修端点——未配置时 --llm-refine 自动禁用（外发必须显式授权）
+export EVOLVER_REFINE_URL="https://<你的端点>/v1/chat/completions" EVOLVER_REFINE_MODEL="<model>"
 node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
     --provider agnes-cn --model agnes-2.5-flash \
     --api-key "$AGNES_CN_API_KEY" --rounds 2 --fresh --auto-approve --llm-refine
