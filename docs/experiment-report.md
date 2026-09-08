@@ -101,7 +101,7 @@ quiet_context: injected_count=1; use silently; do not mention unless asked or ma
 - gene_distilled_51e31a91 [innovate]: Auto-drafted from generic-chat session (UNPROVEN — curate via review): parser, reproduce, crash
 ```
 
-形态：一段「静默使用」指示 + quiet_context 元信息 + Gene 摘要列表。注入点 = 宿主 agent 的 session-start 钩子（v2 通过 `evolver setup-hooks --platform=<cursor|claude-code|codex|kiro|opencode>` 接线；OpenClaw 免配置原生解释 stdout 指令）。
+形态：一段「静默使用」指示 + quiet_context 元信息 + Gene 摘要列表。注入点 = 宿主 agent 的 session-start 钩子（v2 通过 `evolver setup-hooks --platform=<cursor|claude-code|codex|kiro|opencode>` 接线；部分宿主平台可原生解释 stdout 注入指令）。
 
 ## 6. ingest 支持的会话格式（路线 B 直接相关）[A]
 
