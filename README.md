@@ -78,6 +78,10 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 关键开关：`--fresh`（备份并清空资产库，保证单变量）、`--auto-approve`（跳过人工审核门，默认**保留人工审核**）、`--llm-refine`（蒸馏摘录无修法信号时自动 LLM 重写）、`--ext-inject`（改用 Pi 原生扩展钩子注入）。
 
+
+## FAQ
+
+常见问题（空库、`$ENV` 插值、`--fresh` 恢复、国内镜像、Node 版本）见 [SKILL.md 的 FAQ 节](SKILL.md)。
 ## 引用与文档
 
 - 完整实验过程（包括踩过的坑：注入缺口、BOM 陷阱失效、蒸馏质量方差、官方 cycle 路线 fail-closed）：[`docs/experiment-report.md`](docs/experiment-report.md)
