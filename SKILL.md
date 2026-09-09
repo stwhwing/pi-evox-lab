@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.3.2
+version: 0.4.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -95,6 +95,32 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 
 - 修法注入是**软提示**（system prompt），遵从度模型相关；守卫保证噪声不入库不出库，但不承诺 100% 避坑；
 - `tool_result` 失败点教学（扩展桥内）只在「策略注入后仍踩坑」时提供增量，价值在长时运行场景。
+
+## FAQ（常见问题）
+
+**Q1：召回输出「无可召回修法」是坏了吗？**
+不是。经验库从零开始，首次运行必然为空——价值随使用积累。跑一次流程 B（沉淀一个修法）即可点亮。
+
+**Q2：为什么 models.json 里配的 `$ENV` 环境变量不生效？**
+Pi 的 models.json 不做 `$ENV` 插值（已作为上游 issue 反馈）。用 `--api-key "$MY_KEY"` 显式传。
+
+**Q3：`--fresh` 会不会丢数据？**
+不会丢——运行前自动备份到 `~/.evomap/assets/backup-<时间戳>/`，可随时恢复。但清空动作仍是破坏性的，执行前请确认。
+
+**Q4：修法注入后还是踩坑了，为什么？**
+修法注入是软提示（system prompt），遵从度模型相关——它把「多次试错」压成「最多一次教训」，但不承诺 100% 避坑（诚实边界见报告 §22）。
+
+**Q5：召唤/沉淀时报 evolver 命令找不到？**
+确认在仓库根目录执行（`node_modules/.bin/` 下有 evolver），或先跑 `npm install`。
+
+**Q6：approve 能全自动吗？**
+可以（`--auto-approve` 或部署时授权），默认是人工审核门。自动化后召回/沉淀双向守卫仍兜底，但建议定期 `evolver review --list` 复查。
+
+**Q7：国内网络 npm/GitHub 慢？**
+npm 换国内镜像：`npm config set registry https://registry.npmmirror.com`；GitHub 克隆可用镜像代理或直接下载 Release zip。
+
+**Q8：Node 版本要求？**
+≥22（traps 生成器还需 Python 3）。版本过低时 pi/evolver 可能启动失败。
 
 ## 致谢与上游
 
