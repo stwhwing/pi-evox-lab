@@ -35,6 +35,17 @@ else
   fi
 fi
 
+# 3.5) Pi CLI 可用性自检（--ignore-scripts 安装可能缺 typebox build → pi 无法启动）
+if [ -x node_modules/.bin/pi ]; then
+  if node_modules/.bin/pi --version >/dev/null 2>&1; then
+    good "pi CLI 可运行（$(node_modules/.bin/pi --version 2>/dev/null | head -1)）"
+  else
+    warn "pi CLI 无法启动——常见原因：--ignore-scripts 安装后 typebox 缺 build 产物。修复：npm rebuild typebox"
+  fi
+else
+  warn "pi CLI 未安装（仅流程 C 实验需要，A/B 不受影响）"
+fi
+
 # 4) 召回自检（空库也正常）
 if [ -x node_modules/.bin/evolver ] || [ -f code/evolver-recall.mjs ]; then
   say "召回自检："
