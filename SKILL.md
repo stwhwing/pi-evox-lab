@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.4.0
+version: 0.5.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -41,7 +41,15 @@ node code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"
 
 - 无关的经验不要硬套；未采用的条目不必登记。
 
-## 流程 B：失败修复后 — 沉淀经验（修复了一次非显而易见的失败后）
+## 流程 B：失败修复后 — 沉淀经验
+
+**判定标准（满足任一条即值得沉淀）**：
+- 排查过程需要查文档 / 试错 ≥2 次才解决；
+- 依赖本机或环境特性（编码、路径规范、shell 差异、网络环境）；
+- 报错信息反直觉，或与文档描述不符；
+- 同一坑在历史任务中出现过第二次。
+（不满足任一条的普通失败不必沉淀——避免经验库噪声。）
+
 
 当你修复了一个不显而易见的坑（环境怪癖、反直觉报错、特定参数/编码/绕过方式），把修法沉淀入库：
 
@@ -81,6 +89,24 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 - 错误统计用精确口径（`isError=true` 的 toolResult），不要用字符串计数（文本提及会混入）；
 - token 对比必须扣除重复执行效应基线（实测 ≈ -22%）——绝对降幅 ≠ 继承收益。
 
+## 许可提示（商业使用前必读）
+
+- **本包（pi-evox-lab）**：MIT（见 LICENSE / package.json）。
+- **上游依赖**：`@evomap/evolver` 为 **GPL-3.0-or-later**（其 npm 元数据与实际许可不一致，以仓库声明为准）；**在商业/闭源场景使用本 skill 时，请自行评估 GPL 传染性**。`@earendil-works/pi-coding-agent` 为 MIT。
+- 本包通过 CLI 进程边界调用 evolver（不链接其代码），但仍建议法务视角复核后再商用。
+
+
+## 常见错误用法（反模式速查）
+
+| 错误做法 | 后果 | 正确做法 |
+|----------|------|----------|
+| 注入「成功总结」型 strategy（"脚本运行正确，结果如下…"） | 守卫过滤 / 等效噪声，比不注入更差（实测 +36pp） | 写成可执行修法（含参数/命令/编码："用 `encoding='gbk'` 打开"） |
+| 用「模型可能犯错」型陷阱做实验（BOM、`int("120.0")`） | 命中率不可控（实测 0/3），结论不可复现 | 改用「环境必然失败」型（无效 UTF-8 字节、非法 JSON） |
+| token 降幅直接当继承收益 | 把重复执行效应（≈ -22%）误算成继承 | 设无注入对照组，报告净收益 |
+| 用字符串计数统计错误 | 把文本提及误计为错误（曾致"11→4"实为 8→4） | 用精确口径：`isError=true` 的 toolResult |
+| 冷启动就期待避坑效果 | 空库无修法可召回，误判工具无效 | 先按流程 B 沉淀，价值随使用复利增长 |
+| 在生产环境开 `--auto-approve --llm-refine` | 未复核的 LLM 重写内容直接注入 | 保留人工审核门；确需演示时加 `--allow-unreviewed-refine` 并知悉风险 |
+
 ## 安全与数据外发声明（发布前必读）
 
 - **`--llm-refine` 涉及数据外发**：会把会话 transcript（截 9000 字符）发送到 `EVOLVER_REFINE_URL` 指定的外部端点。**未配置该变量时此功能自动禁用**，不存在默认外发。请在了解外发范围后启用，或使用本地/自有端点；
@@ -101,8 +127,8 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 **Q1：召回输出「无可召回修法」是坏了吗？**
 不是。经验库从零开始，首次运行必然为空——价值随使用积累。跑一次流程 B（沉淀一个修法）即可点亮。
 
-**Q2：为什么 models.json 里配的 `$ENV` 环境变量不生效？**
-Pi 的 models.json 不做 `$ENV` 插值（已作为上游 issue 反馈）。用 `--api-key "$MY_KEY"` 显式传。
+**Q2：models.json 里配 `$ENV` 环境变量不生效？**
+pi **0.85.1 起已支持 `$ENV` 插值**（实测确认，上游 issue #9258 已闭环该项）；**0.74.2 及更早版本不支持**，需用 `--api-key "$MY_KEY"` 显式传。
 
 **Q3：`--fresh` 会不会丢数据？**
 不会丢——运行前自动备份到 `~/.evomap/assets/backup-<时间戳>/`，可随时恢复。但清空动作仍是破坏性的，执行前请确认。
