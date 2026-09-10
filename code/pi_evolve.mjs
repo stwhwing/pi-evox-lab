@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * pi_evolve.mjs — Pi × EvoX 闭环编排器（离线、人工审核门默认开启）
+ * pi_evolve.mjs — Pi × EvoX 闭环编排器
+ * 默认本地运行（无外发）、人工审核门默认开启；唯一外发路径 --llm-refine 为显式 opt-in
+ * （端点未配置时自动禁用），且与 --auto-approve 组合默认拒绝（需 --allow-unreviewed-refine）。
  *
  * 一条命令跑通：Pi 执行 R1 → 适配器转换 session → evolver ingest --distill（自动起草基因）
  *   → [人工审核门：evolver review --approve] → evolver inject → Pi 执行 R2（注入基因）
@@ -53,6 +55,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--root') opts.root = process.argv[++i];
   else if (a === '--task') opts.taskText = process.argv[++i];
   else if (a === '--ext-inject') opts.extInject = true;
+  else if (a === '--allow-unreviewed-refine') opts.allowUnreviewedRefine = true;
   else if (a === '--llm-refine') opts.llmRefine = true;
   else positional.push(a);
 }
@@ -64,8 +67,21 @@ if (!templateDir || (!taskFile && !opts.taskText)) {
 }
 const taskText = opts.taskText ?? fs.readFileSync(taskFile, 'utf8').trim();
 const apiKey = opts.apiKey ?? process.env.AGNES_CN_API_KEY;
-if (opts.autoApprove && opts.llmRefine) {
-  log('⚠️  [组合警告] --auto-approve + --llm-refine 同时启用：LLM 重写的修法将跳过人工审核直接入库并被注入后续轮次。研究演示可接受；生产环境建议去掉 --auto-approve 保留人工审核门。');
+if (opts.autoApprove && opts.llmRefine && !opts.allowUnreviewedRefine) {
+  console.error('[安全门] --auto-approve 与 --llm-refine 组合会形成「LLM 重写 → 自动审核 → 注入后续轮次」的未经人工复核链路，默认拒绝执行。');
+  console.error('  如确需（研究演示），显式追加 --allow-unreviewed-refine 表示已知悉风险；');
+  console.error('  或去掉 --auto-approve，保留人工审核门（默认、推荐）。');
+  process.exit(2);
+}
+if (opts.autoApprove && opts.llmRefine && opts.allowUnreviewedRefine) {
+  log('⚠️  [组合放行] --allow-unreviewed-refine 已显式指定：LLM 重写的修法将自动审核并注入后续轮次（研究演示模式，请勿用于生产）。');
+}
+// provider/model 白名单（防注入：仅允许安全字符集）
+for (const [name, v] of [['provider', opts.provider], ['model', opts.model]]) {
+  if (v && !/^[A-Za-z0-9._\-]+$/.test(v)) {
+    console.error(`[安全门] ${name} 含非法字符：${v}（仅允许字母/数字/点/下划线/连字符）`);
+    process.exit(2);
+  }
 }
 if (!opts.provider || !opts.model || !apiKey) {
   console.error('缺少 --provider / --model / --api-key（或环境变量 AGNES_CN_API_KEY）');
@@ -73,6 +89,16 @@ if (!opts.provider || !opts.model || !apiKey) {
 }
 
 const log = (...x) => console.log(...x);
+
+/**
+ * shell 单引号严格转义（安全加固，2026-09-10）：
+ * 所有外部输入（路径、模型名、LLM 输出、用户配置）在拼入 bash 命令前必须经此函数，
+ * 防止命令注入（ClawHub static-analysis: unsafe shell construction）。
+ * 规则：包裹单引号，内部单引号转义为 '\''。
+ */
+function shq(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
 
 /** bash -lc 执行（复用已验证的 .bin 调用方式，PATH 注入受管 node） */
 function run(cmd, cwd = LAB, silent = false) {
@@ -201,7 +227,7 @@ for (let r = 1; r <= opts.rounds; r++) {
   const taskF = path.join(root, `task-r${r}.txt`);
   fs.writeFileSync(taskF, taskText);
   const taskFPosix = taskF.replace(/\\/g, '/');
-  const piCmd = `node_modules/.bin/pi -p --provider ${opts.provider} --model ${opts.model} --api-key "$AGNES_CN_API_KEY" --session-dir "${sessDir}"${injectArg} "$(cat "${taskFPosix}")"`;
+  const piCmd = `node_modules/.bin/pi -p --provider ${shq(opts.provider)} --model ${shq(opts.model)} --api-key "$AGNES_CN_API_KEY" --session-dir ${shq(sessDir)}${injectArg} "$(cat ${shq(taskFPosix)})"`;
   let piOut = '';
   try {
     piOut = run(piCmd, LAB);
@@ -213,7 +239,7 @@ for (let r = 1; r <= opts.rounds; r++) {
   // 聚合 token
   let stats = null;
   try {
-    const out = run(`node ${SUMTOK} "${sessDir}" 2>/dev/null`, LAB);
+    const out = run(`node ${shq(SUMTOK)} ${shq(sessDir)} 2>/dev/null`, LAB);
     stats = JSON.parse(out);
   } catch (e) { log(`[round ${r}] sum_tokens 失败: ${String(e).slice(0, 200)}`); }
   results.push({ round: r, injected: r > 1, stats });
@@ -226,13 +252,13 @@ for (let r = 1; r <= opts.rounds; r++) {
       const outDir = path.join(root, 'transcript');
       fs.mkdirSync(outDir, { recursive: true });
       try {
-        run(`node ${ADAPTER} "${sf}" --out "${outDir}" --active-only 2>/dev/null`, LAB);
+        run(`node ${shq(ADAPTER)} ${shq(sf)} --out ${shq(outDir)} --active-only 2>/dev/null`, LAB);
       } catch (e) {
         log(`[adapter] 转换失败，跳过本轮蒸馏: ${String(e).slice(0, 150)}`);
       }
       const tr = globJsonl(outDir).find((f) => f.endsWith('.transcript.jsonl'));
       if (tr) {
-        const ingestOut = run(`node_modules/.bin/evolver ingest --distill "${path.join(outDir, tr)}" 2>&1`, LAB);
+        const ingestOut = run(`node_modules/.bin/evolver ingest --distill ${shq(path.join(outDir, tr))} 2>&1`, LAB);
         log(`[distill] ${ingestOut.trim().split('\n').slice(-4).join('\n')}`);
         const m = ingestOut.match(/drafted UNPROVEN gene (gene_distilled_\w+)/);
         if (m) {
@@ -272,11 +298,11 @@ for (let r = 1; r <= opts.rounds; r++) {
             const pfP = pf.replace(/\\/g, '/'), rfP = rf.replace(/\\/g, '/');
             try {
               run(
-                `curl -s --max-time 180 ${REFINE_URL} ` +
+                `curl -s --max-time 180 ${shq(REFINE_URL)} ` +
                 `-H "Authorization: Bearer $AGNES_CN_API_KEY" -H "Content-Type: application/json" ` +
-                `-d "$(node -e "const fs=require('fs');console.log(JSON.stringify({model:'${REFINE_MODEL}',messages:[{role:'user',content:fs.readFileSync(process.argv[1],'utf8')}],max_tokens:300}))" "${pfP}")" ` +
+                `-d "$(node -e "const fs=require('fs');console.log(JSON.stringify({model:${JSON.stringify(REFINE_MODEL)},messages:[{role:'user',content:fs.readFileSync(process.argv[1],'utf8')}],max_tokens:300}))" ${shq(pfP)})" ` +
                 `| node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).choices[0].message.content)}catch(e){console.log('')}})" ` +
-                `> "${rfP}"`,
+                `> ${shq(rfP)}`,
                 LAB
               );
               const refined = fs.readFileSync(rf, 'utf8').trim();
@@ -284,7 +310,7 @@ for (let r = 1; r <= opts.rounds; r++) {
                 const oneLine = refined.replace(/\r?\n+/g, ' ').replace(/"/g, "'");
                 const dOut = run(
                   `node_modules/.bin/evolver distill --category repair --signals read,bash,exception ` +
-                  `--strategy ${JSON.stringify(oneLine)} --summary "LLM-refined repair (guard-triggered)" 2>&1`,
+                  `--strategy ${shq(oneLine)} --summary "LLM-refined repair (guard-triggered)" 2>&1`,
                   LAB
                 );
                 log(`[llm-refine] LLM 精修 strategy 已蒸馏: ${dOut.trim().split('\n').slice(-2).join(' | ').slice(0, 200)}`);
