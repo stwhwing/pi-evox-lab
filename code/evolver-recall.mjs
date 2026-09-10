@@ -91,7 +91,12 @@ function recall() {
 	const list = recallList();
 	console.log(`[Evolver 经验库] 基因总数=${all.length} | 已审核=${approved.size} | 守卫通过=${list.length}`);
 	if (list.length === 0) {
-		console.log('经验库当前无可召回修法。首次运行属正常；失败修复后会自动入库（distill + approve）。');
+		console.log('经验库当前无可召回修法（首次运行属正常——价值随使用复利增长）。点亮方法：');
+		console.log('  1) 完成一个非平凡任务，遇到并修复了不显而易见的坑（见 SKILL.md 流程 B 判定标准）；');
+		console.log('  2) 沉淀：node_modules/.bin/evolver distill --category repair --signals <信号> \\');
+		console.log('             --strategy "<可执行修法：参数/命令/编码>" --summary "<坑的一句话>"');
+		console.log('  3) 审核：node_modules/.bin/evolver review --approve <gene_id>');
+		console.log('  之后本命令即可召回。完整说明见 SKILL.md 流程 B。');
 		return;
 	}
 	console.log('以下为已验证修法，与本任务相关时优先采用；任务结束时若实际采用，请执行：');
