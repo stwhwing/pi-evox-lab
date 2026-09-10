@@ -1,5 +1,7 @@
 # 路线 B · pi_session_adapter 设计草案
 
+> ⚠️ **历史注记（2026-09-10 补）**：本文是 **预研阶段（2026-09-05）的设计草案**，其中的边界声明（如"不写 Pi Extension""全程 offline"）描述的是当时的范围。**后续路线 A 已实现扩展桥**（`code/evolver-bridge.ts`，随本包装分发）并引入可选外发（`--llm-refine`，默认禁用、需显式配置）。**现状以 README.md / SKILL.md 为准**，本文仅作设计演进记录。
+
 > 版本：v0.1（2026-09-05）｜ 状态：方案与 schema 对齐，**不写生产代码**
 > 依据：`evolver_实测报告.md`（@evomap/evolver 2.0.30 实测）+ 启动输入中的 Pi 事实 [A-KB]
 > 定位：Pi session JSONL → Evolver `generic-chat` 可消费格式的归一化适配层，验证蒸馏质量后再进入路线 A（Pi Extension）
