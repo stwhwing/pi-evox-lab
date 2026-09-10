@@ -56,7 +56,8 @@ function recallList() {
 		const st = g && Array.isArray(g.strategy) ? g.strategy : null;
 		if (!st || st.length === 0) continue;
 		const aid = g.asset_id;
-		if (approved.size > 0 && aid && !approved.has(aid)) continue;
+		// fail-closed（安全修复，2026-09-10）：台账不可用或未 approved → 跳过（旧逻辑在台账缺失时 fail-open）
+		if (!aid || !approved.has(aid)) continue;
 		const text = st.join(' ').replace(/\s+/g, ' ').trim();
 		if (!REPAIR_SIGNAL_RE.test(text)) continue; // 修法守卫：宁缺毋滥
 		out.push({ id: g.id, assetId: aid || '', category: g.category || 'repair', text: text.slice(0, 600) });
