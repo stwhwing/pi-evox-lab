@@ -77,7 +77,10 @@ function loadApprovedStrategies(): string[] {
 			const strategy = g && Array.isArray(g.strategy) ? g.strategy : null;
 			if (!strategy || strategy.length === 0) continue;
 			const aid = g.asset_id;
-			if (approved.size > 0 && aid && !approved.has(aid)) continue;
+			// fail-closed（安全修复，2026-09-10）：审核台账不可用或基因未 approved → 一律跳过。
+			// 旧逻辑 "approved.size > 0 &&" 在台账缺失时会退化为全量采纳（fail-open），
+			// 把未审核基因注入 system prompt；与 evolver 官方 fail-closed 治理语义不符。
+			if (!aid || !approved.has(aid)) continue;
 			const text = strategy.join(" ").slice(0, 1200);
 			if (!isRepairLike(text)) continue; // 守卫：无修法信号词 → 不注入
 			out.push(`- [${g.category || "repair"}] ${text}`);
