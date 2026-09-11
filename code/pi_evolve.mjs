@@ -101,14 +101,32 @@ const log = (...x) => console.log(...x);
  */
 const PI_ENTRY = 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js';
 const EVOLVER_ENTRY = 'node_modules/@evomap/evolver/bin/evolver.js';
+/**
+ * 失败分类（0.9.0，响应 skillhub「错误分类粗粒度」4.3 分项）：
+ * 从子进程输出识别错误家族，给出**可执行的下一步**，而不是只丢退出码。
+ */
+const ERROR_HINTS = [
+  [/ENOENT|Cannot find module|no such file or directory/i, '依赖/路径类：确认已在仓库根目录执行且 `npm install` 完整（缺件可试 `npm rebuild`）；检查传入的路径是否存在'],
+  [/EACCES|EPERM|Permission denied|operation not permitted/i, '权限类：目标文件/目录权限不足（Linux 用 chmod，Windows 检查只读属性）'],
+  [/ETIMEDOUT|ENOTFOUND|ECONNREFUSED|ECONNRESET|socket hang up|timeout/i, '网络类：检查连通性与代理设置（HTTP_PROXY/HTTPS_PROXY 可能干扰直连，可 no_proxy 排除）'],
+  [/401|403|Unauthorized|invalid api key|无效的令牌|authentication/i, '凭据类：API key 无效或未正确传递（用 --api-key 显式传，或确认环境变量已导出）'],
+  [/429|rate limit|too many requests/i, '限流类：稍后重试，或更换模型/端点'],
+];
+function classifyError(text) {
+  for (const [re, hint] of ERROR_HINTS) if (re.test(text)) return hint;
+  return null;
+}
 function runCli(entry, args, { cwd = LAB, silent = false, mergeStderr = false, allowFail = false, extraEnv = null } = {}) {
   const env = { ...process.env, ...(extraEnv ?? {}) };
   if (MANAGED_NODE) env.PATH = `${MANAGED_NODE}${path.delimiter}${env.PATH ?? ''}`;
   const r = spawnSync(process.execPath, [entry, ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 26, env });
   const out = (r.stdout ?? '') + (mergeStderr ? (r.stderr ?? '') : '');
   if (!allowFail && r.status !== 0) {
-    const err = new Error(`exit ${r.status}: ${String(r.stderr ?? '').trim().slice(0, 200)}`);
+    const detail = String(r.stderr ?? '').trim().slice(0, 200);
+    const hint = classifyError(`${detail} ${out}`);
+    const err = new Error(`exit ${r.status}: ${detail}${hint ? `\n  ↳ 诊断：${hint}` : ''}`);
     err.status = r.status;
+    err.hint = hint;
     throw err;
   }
   return out;
