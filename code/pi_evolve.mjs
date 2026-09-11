@@ -185,22 +185,24 @@ if (opts.fresh) {
   log(`[fresh] 已备份旧资产库到 ${bk} 并清空（${fs.existsSync(path.join(bk, 'genes.jsonl')) ? '含旧资产' : '原为空库'}）`);
 }
 
-// ---------- 预置陷阱数据到 LAB 根（消除 R1 一次性 file-not-found 探索噪声，使基线干净）----------
-// 安全（0.6.0，ClawHub environment_proportionality concern）：记录运行前 LAB 根既有产物，
-// cleanup 只删除本轮新建的，避免误删用户/仓库原有同名文件。
-const preExistingLabArtifacts = {
-  data: fs.existsSync(path.join(LAB, 'data')),
-  analyze: fs.existsSync(path.join(LAB, 'analyze.py')),
-};
+// ---------- 预置陷阱内容到 LAB 根（泛化：模板目录的全部顶层条目）----------
+// 0.8.0：不再写死 data/events.jsonl——支持多种陷阱形态（脚本行尾 / 只读文件 / NFD 文件名等）。
+// 安全（ClawHub environment_proportionality concern）：记录运行前既有条目，cleanup 只删本轮预置的；
+// 若 LAB 根已存在同名条目则跳过预置（绝不覆盖既有文件）。
+const preExistingLabArtifacts = {};
+const stagedEntries = [];
 try {
-  const srcData = path.join(templateDir, 'data', 'events.jsonl');
-  if (fs.existsSync(srcData)) {
-    const dstData = path.join(LAB, 'data', 'events.jsonl');
-    fs.mkdirSync(path.dirname(dstData), { recursive: true });
-    fs.copyFileSync(srcData, dstData);
-    log(`[stage] 已预置陷阱数据 ${dstData}`);
+  for (const entry of fs.readdirSync(templateDir)) {
+    preExistingLabArtifacts[entry] = fs.existsSync(path.join(LAB, entry));
+    if (preExistingLabArtifacts[entry]) {
+      log(`[stage] 跳过 ${entry}（LAB 根已存在同名条目，不覆盖）`);
+      continue;
+    }
+    fs.cpSync(path.join(templateDir, entry), path.join(LAB, entry), { recursive: true });
+    stagedEntries.push(entry);
   }
-} catch (e) { log(`[stage] 预置 data 失败: ${String(e).slice(0, 120)}`); }
+  if (stagedEntries.length) log(`[stage] 已预置模板内容到 LAB 根: ${stagedEntries.join(', ')}`);
+} catch (e) { log(`[stage] 预置失败: ${String(e).slice(0, 120)}`); }
 
 // ---------- 主循环 ----------
 const results = [];
@@ -361,14 +363,17 @@ if (results.length >= 2) {
 }
 log(`\n工作区: ${root}`);
 
-// ---------- 清理 LAB 临时产物（仅删本轮新建；运行前已存在的保留，避免无作用域删除）----------
-const labArtifacts = [
-  [path.join(LAB, 'data'), preExistingLabArtifacts.data],
-  [path.join(LAB, 'analyze.py'), preExistingLabArtifacts.analyze],
-];
+// ---------- 清理 LAB 临时产物（仅删本轮预置的、且运行前不存在的条目）----------
 let cleaned = 0, kept = 0;
-for (const [p, existedBefore] of labArtifacts) {
-  if (existedBefore) { kept++; log(`[cleanup] 保留 ${p}（运行前已存在，跳过删除）`); continue; }
+for (const entry of stagedEntries) {
+  const p = path.join(LAB, entry);
+  if (preExistingLabArtifacts[entry]) { kept++; log(`[cleanup] 保留 ${p}（运行前已存在）`); continue; }
   try { fs.rmSync(p, { recursive: true, force: true }); cleaned++; } catch {}
+}
+// Pi 在 LAB 根新建的常见产物（仅当运行前不存在时清理）
+for (const extra of ['analyze.py']) {
+  const p = path.join(LAB, extra);
+  if (!fs.existsSync(p) || preExistingLabArtifacts[extra]) continue;
+  try { fs.rmSync(p, { force: true }); cleaned++; } catch {}
 }
 log(`[cleanup] 已清理 LAB 临时产物（删除 ${cleaned} 项，保留 ${kept} 项）`);
