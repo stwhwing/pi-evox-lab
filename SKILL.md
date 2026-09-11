@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.8.0
+version: 0.9.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -25,6 +25,32 @@ npm install            # @evomap/evolver（必需）+ @earendil-works/pi-coding-
 - **流程 C（受控实验）**：另需 Pi CLI 与一个 OpenAI 兼容 LLM key（provider 配置见下文）。
 
 以下命令均在本仓库根目录执行（`SKILL.md` 所在目录）。
+
+## Provider 配置示例（含国内可用端点）
+
+Pi 支持任意 OpenAI 兼容端点。以 `~/.pi/agent/models.json` 为例：
+
+```json
+{
+  "providers": {
+    "my-provider": {
+      "baseUrl": "https://<你的端点>/v1",
+      "apiKey": "$MY_API_KEY",
+      "models": ["<model-id>"]
+    }
+  }
+}
+```
+
+- **国内 OpenAI 兼容端点**（按其文档填 baseUrl 与模型名）：DeepSeek（`https://api.deepseek.com/v1`）、阿里云百炼、硅基流动、智谱等；
+- **`$ENV` 插值版本差异**：pi **0.85.1 起支持**；0.74.2 及更早需用 `--api-key "$MY_KEY"` 显式传（见 FAQ Q2）；
+- **内置 provider 示例**（deepseek 已内置，无需 models.json）：
+  ```bash
+  node code/pi_evolve.mjs <模板目录> <任务文本> \
+      --provider deepseek --model deepseek-v4-flash \
+      --api-key "$DEEPSEEK_API_KEY" --rounds 2 --fresh --auto-approve
+  ```
+- **npm 国内镜像**（安装慢时）：`npm config set registry https://registry.npmmirror.com`
 
 ## 流程 A：任务开始 — 召回经验（任何非平凡任务）
 
