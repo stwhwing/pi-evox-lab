@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// v0.6.0 — 安全修复：编排器侧 fail-closed 审批 + 有作用域 cleanup
 /**
  * pi_evolve.mjs — Pi × EvoX 闭环编排器
  * 默认本地运行（无外发）、人工审核门默认开启；唯一外发路径 --llm-refine 为显式 opt-in
@@ -150,7 +151,9 @@ function loadApprovedStrategy() {
       const st = g && g.strategy;
       if (!Array.isArray(st) || !st.length) continue;
       const aid = g.asset_id;
-      if (approved.size && aid && !approved.has(aid)) continue; // 无 approved 集合时退化为全采纳
+      // fail-closed（安全修复 0.6.0，ClawHub clawscan 二次点名）：台账缺失/为空或未 approved → 一律跳过。
+      // 旧逻辑 "approved.size &&" 在台账不可用时退化为全采纳（fail-open），违背审核门语义。
+      if (!aid || !approved.has(aid)) continue;
       const text = st.join(' ').slice(0, 1200);
       if (!isRepairLike(text)) continue; // 守卫：无修法信号的叙述（如成功总结）不注入，宁缺毋滥（§20）
       out.push(`- [${g.category || 'repair'}] ${text}`);
@@ -178,6 +181,12 @@ if (opts.fresh) {
 }
 
 // ---------- 预置陷阱数据到 LAB 根（消除 R1 一次性 file-not-found 探索噪声，使基线干净）----------
+// 安全（0.6.0，ClawHub environment_proportionality concern）：记录运行前 LAB 根既有产物，
+// cleanup 只删除本轮新建的，避免误删用户/仓库原有同名文件。
+const preExistingLabArtifacts = {
+  data: fs.existsSync(path.join(LAB, 'data')),
+  analyze: fs.existsSync(path.join(LAB, 'analyze.py')),
+};
 try {
   const srcData = path.join(templateDir, 'data', 'events.jsonl');
   if (fs.existsSync(srcData)) {
@@ -347,8 +356,14 @@ if (results.length >= 2) {
 }
 log(`\n工作区: ${root}`);
 
-// ---------- 清理 LAB 临时产物（陷阱数据/生成的脚本，避免污染 evolver-lab 仓库）----------
-for (const p of [path.join(LAB, 'data'), path.join(LAB, 'analyze.py')]) {
-  try { fs.rmSync(p, { recursive: true, force: true }); } catch {}
+// ---------- 清理 LAB 临时产物（仅删本轮新建；运行前已存在的保留，避免无作用域删除）----------
+const labArtifacts = [
+  [path.join(LAB, 'data'), preExistingLabArtifacts.data],
+  [path.join(LAB, 'analyze.py'), preExistingLabArtifacts.analyze],
+];
+let cleaned = 0, kept = 0;
+for (const [p, existedBefore] of labArtifacts) {
+  if (existedBefore) { kept++; log(`[cleanup] 保留 ${p}（运行前已存在，跳过删除）`); continue; }
+  try { fs.rmSync(p, { recursive: true, force: true }); cleaned++; } catch {}
 }
-log('[cleanup] 已清理 LAB 临时产物');
+log(`[cleanup] 已清理 LAB 临时产物（删除 ${cleaned} 项，保留 ${kept} 项）`);
