@@ -21,7 +21,7 @@
  *                      默认（不带此 flag）= 在蒸馏出基因后暂停，打印审核命令交人工确认
  *   --root <dir>      工作根目录（默认 exp/loop-<时间戳>）
  */
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -92,21 +92,26 @@ if (!opts.provider || !opts.model || !apiKey) {
 const log = (...x) => console.log(...x);
 
 /**
- * shell 单引号严格转义（安全加固，2026-09-10）：
- * 所有外部输入（路径、模型名、LLM 输出、用户配置）在拼入 bash 命令前必须经此函数，
- * 防止命令注入（ClawHub static-analysis: unsafe shell construction）。
- * 规则：包裹单引号，内部单引号转义为 '\''。
+ * CLI 执行 —— argv 化（0.6.0 安全加固，彻底消除 shell 字符串拼接）：
+ * 全部以 argv 数组调用 `node <JS 入口>`，不经过 bash/shell，参数不参与任何解析，
+ * 从根上消除命令注入面（响应 ClawHub static-analysis: unsafe shell construction）。
+ *   PI_ENTRY       → pi 的 CLI 入口（package.json bin 指向 dist/cli.js）
+ *   EVOLVER_ENTRY  → evolver 的 CLI 入口
+ * 选项语义与旧 shell 版对齐：silent ≈ `2>/dev/null`；mergeStderr ≈ `2>&1`；allowFail ≈ 非零退出不抛。
  */
-function shq(s) {
-  return "'" + String(s).replace(/'/g, "'\\''") + "'";
-}
-
-/** bash -lc 执行（复用已验证的 .bin 调用方式，PATH 注入受管 node） */
-function run(cmd, cwd = LAB, silent = false) {
-  const pre = MANAGED_NODE ? `export PATH="${MANAGED_NODE}:$PATH"; ` : '';
-  return execFileSync('bash', ['-lc', `${pre}${cmd}`], {
-    cwd, encoding: 'utf8', maxBuffer: 1 << 26,
-  }).toString();
+const PI_ENTRY = 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js';
+const EVOLVER_ENTRY = 'node_modules/@evomap/evolver/bin/evolver.js';
+function runCli(entry, args, { cwd = LAB, silent = false, mergeStderr = false, allowFail = false, extraEnv = null } = {}) {
+  const env = { ...process.env, ...(extraEnv ?? {}) };
+  if (MANAGED_NODE) env.PATH = `${MANAGED_NODE}${path.delimiter}${env.PATH ?? ''}`;
+  const r = spawnSync(process.execPath, [entry, ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 26, env });
+  const out = (r.stdout ?? '') + (mergeStderr ? (r.stderr ?? '') : '');
+  if (!allowFail && r.status !== 0) {
+    const err = new Error(`exit ${r.status}: ${String(r.stderr ?? '').trim().slice(0, 200)}`);
+    err.status = r.status;
+    throw err;
+  }
+  return out;
 }
 function globJsonl(dir) {
   try { return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch { return []; }
@@ -212,13 +217,13 @@ for (let r = 1; r <= opts.rounds; r++) {
   // 单通道原则：若 Pi 扩展桥已激活（.pi/extensions/evolver-bridge.ts 存在），
   // 自动走扩展注入并跳过 CLI 策略注入——双通道会把同一修法注入两遍（token 膨胀 + 行为扰动）。
   const extBridgeActive = fs.existsSync(path.join(LAB, '.pi', 'extensions', 'evolver-bridge.ts'));
-  let injectArg = '';
+  let injectArgs = [];
   if (r > 1 && (opts.extInject || extBridgeActive)) {
     // Route A 模式：不传 CLI 注入参数，由 Pi 扩展（.pi/extensions/evolver-bridge.ts）
     // 在 before_agent_start 钩子自动注入已审核基因 strategy；留痕见 ~/.evomap/assets/bridge-last-inject.txt
     log(`[inject] R${r} 使用 Pi 扩展注入（${opts.extInject ? '--ext-inject' : '自动检测：扩展桥已激活'}），跳过 CLI append-system-prompt 以避免双通道重复注入`);
   } else if (r > 1) {
-    const block = run('node_modules/.bin/evolver inject session-start 2>/dev/null', LAB);
+    const block = runCli(EVOLVER_ENTRY, ['inject', 'session-start'], { silent: true });
     // 关键修复：evolver inject 只吐基因的 summary 标签（如 "bash, exception"），
     // 不携带真正可执行的 strategy（例如 "用 encoding='gbk' 读取"）。这里从 genes.jsonl
     // 抽取已审核基因的 strategy 文本，追加进注入块，使下一轮真正继承"修法"而非仅一个标签。
@@ -228,18 +233,17 @@ for (let r = 1; r <= opts.rounds; r++) {
       : block;
     const f = path.join(root, `inject-r${r}.txt`);
     fs.writeFileSync(f, full);
-    const fPosix = f.replace(/\\/g, '/');
-    injectArg = ` --append-system-prompt "$(cat "${fPosix}")"`;
+    injectArgs = ['--append-system-prompt', full]; // argv 直传内容，无需 shell 命令替换
   }
 
   log(`\n========== ROUND ${r} ${r > 1 ? '(injected)' : '(baseline)'} ==========`);
   const taskF = path.join(root, `task-r${r}.txt`);
   fs.writeFileSync(taskF, taskText);
-  const taskFPosix = taskF.replace(/\\/g, '/');
-  const piCmd = `node_modules/.bin/pi -p --provider ${shq(opts.provider)} --model ${shq(opts.model)} --api-key "$AGNES_CN_API_KEY" --session-dir ${shq(sessDir)}${injectArg} "$(cat ${shq(taskFPosix)})"`;
+  const piArgs = ['-p', '--provider', opts.provider, '--model', opts.model,
+    '--api-key', apiKey, '--session-dir', sessDir, ...injectArgs, taskText];
   let piOut = '';
   try {
-    piOut = run(piCmd, LAB);
+    piOut = runCli(PI_ENTRY, piArgs, { mergeStderr: true, extraEnv: { AGNES_CN_API_KEY: apiKey } });
     log(piOut.trim().split('\n').slice(-8).join('\n')); // 仅尾部摘要，避免刷屏
   } catch (e) {
     log(`[round ${r}] pi 运行异常: ${String(e).slice(0, 300)}`);
@@ -248,7 +252,7 @@ for (let r = 1; r <= opts.rounds; r++) {
   // 聚合 token
   let stats = null;
   try {
-    const out = run(`node ${shq(SUMTOK)} ${shq(sessDir)} 2>/dev/null`, LAB);
+    const out = runCli(SUMTOK, [sessDir], { silent: true });
     stats = JSON.parse(out);
   } catch (e) { log(`[round ${r}] sum_tokens 失败: ${String(e).slice(0, 200)}`); }
   results.push({ round: r, injected: r > 1, stats });
@@ -261,19 +265,19 @@ for (let r = 1; r <= opts.rounds; r++) {
       const outDir = path.join(root, 'transcript');
       fs.mkdirSync(outDir, { recursive: true });
       try {
-        run(`node ${shq(ADAPTER)} ${shq(sf)} --out ${shq(outDir)} --active-only 2>/dev/null`, LAB);
+        runCli(ADAPTER, [sf, '--out', outDir, '--active-only'], { silent: true });
       } catch (e) {
         log(`[adapter] 转换失败，跳过本轮蒸馏: ${String(e).slice(0, 150)}`);
       }
       const tr = globJsonl(outDir).find((f) => f.endsWith('.transcript.jsonl'));
       if (tr) {
-        const ingestOut = run(`node_modules/.bin/evolver ingest --distill ${shq(path.join(outDir, tr))} 2>&1`, LAB);
+        const ingestOut = runCli(EVOLVER_ENTRY, ['ingest', '--distill', path.join(outDir, tr)], { mergeStderr: true });
         log(`[distill] ${ingestOut.trim().split('\n').slice(-4).join('\n')}`);
         const m = ingestOut.match(/drafted UNPROVEN gene (gene_distilled_\w+)/);
         if (m) {
           const gene = m[1];
           if (opts.autoApprove) {
-            run(`node_modules/.bin/evolver review --approve ${gene} 2>/dev/null`, LAB);
+            runCli(EVOLVER_ENTRY, ['review', '--approve', gene], { silent: true, allowFail: true });
             log(`[gate] 自动审核通过 ${gene}（--auto-approve）`);
           } else {
             log(`\n🔒 人工审核门：请审阅后执行\n  node_modules/.bin/evolver review --approve ${gene}\n（通过后将注入下一轮）`);
@@ -306,26 +310,27 @@ for (let r = 1; r <= opts.rounds; r++) {
             fs.writeFileSync(pf, prompt);
             const pfP = pf.replace(/\\/g, '/'), rfP = rf.replace(/\\/g, '/');
             try {
-              run(
-                `curl -s --max-time 180 ${shq(REFINE_URL)} ` +
-                `-H "Authorization: Bearer $AGNES_CN_API_KEY" -H "Content-Type: application/json" ` +
-                `-d "$(node -e "const fs=require('fs');console.log(JSON.stringify({model:${JSON.stringify(REFINE_MODEL)},messages:[{role:'user',content:fs.readFileSync(process.argv[1],'utf8')}],max_tokens:300}))" ${shq(pfP)})" ` +
-                `| node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).choices[0].message.content)}catch(e){console.log('')}})" ` +
-                `> ${shq(rfP)}`,
-                LAB
-              );
-              const refined = fs.readFileSync(rf, 'utf8').trim();
+              // 0.6.0：curl → Node 原生 fetch（消除 shell/curl 依赖，外发目标与载荷在代码中显式可见）
+              const resp = await fetch(REFINE_URL, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: REFINE_MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 300 }),
+                signal: AbortSignal.timeout(180000),
+              });
+              const respJson = await resp.json().catch(() => null);
+              const refined = String(respJson?.choices?.[0]?.message?.content ?? '').trim();
+              fs.writeFileSync(rf, refined);
+
               if (refined && isRepairLike(refined)) {
                 const oneLine = refined.replace(/\r?\n+/g, ' ').replace(/"/g, "'");
-                const dOut = run(
-                  `node_modules/.bin/evolver distill --category repair --signals read,bash,exception ` +
-                  `--strategy ${shq(oneLine)} --summary "LLM-refined repair (guard-triggered)" 2>&1`,
-                  LAB
-                );
+                const dOut = runCli(EVOLVER_ENTRY,
+                  ['distill', '--category', 'repair', '--signals', 'read,bash,exception',
+                   '--strategy', oneLine, '--summary', 'LLM-refined repair (guard-triggered)'],
+                  { mergeStderr: true });
                 log(`[llm-refine] LLM 精修 strategy 已蒸馏: ${dOut.trim().split('\n').slice(-2).join(' | ').slice(0, 200)}`);
                 const gm = dOut.match(/gene_[a-z0-9_]+/);
                 if (gm && opts.autoApprove) {
-                  run(`node_modules/.bin/evolver review --approve ${gm[0]} 2>/dev/null`, LAB);
+                  runCli(EVOLVER_ENTRY, ['review', '--approve', gm[0]], { silent: true, allowFail: true });
                   log(`[llm-refine] 已自动审核通过 ${gm[0]}（--auto-approve）`);
                 } else if (gm) {
                   log(`[llm-refine] 人工审核门：node_modules/.bin/evolver review --approve ${gm[0]}`);
