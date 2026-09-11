@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # setup.sh — Pi × EvoX Loop 一键安装/自检（评测建议：降低开箱即用门槛）
-# 用法：bash code/setup.sh
+# 用法：
+#   bash code/setup.sh          安装 + 全量自检（含 pi 可用性、召回冒烟）
+#   bash code/setup.sh --demo   额外跑一次「隔离演示」：用临时经验库演示召回/沉淀闭环（不触碰真实库）
 set -u
+DEMO=0
+[ "${1:-}" = "--demo" ] && DEMO=1
 OK=0; WARN=0
 say()  { echo "[setup] $*"; }
 warn() { echo "[setup] ⚠️  $*"; WARN=$((WARN+1)); }
@@ -44,6 +48,28 @@ if [ -x node_modules/.bin/pi ]; then
   fi
 else
   warn "pi CLI 未安装（仅流程 C 实验需要，A/B 不受影响）"
+fi
+
+# 3.8) 隔离演示（--demo）：用临时经验库跑通「沉淀 → 召回」，全程不触碰 ~/.evomap/assets
+if [ "$DEMO" = "1" ]; then
+  echo ""
+  echo "=== 演示：隔离临时经验库（不触碰你的真实库）==="
+  DEMOSTORE="$(mktemp -d)"
+  EVO_STORE_DIR="$DEMOSTORE" node -e '
+const fs = require("fs");
+const store = process.env.EVO_STORE_DIR;
+// 一条示例「修法型」基因（含可执行修法 + 审核台账 approved）
+const gene = { id: "gene_demo_0001", asset_id: "sha256:demo0001", category: "repair",
+  strategy: ["The file is GBK-encoded: open it with encoding=\"gbk\" (or read bytes and decode explicitly) instead of the default utf-8; rerun to verify the values."] };
+fs.writeFileSync(store + "/genes.jsonl", JSON.stringify(gene) + "\n");
+fs.writeFileSync(store + "/review.jsonl", JSON.stringify({ assetId: "sha256:demo0001", state: "approved" }) + "\n");
+'
+  echo "--- 流程 A：召回（应输出 1 条编号修法 + 命中登记指引）---"
+  EVO_STORE_DIR="$DEMOSTORE" node code/evolver-recall.mjs || true
+  echo "--- 真实使用时：用 evolver distill 沉淀、review --approve 审核（见 SKILL.md 流程 B）---"
+  rm -rf "$DEMOSTORE" 2>/dev/null || true
+  echo "[setup] ✓ 演示完成（临时库已清理）"
+  exit 0
 fi
 
 # 4) 召回自检（空库也正常）
