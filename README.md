@@ -84,6 +84,8 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 常见问题（空库、`$ENV` 插值、`--fresh` 恢复、国内镜像、Node 版本）见 [SKILL.md 的 FAQ 节](SKILL.md)。
 ## 引用与文档
 
+- 其他 Agent 宿主接入指南：[docs/other-agents.md](docs/other-agents.md)（Claude Code / IDE / 自建智能体的注入模式）
+
 - 完整实验过程（包括踩过的坑：注入缺口、BOM 陷阱失效、蒸馏质量方差、官方 cycle 路线 fail-closed）：[`docs/experiment-report.md`](docs/experiment-report.md)
 - Pi Extensions API 预研与适配器设计：[`docs/adapter-design.md`](docs/adapter-design.md)
 
