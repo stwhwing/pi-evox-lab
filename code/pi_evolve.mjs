@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// v0.11.0 — 双后端引擎（engine/）：evolver 可用则用之，否则内置 light 后端（零 npm 依赖，MIT）
+// v0.12.0 — 默认内置 light 后端（零 npm 依赖）；evolver 为可选集成（--engine evolver）
 /**
  * pi_evolve.mjs — Pi × EvoX 闭环编排器
  * 默认本地运行（无外发）、人工审核门默认开启；唯一外发路径 --llm-refine 为显式 opt-in
@@ -226,10 +226,10 @@ if (opts.fresh) {
   log(`[fresh] 已备份旧资产库到 ${bk} 并清空（${fs.existsSync(path.join(bk, 'genes.jsonl')) ? '含旧资产' : '原为空库'}）`);
 }
 
-// ---------- 引擎选择（0.11.0 双后端）----------
-// auto：node_modules 下有 evolver → 用 evolver；否则用内置 light（纯 Node，零 npm 依赖）。
-// 可用 --engine light|evolver 强制。存储格式两后端一致（schema 1.13.0），产物可互操作。
-const engine = selectEngine(opts.engine ?? 'auto', { root: LAB, log });
+// ---------- 引擎选择（0.12.0：默认内置 light 后端）----------
+// 默认 light（纯 Node 内置模块，零 npm 依赖）；--engine evolver 可用可选集成；--engine auto 为旧行为。
+// 存储格式两后端一致（schema 1.13.0），产物可互操作。
+const engine = selectEngine(opts.engine ?? 'light', { root: LAB, log });
 log(`[engine] 使用后端：${engine.name}`);
 
 // ---------- 预置陷阱内容到 LAB 根（泛化：模板目录的全部顶层条目）----------
