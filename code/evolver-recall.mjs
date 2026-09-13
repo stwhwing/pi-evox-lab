@@ -93,9 +93,10 @@ function recall() {
 	if (list.length === 0) {
 		console.log('经验库当前无可召回修法（首次运行属正常——价值随使用复利增长）。点亮方法：');
 		console.log('  1) 完成一个非平凡任务，遇到并修复了不显而易见的坑（见 SKILL.md 流程 B 判定标准）；');
-		console.log('  2) 沉淀：node_modules/.bin/evolver distill --category repair --signals <信号> \\');
+		console.log('  2) 沉淀（内置后端）：node code/light-cli.mjs distill --signals <信号> \\');
 		console.log('             --strategy "<可执行修法：参数/命令/编码>" --summary "<坑的一句话>"');
-		console.log('  3) 审核：node_modules/.bin/evolver review --approve <gene_id>');
+		console.log('  3) 审核（内置后端）：node code/light-cli.mjs approve <gene_id>');
+		console.log('   （如已安装可选集成 evolver，也可用：evolver distill / evolver review --approve）');
 		console.log('  之后本命令即可召回。完整说明见 SKILL.md 流程 B。');
 		return;
 	}
