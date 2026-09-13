@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// v0.6.0 — 安全修复：编排器侧 fail-closed 审批 + 有作用域 cleanup
+// v0.11.0 — 双后端引擎（engine/）：evolver 可用则用之，否则内置 light 后端（零 npm 依赖，MIT）
 /**
  * pi_evolve.mjs — Pi × EvoX 闭环编排器
  * 默认本地运行（无外发）、人工审核门默认开启；唯一外发路径 --llm-refine 为显式 opt-in
@@ -22,6 +22,7 @@
  *   --root <dir>      工作根目录（默认 exp/loop-<时间戳>）
  */
 import { spawnSync } from 'node:child_process';
+import { selectEngine } from './engine/index.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -35,7 +36,8 @@ const ADAPTER = fs.existsSync(path.join(LAB, 'code', 'pi_session_adapter.js'))
   ? 'code/pi_session_adapter.js' : 'adapter/pi_session_adapter.js';
 const SUMTOK = fs.existsSync(path.join(LAB, 'code', 'sum_tokens.js'))
   ? 'code/sum_tokens.js' : 'exp/sum_tokens.js';
-const EVO_STORE = path.join(os.homedir(), '.evomap', 'assets');
+// 与 engine/light/store.mjs 保持一致：支持 EVO_STORE_DIR 覆盖（测试隔离 / 多库切换）
+const EVO_STORE = process.env.EVO_STORE_DIR || path.join(os.homedir(), '.evomap', 'assets');
 // --llm-refine 使用的 OpenAI 兼容端点与模型（实验环境实测用 agnes-cn，可替换为任意兼容服务）
 const REFINE_URL = process.env.EVOLVER_REFINE_URL || '';  // 必须显式配置（外发端点，防默认数据外发）
 const REFINE_MODEL = process.env.EVOLVER_REFINE_MODEL || '';  // 必须显式配置
@@ -57,6 +59,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--task') opts.taskText = process.argv[++i];
   else if (a === '--ext-inject') opts.extInject = true;
   else if (a === '--allow-unreviewed-refine') opts.allowUnreviewedRefine = true;
+  else if (a === '--engine') opts.engine = process.argv[++i];
   else if (a === '--llm-refine') opts.llmRefine = true;
   else positional.push(a);
 }
@@ -69,9 +72,9 @@ if (!templateDir || (!taskFile && !opts.taskText)) {
 const taskText = opts.taskText ?? fs.readFileSync(taskFile, 'utf8').trim();
 const apiKey = opts.apiKey ?? process.env.AGNES_CN_API_KEY;
 if (opts.autoApprove && opts.llmRefine && !opts.allowUnreviewedRefine) {
-  console.error('[安全门] --auto-approve 与 --llm-refine 组合会形成「LLM 重写 → 自动审核 → 注入后续轮次」的未经人工复核链路，默认拒绝执行。');
-  console.error('  如确需（研究演示），显式追加 --allow-unreviewed-refine 表示已知悉风险；');
-  console.error('  或去掉 --auto-approve，保留人工审核门（默认、推荐）。');
+  logErr('[安全门] --auto-approve 与 --llm-refine 组合会形成「LLM 重写 → 自动审核 → 注入后续轮次」的未经人工复核链路，默认拒绝执行。');
+  logErr('  如确需（研究演示），显式追加 --allow-unreviewed-refine 表示已知悉风险；');
+  logErr('  或去掉 --auto-approve，保留人工审核门（默认、推荐）。');
   process.exit(2);
 }
 if (opts.autoApprove && opts.llmRefine && opts.allowUnreviewedRefine) {
@@ -80,16 +83,36 @@ if (opts.autoApprove && opts.llmRefine && opts.allowUnreviewedRefine) {
 // provider/model 白名单（防注入：仅允许安全字符集）
 for (const [name, v] of [['provider', opts.provider], ['model', opts.model]]) {
   if (v && !/^[A-Za-z0-9._\-]+$/.test(v)) {
-    console.error(`[安全门] ${name} 含非法字符：${v}（仅允许字母/数字/点/下划线/连字符）`);
+    logErr(`[安全门] ${name} 含非法字符（仅允许字母/数字/点/下划线/连字符）`);
     process.exit(2);
   }
 }
 if (!opts.provider || !opts.model || !apiKey) {
-  console.error('缺少 --provider / --model / --api-key（或环境变量 AGNES_CN_API_KEY）');
+  logErr('缺少 --provider / --model / --api-key（或环境变量 AGNES_CN_API_KEY）');
   process.exit(2);
 }
 
-const log = (...x) => console.log(...x);
+/**
+ * 输出脱敏（0.10.0，响应云鼎动态引擎 finding「密钥形态值打印到 stdout」）：
+ * log 的所有输出统一做两层掩码——
+ *   1) 已注册的敏感值（apiKey 等）整体替换为 ***；
+ *   2) 通用 key 形态（sk-xxx / Bearer xxx / 长随机串）模式掩码。
+ */
+const SENSITIVE_VALUES = new Set();
+function registerSecret(v) { if (v && String(v).length >= 8) SENSITIVE_VALUES.add(String(v)); }
+function redact(s) {
+  let out = String(s);
+  for (const v of SENSITIVE_VALUES) out = out.split(v).join('***');
+  return out
+    .replace(/\b(sk-[A-Za-z0-9_\-]{8,})/g, 'sk-***')
+    .replace(/\b(Bearer\s+)[A-Za-z0-9_.\-]{8,}/gi, '$1***');
+}
+const log = (...x) => console.log(...x.map(redact));
+const logErr = (...x) => console.error(...x.map(redact));
+// 敏感值注册（须在 SENSITIVE_VALUES 定义之后调用，避免 TDZ；0.11.0 修复 0.10.0 的初始化顺序缺陷）
+registerSecret(process.env.AGNES_CN_API_KEY);
+registerSecret(process.env.EVOLVER_REFINE_URL);
+registerSecret(process.env.DEEPSEEK_API_KEY);
 
 /**
  * CLI 执行 —— argv 化（0.6.0 安全加固，彻底消除 shell 字符串拼接）：
@@ -100,7 +123,7 @@ const log = (...x) => console.log(...x);
  * 选项语义与旧 shell 版对齐：silent ≈ `2>/dev/null`；mergeStderr ≈ `2>&1`；allowFail ≈ 非零退出不抛。
  */
 const PI_ENTRY = 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js';
-const EVOLVER_ENTRY = 'node_modules/@evomap/evolver/bin/evolver.js';
+// evolver CLI 调用已收口到 code/engine/evolver-bridge.mjs（双后端统一接口）
 /**
  * 失败分类（0.9.0，响应 skillhub「错误分类粗粒度」4.3 分项）：
  * 从子进程输出识别错误家族，给出**可执行的下一步**，而不是只丢退出码。
@@ -203,6 +226,12 @@ if (opts.fresh) {
   log(`[fresh] 已备份旧资产库到 ${bk} 并清空（${fs.existsSync(path.join(bk, 'genes.jsonl')) ? '含旧资产' : '原为空库'}）`);
 }
 
+// ---------- 引擎选择（0.11.0 双后端）----------
+// auto：node_modules 下有 evolver → 用 evolver；否则用内置 light（纯 Node，零 npm 依赖）。
+// 可用 --engine light|evolver 强制。存储格式两后端一致（schema 1.13.0），产物可互操作。
+const engine = selectEngine(opts.engine ?? 'auto', { root: LAB, log });
+log(`[engine] 使用后端：${engine.name}`);
+
 // ---------- 预置陷阱内容到 LAB 根（泛化：模板目录的全部顶层条目）----------
 // 0.8.0：不再写死 data/events.jsonl——支持多种陷阱形态（脚本行尾 / 只读文件 / NFD 文件名等）。
 // 安全（ClawHub environment_proportionality concern）：记录运行前既有条目，cleanup 只删本轮预置的；
@@ -243,7 +272,7 @@ for (let r = 1; r <= opts.rounds; r++) {
     // 在 before_agent_start 钩子自动注入已审核基因 strategy；留痕见 ~/.evomap/assets/bridge-last-inject.txt
     log(`[inject] R${r} 使用 Pi 扩展注入（${opts.extInject ? '--ext-inject' : '自动检测：扩展桥已激活'}），跳过 CLI append-system-prompt 以避免双通道重复注入`);
   } else if (r > 1) {
-    const block = runCli(EVOLVER_ENTRY, ['inject', 'session-start'], { silent: true });
+    const block = engine.injectBlock();
     // 关键修复：evolver inject 只吐基因的 summary 标签（如 "bash, exception"），
     // 不携带真正可执行的 strategy（例如 "用 encoding='gbk' 读取"）。这里从 genes.jsonl
     // 抽取已审核基因的 strategy 文本，追加进注入块，使下一轮真正继承"修法"而非仅一个标签。
@@ -291,13 +320,14 @@ for (let r = 1; r <= opts.rounds; r++) {
       }
       const tr = globJsonl(outDir).find((f) => f.endsWith('.transcript.jsonl'));
       if (tr) {
-        const ingestOut = runCli(EVOLVER_ENTRY, ['ingest', '--distill', path.join(outDir, tr)], { mergeStderr: true });
+        const ingestRes = engine.ingestDistill(path.join(outDir, tr));
+        const ingestOut = ingestRes.raw;
         log(`[distill] ${ingestOut.trim().split('\n').slice(-4).join('\n')}`);
-        const m = ingestOut.match(/drafted UNPROVEN gene (gene_distilled_\w+)/);
-        if (m) {
-          const gene = m[1];
+        // 直接用 engine 返回的 geneId（两后端统一契约）——不再依赖对 CLI 输出文本的正则解析
+        if (ingestRes.geneId) {
+          const gene = ingestRes.geneId;
           if (opts.autoApprove) {
-            runCli(EVOLVER_ENTRY, ['review', '--approve', gene], { silent: true, allowFail: true });
+            engine.approve(gene);
             log(`[gate] 自动审核通过 ${gene}（--auto-approve）`);
           } else {
             log(`\n🔒 人工审核门：请审阅后执行\n  node_modules/.bin/evolver review --approve ${gene}\n（通过后将注入下一轮）`);
@@ -343,17 +373,18 @@ for (let r = 1; r <= opts.rounds; r++) {
 
               if (refined && isRepairLike(refined)) {
                 const oneLine = refined.replace(/\r?\n+/g, ' ').replace(/"/g, "'");
-                const dOut = runCli(EVOLVER_ENTRY,
-                  ['distill', '--category', 'repair', '--signals', 'read,bash,exception',
-                   '--strategy', oneLine, '--summary', 'LLM-refined repair (guard-triggered)'],
-                  { mergeStderr: true });
+                const dmRes = engine.distillManual({
+                  category: 'repair', signals: 'read,bash,exception',
+                  strategy: oneLine, summary: 'LLM-refined repair (guard-triggered)',
+                });
+                const dOut = dmRes.raw;
                 log(`[llm-refine] LLM 精修 strategy 已蒸馏: ${dOut.trim().split('\n').slice(-2).join(' | ').slice(0, 200)}`);
-                const gm = dOut.match(/gene_[a-z0-9_]+/);
-                if (gm && opts.autoApprove) {
-                  runCli(EVOLVER_ENTRY, ['review', '--approve', gm[0]], { silent: true, allowFail: true });
-                  log(`[llm-refine] 已自动审核通过 ${gm[0]}（--auto-approve）`);
-                } else if (gm) {
-                  log(`[llm-refine] 人工审核门：node_modules/.bin/evolver review --approve ${gm[0]}`);
+                const gmId = dmRes.geneId;
+                if (gmId && opts.autoApprove) {
+                  engine.approve(gmId);
+                  log(`[llm-refine] 已自动审核通过 ${gmId}（--auto-approve）`);
+                } else if (gmId) {
+                  log(`[llm-refine] 人工审核门：evolver review --approve ${gmId}  （或 light 后端：直接审阅 {store}/review.jsonl）`);
                 }
               } else {
                 log('[llm-refine] LLM 输出为空或仍无修法信号，保留原状（守卫兜底：不注入噪声）');
