@@ -21,8 +21,12 @@ git clone https://github.com/stwhwing/pi-evox-lab.git && cd pi-evox-lab
 npm install            # @evomap/evolver（必需）+ @earendil-works/pi-coding-agent（仅实验模式 C 需要）
 ```
 
-- **流程 A/B（召回与沉淀）**：只需 `@evomap/evolver`（基因库 `~/.evomap/assets/` 跨会话共享）。
-- **流程 C（受控实验）**：另需 Pi CLI 与一个 OpenAI 兼容 LLM key（provider 配置见下文）。
+- **双后端（0.11.0 起）**：`npm install` 与 evolver 均**可选**——
+  - 未安装 evolver 时，自动使用**内置 light 后端**（纯 Node 内置模块，零 npm 依赖，MIT）；
+  - 已安装 evolver 时，默认使用 evolver 后端（可用 `--engine light|evolver` 强制切换）；
+  - 两后端**共享同一资产库格式**（schema 1.13.0），产物可互操作、无需迁移。
+- **流程 A/B（召回与沉淀）**：零 npm 依赖即可运行（light 后端）；入库由内置蒸馏器完成。
+- **流程 C（受控实验）**：需要 Pi CLI 与一个 OpenAI 兼容 LLM key（provider 配置见 `docs/providers.md`）。
 
 以下命令均在本仓库根目录执行（`SKILL.md` 所在目录）。
 
@@ -87,7 +91,8 @@ node_modules/.bin/evolver review --approve <distill 输出的 gene_id>
 ```
 
 - strategy 必须写成**可执行修法**（含具体参数/命令），不要写成功总结——召回侧有修法守卫，成功总结会被过滤（宁缺毋滥）；
-- `--approve` 是否自动化由你的部署策略决定：单用户环境可自动（召回守卫兜底防噪声），多人/严谨场景保留人工审核门。
+- `--approve` 是否自动化由你的部署策略决定：单用户环境可自动（召回守卫兜底防噪声），多人/严谨场景保留人工审核门；
+- **light 后端等价操作**：`node -e "import('./code/engine/light/ledger.mjs').then(m=>console.log(m.approve('<gene_id>')))"`（或直接编辑 `review.jsonl` 追加 `{"assetId":"…","state":"approved"}`）。
 
 ## 流程 C（可选）：受控闭环实验 — 量化继承收益
 
