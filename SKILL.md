@@ -21,40 +21,17 @@ git clone https://github.com/stwhwing/pi-evox-lab.git && cd pi-evox-lab
 npm install            # @evomap/evolver（必需）+ @earendil-works/pi-coding-agent（仅实验模式 C 需要）
 ```
 
-- **双后端（0.11.0 起）**：`npm install` 与 evolver 均**可选**——
-  - 未安装 evolver 时，自动使用**内置 light 后端**（纯 Node 内置模块，零 npm 依赖，MIT）；
-  - 已安装 evolver 时，默认使用 evolver 后端（可用 `--engine light|evolver` 强制切换）；
-  - 两后端**共享同一资产库格式**（schema 1.13.0），产物可互操作、无需迁移。
-- **流程 A/B（召回与沉淀）**：零 npm 依赖即可运行（light 后端）；入库由内置蒸馏器完成。
+- **默认后端 = 内置 light（0.12.0 起）**：零 npm 依赖即可运行召回/沉淀全流程（纯 Node 内置模块，MIT）；
+- **evolver 为可选集成**：已安装时可用 `--engine evolver` 启用（`--engine auto` 为旧行为：检测到即用）；
+- 两后端**共享同一资产库格式**（schema 1.13.0），产物可互操作、无需迁移。
 - **流程 C（受控实验）**：需要 Pi CLI 与一个 OpenAI 兼容 LLM key（provider 配置见 `docs/providers.md`）。
 
 以下命令均在本仓库根目录执行（`SKILL.md` 所在目录）。
 
-## Provider 配置示例（含国内可用端点）
+## Provider 配置（精简指引）
 
-Pi 支持任意 OpenAI 兼容端点。以 `~/.pi/agent/models.json` 为例：
-
-```json
-{
-  "providers": {
-    "my-provider": {
-      "baseUrl": "https://<你的端点>/v1",
-      "apiKey": "$MY_API_KEY",
-      "models": ["<model-id>"]
-    }
-  }
-}
-```
-
-- **国内 OpenAI 兼容端点**（按其文档填 baseUrl 与模型名）：DeepSeek（`https://api.deepseek.com/v1`）、阿里云百炼、硅基流动、智谱等；
-- **`$ENV` 插值版本差异**：pi **0.85.1 起支持**；0.74.2 及更早需用 `--api-key "$MY_KEY"` 显式传（见 FAQ Q2）；
-- **内置 provider 示例**（deepseek 已内置，无需 models.json）：
-  ```bash
-  node code/pi_evolve.mjs <模板目录> <任务文本> \
-      --provider deepseek --model deepseek-v4-flash \
-      --api-key "$DEEPSEEK_API_KEY" --rounds 2 --fresh --auto-approve
-  ```
-- **npm 国内镜像**（安装慢时）：`npm config set registry https://registry.npmmirror.com`
+- 支持任意 OpenAI 兼容端点；`$ENV` 插值需 **pi ≥ 0.85.1**（旧版用 `--api-key` 显式传）；
+- 完整 models.json 示例、国内端点（DeepSeek/百炼/硅基流动/智谱）与 deepseek 内置 provider 用法：[`docs/providers.md`](docs/providers.md)。
 
 ## 流程 A：任务开始 — 召回经验（任何非平凡任务）
 
@@ -92,7 +69,14 @@ node_modules/.bin/evolver review --approve <distill 输出的 gene_id>
 
 - strategy 必须写成**可执行修法**（含具体参数/命令），不要写成功总结——召回侧有修法守卫，成功总结会被过滤（宁缺毋滥）；
 - `--approve` 是否自动化由你的部署策略决定：单用户环境可自动（召回守卫兜底防噪声），多人/严谨场景保留人工审核门；
-- **light 后端等价操作**：`node -e "import('./code/engine/light/ledger.mjs').then(m=>console.log(m.approve('<gene_id>')))"`（或直接编辑 `review.jsonl` 追加 `{"assetId":"…","state":"approved"}`）。
+- **内置后端（默认）的沉淀/审核命令**（零依赖）：
+  ```bash
+  node code/light-cli.mjs distill --signals bash,encoding-error \
+       --strategy "用 encoding='gbk' 读取文件" --summary "GBK 文件按 utf-8 解码失败"
+  node code/light-cli.mjs approve <gene_id>     # 审核通过（可注入）
+  node code/light-cli.mjs list                  # 查看台账
+  ```
+  （若已安装可选集成 evolver，也可继续使用 `evolver distill` / `evolver review --approve`。）
 
 ## 流程 C（可选）：受控闭环实验 — 量化继承收益
 
@@ -142,12 +126,11 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 - 错误统计用精确口径（`isError=true` 的 toolResult），不要用字符串计数（文本提及会混入）；
 - token 对比必须扣除重复执行效应基线（实测 ≈ -22%）——绝对降幅 ≠ 继承收益。
 
-## 许可提示（商业使用前必读）
+## 许可提示（精简版）
 
-- **本包（pi-evox-lab）**：MIT（见 LICENSE / package.json）。
-- **上游依赖**：`@evomap/evolver` 为 **GPL-3.0-or-later**（其 npm 元数据与实际许可不一致，以仓库声明为准）；**在商业/闭源场景使用本 skill 时，请自行评估 GPL 传染性**。`@earendil-works/pi-coding-agent` 为 MIT。
-- 本包通过 CLI 进程边界调用 evolver（不链接其代码），但仍建议法务视角复核后再商用。
-
+- **本包为 MIT 全栈**（默认后端是内置 light 引擎，无外部依赖）；
+- `@evomap/evolver` 为**可选集成**（GPL-3.0-or-later）——仅在主动安装并使用 `--engine evolver` 时涉及；
+- 详细说明与上游许可核对记录：[`docs/security-and-license.md`](docs/security-and-license.md)。
 
 ## 常见错误用法（反模式速查）
 
@@ -160,16 +143,11 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 | 冷启动就期待避坑效果 | 空库无修法可召回，误判工具无效 | 先按流程 B 沉淀，价值随使用复利增长 |
 | 在生产环境开 `--auto-approve --llm-refine` | 未复核的 LLM 重写内容直接注入 | 保留人工审核门；确需演示时加 `--allow-unreviewed-refine` 并知悉风险 |
 
-## 安全与数据外发声明（发布前必读）
+## 安全与数据外发声明（精简版，全文见 [`docs/security-and-license.md`](docs/security-and-license.md)）
 
-- **无 shell 执行（0.7.0 起）**：全部 CLI 调用改为 argv 数组形式的 `node <入口>` 直调，**不经 shell、无字符串拼接**，命令注入面已从架构上消除；`--llm-refine` 的外发改用 Node 原生 `fetch`（不再依赖 curl）；
-- **`--llm-refine` 涉及数据外发**：会把会话 transcript（截 9000 字符）发送到 `EVOLVER_REFINE_URL` 指定的外部端点。**未配置该变量时此功能自动禁用**，不存在默认外发。请在了解外发范围后启用，或使用本地/自有端点；
-- **`--fresh` 有破坏性**：备份后清空全局经验库 `~/.evomap/assets/`——执行前确认，恢复用备份目录；
-- **实验产物含会话内容**：`--root` 目录下的 sessions/transcript/inject-*.txt 包含任务文本、代码与工具输出，注意保管；
-- **`--auto-approve` 为显式 opt-in**：默认保留人工审核门（quarantined 基因不生效），开启后由召回/沉淀双向守卫兜底；
-- **注入块透明标注**：所有注入内容均带 `[Evolver inherited fixes]` 明示来源，无隐蔽指令；扩展留痕文件 `bridge-last-inject.txt` 仅含时间戳与注入内容（不含路径）；
-- **adapter 默认脱敏 cwd**：transcript 头部的 env_fingerprint 默认不含工作目录（可泄露项目/客户身份），实验确需时显式传 `--include-cwd`；
-- **关于安全扫描器**：本 skill 的核心功能（持久化并复用模型生成的经验）会被启发式扫描器持续标记为 Excessive Agency / Prompt Injection——这是功能本质而非缺陷。我们的安全基线 = 显式 opt-in 标志 + 双向守卫 + 透明标注 + 默认人工审核门；`--auto-approve --llm-refine` 组合启用时编排器会打印强警告。
+- 全部 CLI 调用为 **argv 直调**（无 shell、无拼接）；外发仅 `--llm-refine`（默认禁用、需显式配置端点）；
+- `--fresh` 有破坏性（自动备份）；实验产物含会话内容；`--auto-approve` 为显式 opt-in（默认人工审核门）；
+- 注入块透明标注、全局输出脱敏（密钥不出现在任何 stdout）；平台安全判定记录见上方链接文档。
 
 ## 已知边界
 
@@ -190,8 +168,9 @@ pi **0.85.1 起已支持 `$ENV` 插值**（实测确认，上游 issue #9258 已
 **Q4：修法注入后还是踩坑了，为什么？**
 修法注入是软提示（system prompt），遵从度模型相关——它把「多次试错」压成「最多一次教训」，但不承诺 100% 避坑（诚实边界见报告 §22）。
 
-**Q5：召唤/沉淀时报 evolver 命令找不到？**
-确认在仓库根目录执行（`node_modules/.bin/` 下有 evolver），或先跑 `npm install`。
+**Q5：沉淀/审核时报「命令找不到」？**
+默认后端（light）无需任何外部命令——用 `node code/light-cli.mjs distill|approve|list`；
+若在用 evolver 集成（`--engine evolver`），则需先 `npm install` 使其 CLI 就位。
 
 **Q6：approve 能全自动吗？**
 可以（`--auto-approve` 或部署时授权），默认是人工审核门。自动化后召回/沉淀双向守卫仍兜底，但建议定期 `evolver review --list` 复查。
