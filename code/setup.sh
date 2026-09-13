@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # setup.sh — Pi × EvoX Loop 一键安装/自检（评测建议：降低开箱即用门槛）
 # 用法：
-#   bash code/setup.sh          安装 + 全量自检（含 pi 可用性、召回冒烟）
+#   bash code/setup.sh          安装 + 全量自检（含依赖可用性、召回冒烟）
 #   bash code/setup.sh --demo   额外跑一次「隔离演示」：用临时经验库演示召回/沉淀闭环（不触碰真实库）
+# 说明：流程 A/B（召回/沉淀）零 npm 依赖即可运行（内置 light 引擎）；
+#       `npm install` 只为可选集成（evolver）与流程 C（实验，需 pi CLI）准备。
 set -u
 DEMO=0
 [ "${1:-}" = "--demo" ] && DEMO=1
@@ -29,9 +31,9 @@ if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
 
 # 3) npm 依赖
 if [ -x node_modules/.bin/evolver ]; then
-  good "依赖已安装（evolver CLI 就位）"
+  good "可选集成就位（evolver CLI，--engine evolver 时使用）"
 else
-  say "npm install（首次约 30s；国内慢可先: npm config set registry https://registry.npmmirror.com）"
+  say "npm install（可选——仅为 evolver 集成与流程 C 准备；A/B 流程零依赖）"
   if npm install --ignore-scripts --no-fund --no-audit 2>&1 | tail -1; then
     [ -x node_modules/.bin/evolver ] && good "依赖安装完成" || warn "安装完成但 evolver CLI 缺失，请检查上方输出"
   else
