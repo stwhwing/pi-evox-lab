@@ -1,20 +1,23 @@
 {
   "name": "pi-evox-lab",
-  "version": "0.1.0",
+  "version": "0.12.0",
   "private": true,
-  "description": "Research harness: closed-loop experience inheritance between the Pi coding agent and the Evolver (GEP) self-evolution engine, with controlled experiments and a full measurement report.",
+  "description": "Experience-inheritance runtime for coding agents: recall validated fixes, deposit new ones, with a built-in zero-dependency engine (evolver optional) and a controlled experiment harness.",
   "type": "module",
   "scripts": {
     "trap:gbk": "python traps/make_encoding_trap.py",
     "trap:json": "python traps/make_json_trap.py",
-    "trap:type": "python traps/make_type_trap.py"
-  },
-  "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.74.2",
-    "@evomap/evolver": "2.0.30"
+    "trap:type": "python traps/make_type_trap.py",
+    "trap:crlf": "python traps/make_crlf_trap.py",
+    "trap:readonly": "python traps/make_readonly_trap.py",
+    "trap:nfd": "python traps/make_nfd_trap.py"
   },
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "optionalDependencies": {
+    "@earendil-works/pi-coding-agent": "0.74.2",
+    "@evomap/evolver": "2.0.30"
+  }
 }
