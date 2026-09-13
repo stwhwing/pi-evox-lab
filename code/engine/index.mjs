@@ -1,10 +1,10 @@
 /**
- * engine/index.mjs — 双后端统一接口（0.11.0）
+ * engine/index.mjs — 双后端统一接口
  *
- * 选择策略（默认 auto）：
- *   1) node_modules 下存在 evolver 入口 → 用 evolver 后端（行为与旧版一致）；
- *   2) 否则 → 用 light 后端（纯 Node 内置模块，零 npm 依赖）。
- * 可显式指定：selectEngine('light' | 'evolver' | 'auto')。
+ * 选择策略（0.12.0 起默认 light）：
+ *   - 'light'（默认）→ 内置后端（纯 Node 内置模块，零 npm 依赖）；
+ *   - 'evolver'      → 使用 node_modules 下的 evolver CLI（可选集成）；
+ *   - 'auto'         → 旧行为：检测到 evolver 用 evolver，否则 light。
  *
  * 存储层（genes/review 读写）两后端共用同一实现（格式兼容 schema 1.13.0），
  * 因此产物可互操作：light 写入的基因，evolver 可直接读取（反之亦然）。
@@ -18,17 +18,19 @@ import * as evolver from './evolver-bridge.mjs';
  * @param {'auto'|'light'|'evolver'} preference
  * @param {{ root: string, log?: (s: string) => void }} ctx
  */
-export function selectEngine(preference = 'auto', { root, log = () => {} } = {}) {
+export function selectEngine(preference = 'light', { root, log = () => {} } = {}) {
   const evolverOk = evolver.available(root);
   let name;
   if (preference === 'evolver') {
-    if (!evolverOk) throw new Error('指定 --engine evolver，但未找到 node_modules/@evomap/evolver（请先 npm install）');
+    if (!evolverOk) throw new Error('指定 --engine evolver，但未找到 node_modules/@evomap/evolver（请先 npm install，或改用内置 light 后端）');
     name = 'evolver';
-  } else if (preference === 'light') {
-    name = 'light';
-  } else {
+  } else if (preference === 'auto') {
+    // 旧行为（0.11.x）：检测 evolver 则用 evolver
     name = evolverOk ? 'evolver' : 'light';
     log(`[engine] auto 选择后端：${name}（evolver ${evolverOk ? '可用' : '不可用'}）`);
+  } else {
+    // 0.12.0 起默认：内置 light 后端（零 npm 依赖）
+    name = 'light';
   }
 
   const api = name === 'evolver'
