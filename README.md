@@ -58,16 +58,16 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
 
 ## 快速开始
 
-依赖：Node ≥ 22、Git Bash（Windows 下）、一个 OpenAI 兼容 LLM key、Python 3（仅陷阱生成器需要）。
+依赖：**Node ≥ 22**（召回/沉淀零 npm 依赖）；流程 C 实验另需一个 OpenAI 兼容 LLM key、Pi CLI（随 `npm install` 可选安装）与 Python 3（陷阱生成器）。
 
 ```bash
-# 1. 安装上游依赖（Pi + Evolver，版本为实测版本）
+# 0.（可选）安装上游依赖——仅流程 C 实验（Pi CLI）或启用 evolver 集成时需要；A/B 流程可跳过
 npm install   # 即 @earendil-works/pi-coding-agent@0.74.2 + @evomap/evolver@2.0.30
 
-# 2. 生成确定性陷阱 fixture（无效 UTF-8 字节）
+# 1. 生成确定性陷阱 fixture（无效 UTF-8 字节）
 python traps/make_encoding_trap.py
 
-# 2. 一条命令跑完整闭环（R1 踩坑 → 自动蒸馏 → 审核 → 修法注入 → R2 避坑 → 跨轮对比）
+# 2. 一条命令跑完整闭环（R1 踩坑 → 内置引擎蒸馏 → 审核 → 修法注入 → R2 避坑 → 跨轮对比）
 export AGNES_CN_API_KEY=sk-...   # 你的 OpenAI 兼容 key
 # （可选）LLM 精修端点——未配置时 --llm-refine 自动禁用（外发必须显式授权）
 export EVOLVER_REFINE_URL="https://<你的端点>/v1/chat/completions" EVOLVER_REFINE_MODEL="<model>"
@@ -109,7 +109,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 ## 许可提示
 
-本包 MIT。**上游依赖 [@evomap/evolver](https://www.npmjs.com/package/@evomap/evolver) 为 GPL-3.0-or-later**——商业/闭源场景使用前请评估 GPL 传染性（本包通过 CLI 进程边界调用，不链接其代码）；[pi-coding-agent](https://github.com/earendil-works/pi) 为 MIT。
+**本包为 MIT 全栈**（默认后端是内置 light 引擎，零外部依赖）。[@evomap/evolver](https://www.npmjs.com/package/@evomap/evolver)（GPL-3.0-or-later）为**可选集成**，仅在你主动安装并使用 `--engine evolver` 时涉及。[pi-coding-agent](https://github.com/earendil-works/pi) 为 MIT，仅流程 C 实验需要。
 
 ## License
 
