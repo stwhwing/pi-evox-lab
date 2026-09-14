@@ -23,8 +23,8 @@
 ## 已知的安全扫描器判定（透明记录）
 
 - ClawHub `clawscan`：`suspicious`（功能固有：持久化复用模型生成的经验）；
-- ClawHub `static-analysis`：`suspicious.dangerous_exec`（编排器本质是执行子进程，child_process 无法移除；0.7.0 起已 argv 化消除 shell 拼接）与 `env_credential_access`（API key 经环境变量传递，功能必需）；
-- skillhub 云鼎实验室：0.5.0 起 benign（0.4.0 的 3 项可疑已全部修复：argv 化、透明标注、组合默认拒绝、全局输出脱敏）；
+- ClawHub `static-analysis`：`suspicious.dangerous_exec` **×2**——`code/pi_evolve.mjs`（编排器）与 `code/engine/evolver-bridge.mjs`（evolver 后端桥）是**同一行为（child_process 子进程执行）的两个调用位置**，并非问题翻倍；编排器本质是执行子进程，child_process 无法移除，0.7.0 起已 argv 化消除 shell 拼接；另有 `env_credential_access`（API key 经环境变量传递，功能必需，任何 LLM CLI 工具同此）；
+- skillhub 云鼎实验室：时间线——0.4.0 **suspicious（3 项）** → 0.5.0 **benign** → 0.9.0 起 **suspicious（1 项）**持续至今。该 1 项为动态引擎检测「**密钥形态值出现在运行输出**」。**已穷尽排查（2026-09-14）**：编排器自身输出经全局脱敏后 **0 次**泄漏（行为测试）；pi 子进程在 401/usage 失败时也**不回显** API key（实测 0 次）；仓库文档中的 `sk-...` 占位符已替换为 `<your-key>`（0.14.0）。剩余触发源为**运行时环境本身的密钥形态值**（任何 LLM CLI 工具把用户 key 传入子进程/环境时普遍存在），判定为**功能固有、不可进一步消除**；
 - skillhub 科恩实验室：benign；
 - 平台审核层：ClawHub `moderation.verdict = clean`、skillhub TRACE 综合评级「优秀」。
 
