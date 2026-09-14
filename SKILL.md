@@ -149,6 +149,22 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 - `--fresh` 有破坏性（自动备份）；实验产物含会话内容；`--auto-approve` 为显式 opt-in（默认人工审核门）；
 - 注入块透明标注、全局输出脱敏（密钥不出现在任何 stdout）；平台安全判定记录见上方链接文档。
 
+## 运维与度量（ops）
+
+本仓库附带 3 个零依赖运维脚本（`code/` 下），用于在生产环境观测「经验继承」是否真正生效。所有私有绝对路径已参数化为环境变量（默认值见下），克隆到任意自托管环境即可直接使用。
+
+| 脚本 | 作用 | 默认触发 |
+|------|------|----------|
+| `metrics_collect.mjs` | 采集基因库指标：基因总数 / 已审核 / 隔离 / 命中数，以及 Hermes 使用计数；追加到 `exp/metrics/metrics.log` | 周常 |
+| `distill_sessions.mjs` | 生产会话蒸馏**诊断**适配器：扫描 OpenClaw/Hermes 近期会话，统计含「失败→修复」可蒸馏对。**默认 `--dry-run` 只报告不写库** | 周常 |
+| `evox-weekly.sh` | 周常包装：先跑 `metrics_collect.mjs`，再跑 `distill_sessions.mjs --days 7 --dry-run` | cron `17 3 * * 1` |
+
+环境变量（均可选，公共仓库已去除硬编码绝对路径）：`EVOX_ROOT`（默认 `$HOME/pi-evox-lab`）、`EVOX_STORE_DIR`（默认 `$HOME/.evomap/assets`）、`EVOX_NODE`（默认 `node`）、`EVOX_HERMES_USAGE` / `EVOX_HERMES_SESSIONS` / `EVOX_OC_SESSIONS` 等。
+
+**生产接入（让继承真正发生）**：建议将「任务开始 recall / 修复后 deposit」写入智能体系统提示词（如 OpenClaw `AGENTS.md`、Hermes `SOUL.md`），使技能在真实任务中被主动调用；周常 `metrics.log` 随后会捕获 `genes/approved/hits` 的增长，作为继承生效的证据。
+
+> **诚实边界**：当前生产会话形态下 `distillablePairs=0`——Hermes `request_dump` 是单条出站请求、按构造不含「失败→修复」叙述，OpenClaw 会话为 `.zst` 压缩需 `zstd` + 已知 schema。因此 `distill_sessions.mjs` 仅作诊断、不自动写库；真实基因来自 agent 修复后的 manual deposit（流程 B）。
+
 ## 已知边界
 
 - 修法注入是**软提示**（system prompt），遵从度模型相关；守卫保证噪声不入库不出库，但不承诺 100% 避坑；
