@@ -56,6 +56,8 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
     └── adapter-design.md    # 适配器设计草案 + Pi Extensions API 预研
 ```
 
+> **运维与度量**：本仓库在 `code/` 下附带 3 个零依赖运维脚本（`metrics_collect.mjs` / `distill_sessions.mjs` / `evox-weekly.sh`）与周常 cron 接线，用于观测「经验继承」是否真正生效。详见 [`SKILL.md` 的「运维与度量」小节](SKILL.md#运维与度量ops)。
+
 ## 快速开始
 
 依赖：**Node ≥ 22**（召回/沉淀零 npm 依赖）；流程 C 实验另需一个 OpenAI 兼容 LLM key、Pi CLI（随 `npm install` 可选安装）与 Python 3（陷阱生成器）。
