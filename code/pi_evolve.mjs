@@ -60,6 +60,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--ext-inject') opts.extInject = true;
   else if (a === '--allow-unreviewed-refine') opts.allowUnreviewedRefine = true;
   else if (a === '--engine') opts.engine = process.argv[++i];
+  else if (a === '--strategy-format') opts.strategyFormat = process.argv[++i];
   else if (a === '--llm-refine') opts.llmRefine = true;
   else positional.push(a);
 }
@@ -162,7 +163,7 @@ function globJsonl(dir) {
  * 注入质量守卫：strategy 须命中「修法信号词」。
  * 规则已在 4 个真实历史样本上验证（§16 gbk修法✓ / §17 容错修法✓ / §20 成功总结✗ / §18 gb18030叙述✓）。
  */
-const REPAIR_SIGNAL_RE = /error|exception|traceback|failed|invalid|cannot|unable|missing|not found|wrong|instead|avoid|fix|encoding\s*[=:]|errors\s*=|utf-?8|gbk|gb18030|latin-1|\brb\b|except|skip/i;
+const REPAIR_SIGNAL_RE = /error|exception|traceback|failed|invalid|cannot|unable|missing|not found|wrong|instead|avoid|fix|encoding\s*[=:]|errors\s*=|utf-?8|gbk|gb18030|latin-1|\brb\b|except|skip|avoid\s*:|fix\s*:/i;
 const isRepairLike = (t) => REPAIR_SIGNAL_RE.test(t);
 
 /**
@@ -304,7 +305,9 @@ for (let r = 1; r <= opts.rounds; r++) {
     const out = runCli(SUMTOK, [sessDir], { silent: true });
     stats = JSON.parse(out);
   } catch (e) { log(`[round ${r}] sum_tokens 失败: ${String(e).slice(0, 200)}`); }
-  results.push({ round: r, injected: r > 1, stats });
+  // 0.13.0：injected 记录**实际是否注入了非空策略**（原先仅 r>1，会把"无基因可注入"误记为已注入）
+  const实际注入 = r > 1 && (injectArgs.length > 0 || (opts.extInject || extBridgeActive));
+  results.push({ round: r, injected: 实际注入, stats });
 
   // R1 之后：转换 + 蒸馏
   if (r === 1 && opts.rounds > 1) {
@@ -320,7 +323,7 @@ for (let r = 1; r <= opts.rounds; r++) {
       }
       const tr = globJsonl(outDir).find((f) => f.endsWith('.transcript.jsonl'));
       if (tr) {
-        const ingestRes = engine.ingestDistill(path.join(outDir, tr));
+        const ingestRes = engine.ingestDistill(path.join(outDir, tr), { strategyFormat: opts.strategyFormat ?? 'narrative' });
         const ingestOut = ingestRes.raw;
         log(`[distill] ${ingestOut.trim().split('\n').slice(-4).join('\n')}`);
         // 直接用 engine 返回的 geneId（两后端统一契约）——不再依赖对 CLI 输出文本的正则解析
