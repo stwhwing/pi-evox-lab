@@ -88,11 +88,88 @@ export function extractStrategy(msgs, limit = 3) {
     .map((x) => x.s.replace(/["'`]/g, "'"));
 }
 
+/**
+ * AVOID/FIX 双段式（0.13.0）：对齐论文《From Procedural Skills to Strategy Genes》
+ * (arXiv:2604.15097)——最优控制形态是「极度蒸馏后的独立 AVOID 警告」，而非叙述型修法。
+ * 目标：信号密度更高（≤60 词）、可直接约束行为。
+ */
+const AVOID_TEMPLATES = {
+  'encoding-error': "reading a non-UTF-8 (GBK/GB18030) file with the default utf-8 codec",
+  'permission-denied': "writing to a read-only path without restoring write permission first",
+  'file-not-found': "assuming a path exists before listing/verifying the directory",
+  'invalid-json': "parsing malformed JSON with a strict loader and no fallback",
+  'network-error': "calling an endpoint with no timeout/retry handling",
+  'syntax-error': "running a script without a syntax check right after editing it",
+  'type-or-value-error': "assuming a value's type instead of coercing/validating it",
+  'assertion-failed': "trusting unverified intermediate output",
+  unknown: 'repeating the first approach after it failed, instead of inspecting the error',
+};
+
+/** 从错误文本里抽取"具体对象"，**按信号族选择提取类型**（避免错位，如把修法里的 utf-8-sig 当成编码对象） */
+function concreteObject(errTexts, signals = []) {
+  const all = errTexts.join('\n');
+  const findFile = () => {
+    const m = all.match(/File "([^"]{3,60})"/) || all.match(/([\w.-]+\.(?:py|json|jsonl|txt|md|cfg|ini|yaml|yml|toml|sh|js|ts))/);
+    return m ? m[1].split(/[\\/]/).pop() : '';
+  };
+  const findEnc = () => {
+    // 只认"导致解码失败"的编码名：优先错误行里的编码，排除 utf-8-sig（那是解法）
+    const m = all.match(/\b(gbk|gb18030|gb2312|latin-?1)\b/i) || all.match(/\b(utf-?8-?sig)\b/i);
+    return m ? m[1] : '';
+  };
+  const findCmd = () => {
+    const m = all.match(/\b(nul|python3?|bash|curl|node)\b/);
+    return m ? m[1] : '';
+  };
+  let obj = '';
+  if (signals.includes('encoding-error')) obj = findEnc() || findFile();
+  else if (signals.includes('file-not-found')) obj = findFile();
+  else obj = findFile() || findCmd();
+  return obj ? ` (${obj})` : '';
+}
+
+/** 把修法句压成可执行 FIX 片段：优先抽"动作子句"，退化为精简整句（≤40 词） */
+function condenseFix(sentence) {
+  let raw = String(sentence || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  // 1) 显式修法标记之后的内容（"fixed by …" / "fix: …" / "solution: …"）
+  const marker = raw.match(/(?:fixed by|resolved by|fix(?:ed)?[:—–-]|solution:|the fix(?: is| was)?[:]?)\s*(.{8,})$/i);
+  if (marker) raw = marker[1];
+  else {
+    // 2) 抽取含技术动作的片段（use/read with/open with/switch to/pass/set/chmod + 参数）
+    const act = raw.match(/(?:^|[,;—–-]\s*)((?:use|read|open|switch|pass|set|specify|convert|chmod|decode|parse|re-?run)[^.;]{8,140})/i);
+    if (act) raw = act[1];
+    else {
+      // 3) 去噪声开头（Let me / Done / The file uses X rather than Y，which caused…）
+      raw = raw
+        .replace(/^(let me|i'?ll|i will|done\.?|here(?:'s| is)[^:]*:)\s*/i, '')
+        .replace(/^the (?:file|script|issue|problem|key fix)[^—–]*?(?:caused|because|since)[^—–]*?[—–]\s*/i, '')
+        .replace(/^[,;:\s]+/, '');
+    }
+  }
+  const words = raw.split(' ').filter(Boolean);
+  return words.length > 40 ? words.slice(0, 40).join(' ') + '…' : words.join(' ');
+}
+
+/** 产出 AVOID/FIX 双段式 strategy（信号密度优先） */
+export function formatAvoidFix(errTexts, fixSentence, signals = []) {
+  const fam = signals.find((s) => AVOID_TEMPLATES[s]) ?? 'unknown';
+  const avoid = `AVOID: ${AVOID_TEMPLATES[fam]}${concreteObject(errTexts, signals)}.`;
+  const fix = `FIX: ${condenseFix(fixSentence) || 'curate a concrete fix (params/command/encoding).'}`;
+  return `${avoid} ${fix}`;
+}
+
 /** 组装 Gene（schema 1.13.0） */
-export function buildGene({ msgs, category = 'repair', strategy, summary, source }) {
+export function buildGene({ msgs, category = 'repair', strategy, summary, source, strategyFormat = 'narrative' }) {
   const digest = crypto.createHash('sha256').update(JSON.stringify(msgs)).digest('hex');
   const { signals } = extractSignals(msgs);
-  const strat = (strategy ?? extractStrategy(msgs)).slice(0, 3);
+  let strat = (strategy ?? extractStrategy(msgs)).slice(0, 3);
+  // 0.13.0：可选输出 AVOID/FIX 双段式（对齐论文 arXiv:2604.15097 的控制形态）。
+  // **默认仍为 narrative**——本地 A/B 未显示效应优势，且 AVOID 文本更长（实测 106 vs 61 字符），故不作为默认。
+  if (strategyFormat === 'avoid' && strat.length) {
+    const errTexts = msgs.filter((m) => m?.role === 'tool' && m?.is_error === true).map(textOf);
+    strat = [formatAvoidFix(errTexts, strat[0], signals), ...strat.slice(1)];
+  }
   return {
     type: 'Gene',
     schema_version: '1.13.0',
@@ -119,7 +196,7 @@ export function distillFromTranscript(transcriptPath, opts = {}) {
   if (st.errorCount === 0) {
     return { gene: null, raw: '[light-distill] no error signals in session (is_error count = 0) — Nothing stored' };
   }
-  const gene = buildGene({ msgs, category: opts.category ?? 'repair', source: 'light-distill' });
+  const gene = buildGene({ msgs, category: opts.category ?? 'repair', source: 'light-distill', strategyFormat: opts.strategyFormat ?? 'narrative' });
   const raw = `[light-distill] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined\n            signals_match: ${gene.signals_match.join(', ')}\n            errors seen: ${st.errorCount}`;
   return { gene, raw };
 }
