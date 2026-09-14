@@ -68,7 +68,7 @@ npm install   # 即 @earendil-works/pi-coding-agent@0.74.2 + @evomap/evolver@2.0
 python traps/make_encoding_trap.py
 
 # 2. 一条命令跑完整闭环（R1 踩坑 → 内置引擎蒸馏 → 审核 → 修法注入 → R2 避坑 → 跨轮对比）
-export AGNES_CN_API_KEY=sk-...   # 你的 OpenAI 兼容 key
+export AGNES_CN_API_KEY="<your-key>"   # 你的 OpenAI 兼容 key
 # （可选）LLM 精修端点——未配置时 --llm-refine 自动禁用（外发必须显式授权）
 export EVOLVER_REFINE_URL="https://<你的端点>/v1/chat/completions" EVOLVER_REFINE_MODEL="<model>"
 node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
@@ -106,6 +106,16 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 5. pi 侧编排 DX 两则：models.json `$ENV` 插值不生效（401 字面量）+ `./package.json` 未导出 → [earendil-works/pi#9258](https://github.com/earendil-works/pi/issues/9258)
 
 如果本研究对你的工作有帮助，也请给上面两个上游项目点 star——它们是真正的主角。
+
+## 项目状态（2026-09-14）
+
+| 项 | 状态 |
+|---|---|
+| 当前版本 | 0.13.1（版本轨迹：0.3.0 首发 → 0.13.1，共 15 个发布） |
+| 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
+| ClawHub | moderation **clean**；clawscan 剩余 findings 均为功能固有（已文档化） |
+| skillhub | TRACE「优秀」；科恩实验室 **benign**；云鼎剩余 1 项动态检测（密钥形态值出现在运行输出——LLM 工具普遍特征，已做全局输出脱敏，详见安全文档） |
+| 上游 | 4+1 项缺口已提交官方 issue（evolver #624-#627、pi #9258）；核心运行时不依赖其回应 |
 
 ## 许可提示
 
