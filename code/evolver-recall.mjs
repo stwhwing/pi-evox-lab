@@ -22,6 +22,15 @@ const EVO_GENES = path.join(EVO_STORE, 'genes.jsonl');
 const EVO_REVIEW = path.join(EVO_STORE, 'review.jsonl');
 const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experiments');
 const HITS_FILE = path.join(HITS_DIR, 'hits.jsonl');
+const RECALL_CALLS_FILE = path.join(HITS_DIR, 'recall_calls.jsonl');
+
+/** 埋点：记录一次 recall 调用（仅 recall 模式，不含 register-hit），用于度量"技能是否在真实任务中被主动调用"。写失败不影响主流程。 */
+function recordRecallCall() {
+	try {
+		fs.mkdirSync(HITS_DIR, { recursive: true });
+		fs.appendFileSync(RECALL_CALLS_FILE, JSON.stringify({ ts: new Date().toISOString(), mode: 'recall' }) + '\n');
+	} catch { /* 写失败不影响 recall 主流程 */ }
+}
 
 const REPAIR_SIGNAL_RE =
 	/error|exception|traceback|failed|invalid|cannot|unable|missing|not found|wrong|instead|avoid|fix|encoding\s*[=:]|errors\s*=|utf-?8|gbk|gb18030|latin-1|\brb\b|except|skip/i;
@@ -86,6 +95,7 @@ function registerHit(n, note) {
 }
 
 function recall() {
+	recordRecallCall();
 	const all = readJsonl(EVO_GENES);
 	const approved = approvedAssetIds();
 	const list = recallList();

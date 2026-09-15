@@ -14,6 +14,7 @@ const genes = countLines(path.join(STORE,'genes.jsonl'));
 const approved = countState(path.join(STORE,'review.jsonl'),'approved');
 const quarantined = countState(path.join(STORE,'review.jsonl'),'quarantined');
 const hits = countLines(path.join(ROOT,'experiments/hits.jsonl'));
+const recallCalls = countLines(path.join(ROOT,'experiments/recall_calls.jsonl'));
 let hermes = 'absent';
 try {
   const u = JSON.parse(fs.readFileSync(process.env.EVOX_HERMES_USAGE || path.join(HOME, '.hermes/skills/.usage.json'),'utf8'));
@@ -21,7 +22,7 @@ try {
   hermes = e ? 'view='+(e.view_count??0)+' use='+(e.use_count??0)+' last='+(e.last_used_at??'never') : 'absent';
 } catch {}
 const ts = new Date().toISOString();
-const line = ts+' genes='+genes+' approved='+approved+' quarantined='+quarantined+' hits='+hits+' hermes=['+hermes+']';
+const line = ts+' genes='+genes+' approved='+approved+' quarantined='+quarantined+' hits='+hits+' recallCalls='+recallCalls+' hermes=['+hermes+']';
 fs.mkdirSync(path.dirname(LOG), {recursive:true});
 fs.appendFileSync(LOG, line+'\n');
 console.log(line);

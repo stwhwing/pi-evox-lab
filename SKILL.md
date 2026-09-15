@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.0
+version: 0.14.1
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -99,7 +99,7 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 ```
 
 - `--fresh` 会清空经验库（自动备份）——执行前确认；
-- Pi 扩展桥（`code/evolver-bridge.ts`，放 `~/.pi/agent/extensions/` 或项目 `.pi/extensions/`）激活后，编排器自动切换为扩展注入（单通道），并附带 tool_result 失败点教学。
+- Pi 扩展桥（`code/evolver-bridge.ts`，放 `~/.pi/agent/extensions/` 或项目 `.pi/extensions/`）激活后，编排器自动切换为扩展注入（单通道）。**能力边界（透明声明，避免误读）**：当前 `evolver-bridge.ts` 已实现 `before_agent_start` 召回注入（读取已审核基因的 strategy 拼入系统提示）；`tool_result` 失败点教学属于**规划中的增强能力**，并非当前 bridge 已实现的行为——本 SKILL.md 对该通道的描述均为「规划/可选」，不代表已上线。
 
 ## 陷阱设计纪律（做实验前必读）
 
@@ -155,11 +155,11 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 
 | 脚本 | 作用 | 默认触发 |
 |------|------|----------|
-| `metrics_collect.mjs` | 采集基因库指标：基因总数 / 已审核 / 隔离 / 命中数，以及 Hermes 使用计数；追加到 `exp/metrics/metrics.log` | 周常 |
+| `metrics_collect.mjs` | 采集基因库指标：基因总数 / 已审核 / 隔离 / 命中数 / **recall 调用数**（智能体是否在真实任务中主动调用本技能的直接证据），以及 Hermes 使用计数；追加到 `exp/metrics/metrics.log` | 周常 |
 | `distill_sessions.mjs` | 生产会话蒸馏**诊断**适配器：扫描 OpenClaw/Hermes 近期会话，统计含「失败→修复」可蒸馏对。**默认 `--dry-run` 只报告不写库** | 周常 |
 | `evox-weekly.sh` | 周常包装：先跑 `metrics_collect.mjs`，再跑 `distill_sessions.mjs --days 7 --dry-run` | cron `17 3 * * 1` |
 
-环境变量（均可选，公共仓库已去除硬编码绝对路径）：`EVOX_ROOT`（默认 `$HOME/pi-evox-lab`）、`EVOX_STORE_DIR`（默认 `$HOME/.evomap/assets`）、`EVOX_NODE`（默认 `node`）、`EVOX_HERMES_USAGE` / `EVOX_HERMES_SESSIONS` / `EVOX_OC_SESSIONS` 等。
+环境变量（均可选，公共仓库已去除硬编码绝对路径）：`EVOX_ROOT`（默认 `$HOME/pi-evox-lab`）、`EVOX_STORE_DIR`（默认 `$HOME/.evomap/assets`）、`EVOX_NODE`（默认 `node`）、`EVOX_HITS_DIR`（默认 `$cwd/experiments`，**生产环境建议固定为 `$EVOX_ROOT/experiments`**，使 recall 调用计数与命中登记落入同一目录供 metrics_collect 汇总）、`EVOX_HERMES_USAGE` / `EVOX_HERMES_SESSIONS` / `EVOX_OC_SESSIONS` 等。
 
 **生产接入（让继承真正发生）**：建议将「任务开始 recall / 修复后 deposit」写入智能体系统提示词（如 OpenClaw `AGENTS.md`、Hermes `SOUL.md`），使技能在真实任务中被主动调用；周常 `metrics.log` 随后会捕获 `genes/approved/hits` 的增长，作为继承生效的证据。
 
