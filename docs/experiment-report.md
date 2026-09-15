@@ -270,7 +270,7 @@ N≥5 复跑 / 换陷阱换模型泛化 / Capsule 固化（cycle+runner）/ Rout
 - 主循环：每轮 `cp 模板→rN` → Pi 执行（`--session-dir`，R>1 时 `--append-system-prompt "$(cat inject-rN.txt)"` 注入已审核基因）→ `sum_tokens.js` 聚合 token/工具调用/错误数。
 - R1 之后：adapter 转换 session → `evolver ingest --distill` 自动起草 gene；命中 `gene_distilled_xxx` 则按 `--auto-approve` 决定自动 `review --approve`（全自动化演示）或打印人工审核门命令（默认保留人工把关）。
 - `--fresh`：运行前备份 `~/.evomap/assets` 到 `backup-<ts>` 并清空（单变量控制，隔离历史资产）。
-- 路径契约修正（本轮实测发现并修复的两处真 bug）：工作目录含空格（`Pi × EvoX 项目`），原脚本对 `cat` 的入参**未加引号**，在含空格路径下会断裂；改为 `path.replace(/\\/g,'/')` 转 posix 并对 `cat "..."` 双引号包裹。另：调用方原先用 `/tmp/bom_task.txt`，Windows 下 bash 写入路径与 Node `readFileSync` 解析路径不一致（`C:\tmp\...` ENOENT）；改为 Windows 绝对路径 `C:/.../evolver-lab/exp/bom_task.txt`，bash 与 Node 两边解析一致。
+- 路径契约修正（本轮实测发现并修复的两处真 bug）：工作目录含空格（`Pi × EvoX 项目`），原脚本对 `cat` 的入参**未加引号**，在含空格路径下会断裂；改为 `path.replace(/\\/g,'/')` 转 posix 并对 `cat "..."` 双引号包裹。另：调用方原先用临时路径存放任务文件，Windows 下 bash 写入路径与 Node `readFileSync` 解析路径不一致（临时目录 ENOENT）；改为项目内 Windows 绝对路径 `C:/.../evolver-lab/exp/bom_task.txt`，bash 与 Node 两边解析一致。
 
 ### 14.3 端到端验证（BOM 陷阱，--fresh --auto-approve --rounds 2）[A]
 实测输出（工作区 `exp/loop-1788606387351`）：
