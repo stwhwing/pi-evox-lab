@@ -46,8 +46,8 @@ export function selectEngine(preference = 'light', { root, log = () => {} } = {}
       }
     : {
         name,
-        ingestDistill: (transcriptPath) => {
-          const { gene, raw } = lightDistill.distillFromTranscript(transcriptPath);
+        ingestDistill: (transcriptPath, disOpts = {}) => {
+          const { gene, raw } = lightDistill.distillFromTranscript(transcriptPath, disOpts);
           if (!gene) return { geneId: null, raw }; // 无错误信号：不起草（对齐 evolver 语义）
           // 写入库并登记 quarantined（等价 evolver 的起草态）
           const written = store.appendGene(gene);

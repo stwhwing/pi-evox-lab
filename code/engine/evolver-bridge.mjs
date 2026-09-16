@@ -47,7 +47,8 @@ export function distillManual(root, { category = 'repair', signals = 'read,bash,
 
 /** 注入块（evolver inject session-start；仅含 summary 标签，真正可执行的修法由调用方另行拼装） */
 export function injectSessionStart(root) {
-  return runCli(root, ['inject', '--session-start'], { silent: true, allowFail: true }) || '';
+  // 注意：evolver 的正确用法是子命令 + 位置参数（inject session-start），不是 --session-start
+  return runCli(root, ['inject', 'session-start'], { silent: true, allowFail: true }) || '';
 }
 
 /** 审核通过（台账写入） */

@@ -8,13 +8,17 @@ const HOME = process.env.HOME || (process.env.USERPROFILE || '/root');
 const ROOT = process.env.EVOX_ROOT || path.join(HOME, 'pi-evox-lab');
 const STORE = process.env.EVOX_STORE_DIR || path.join(HOME, '.evomap', 'assets');
 const LOG = path.join(ROOT, 'exp/metrics/metrics.log');
+// 与 evolver-recall.mjs 对齐：命中/召回埋点统一走 EVOX_HITS_DIR，缺省回退 cwd/experiments，
+// 避免 metrics_collect 在 WORKDIR≠$HOME/pi-evox-lab（如 Windows 工作副本）时读到错误路径，
+// 导致 recallCalls/hits 计数恒为 0（实际埋点文件已在 cwd/experiments/ 正常增长）。
+const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experiments');
 const countLines = (p) => { try { return fs.readFileSync(p,'utf8').split('\n').filter(l=>l.trim()).length; } catch { return 0; } };
 const countState = (p, s) => { try { return fs.readFileSync(p,'utf8').split('\n').filter(l=>l.trim() && l.includes('"state":"'+s+'"')).length; } catch { return 0; } };
 const genes = countLines(path.join(STORE,'genes.jsonl'));
 const approved = countState(path.join(STORE,'review.jsonl'),'approved');
 const quarantined = countState(path.join(STORE,'review.jsonl'),'quarantined');
-const hits = countLines(path.join(ROOT,'experiments/hits.jsonl'));
-const recallCalls = countLines(path.join(ROOT,'experiments/recall_calls.jsonl'));
+const hits = countLines(path.join(HITS_DIR,'hits.jsonl'));
+const recallCalls = countLines(path.join(HITS_DIR,'recall_calls.jsonl'));
 let hermes = 'absent';
 try {
   const u = JSON.parse(fs.readFileSync(process.env.EVOX_HERMES_USAGE || path.join(HOME, '.hermes/skills/.usage.json'),'utf8'));
