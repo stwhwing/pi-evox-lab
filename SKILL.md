@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.2
+version: 0.14.3
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -36,10 +36,15 @@ npm install            # @evomap/evolver（必需）+ @earendil-works/pi-coding-
 ## 流程 A：任务开始 — 召回经验（任何非平凡任务）
 
 ```bash
+# 推荐：带上任务文本做「对靶」召回（与任务无关的经验不会注入）
+node code/evolver-recall.mjs --query "<当前任务的一句话/关键信号>" --top 5
+
+# 不带查询时：按入库顺序取最近 5 条（仅数量封顶）
 node code/evolver-recall.mjs
 ```
 
-- 输出「已审核且通过修法守卫」的编号修法列表（空库有明确提示，属正常——价值随使用积累）；
+- 只输出「已审核 **且** 通过修法守卫 **且** 与查询对靶」的编号修法列表（空库有明确提示，属正常——价值随使用积累）；
+- **对靶规则**：按基因 `signals_match` 命中与查询词的交集打分，**低于阈值即整条不注入**（避免不对靶注入反而增加成本）；
 - 与本任务相关时优先采用；结束时实际采用了某条，登记命中（命中率盘点的数据源）：
 
 ```bash
@@ -151,19 +156,27 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 
 ## 运维与度量（ops）
 
-本仓库附带 3 个零依赖运维脚本（`code/` 下），用于在生产环境观测「经验继承」是否真正生效。所有私有绝对路径已参数化为环境变量（默认值见下），克隆到任意自托管环境即可直接使用。
+本仓库附带零依赖运维脚本（`code/` 下），用于在生产环境观测「经验继承」是否真正生效。所有私有绝对路径已参数化为环境变量（默认值见下），克隆到任意自托管环境即可直接使用。
 
 | 脚本 | 作用 | 默认触发 |
 |------|------|----------|
-| `metrics_collect.mjs` | 采集基因库指标：基因总数 / 已审核 / 隔离 / 命中数 / **recall 调用数**（智能体是否在真实任务中主动调用本技能的直接证据），以及 Hermes 使用计数；追加到 `exp/metrics/metrics.log` | 周常 |
-| `distill_sessions.mjs` | 生产会话蒸馏**诊断**适配器：扫描 OpenClaw/Hermes 近期会话，统计含「失败→修复」可蒸馏对。**默认 `--dry-run` 只报告不写库** | 周常 |
-| `evox-weekly.sh` | 周常包装：先跑 `metrics_collect.mjs`，再跑 `distill_sessions.mjs --days 7 --dry-run` | cron `17 3 * * 1` |
+| `metrics_collect.mjs` | 采集基因库指标：基因总数 / 已审核 / 隔离 / 命中数 / **recall 调用数**（智能体是否在真实任务中主动调用本技能的直接证据），追加到 `exp/metrics/metrics.log` | 周常 |
+| `distill_sessions.mjs` | 生产会话蒸馏适配器：直读宿主**真实会话存储**（SQLite），按「失败调用 vs 重试调用的**参数差异**」抽取可执行修法，过守卫后落库（见下「抽取口径」） | 周常 |
+| `evox-weekly.sh` | 周常包装：`metrics_collect.mjs` + `distill_sessions.mjs --days 7 --commit --auto-approve-lowrisk` | cron `17 3 * * 1` |
 
-环境变量（均可选，公共仓库已去除硬编码绝对路径）：`EVOX_ROOT`（默认 `$HOME/pi-evox-lab`）、`EVOX_STORE_DIR`（默认 `$HOME/.evomap/assets`）、`EVOX_NODE`（默认 `node`）、`EVOX_HITS_DIR`（默认 `$cwd/experiments`，**生产环境建议固定为 `$EVOX_ROOT/experiments`**，使 recall 调用计数与命中登记落入同一目录供 metrics_collect 汇总）、`EVOX_HERMES_USAGE` / `EVOX_HERMES_SESSIONS` / `EVOX_OC_SESSIONS` 等。
+**抽取口径（宁缺毋滥）**：先判定「失败」——**结构化标志优先于文本标记**（`isError` / 非零 `exit_code` / `error` 字段），且**文本错误标记只对命令执行类工具生效**（读一份「讲错误的文档」不算失败）；再在同一会话内找**紧接着（≤6 个事件）、同名工具、结果不再失败**的下一次调用，取两者**参数差异**作为修法。差异过大（整体换成另一条命令）或与失败无相似度者一律拒绝；落库前再过**修法信号 + 叙述守卫**双闸。
 
-**生产接入（让继承真正发生）**：建议将「任务开始 recall / 修复后 deposit」写入智能体系统提示词（如 OpenClaw `AGENTS.md`、Hermes `SOUL.md`），使技能在真实任务中被主动调用；周常 `metrics.log` 随后会捕获 `genes/approved/hits` 的增长，作为继承生效的证据。
+**两级门（B+C）**：`--commit` 落库时，仅**纯参数微调型**——改动不含删除/权限/服务/网络外发/装包/写盘/密钥类字样——自动批准；其余进 quarantine 并写入**候选报告** `exp/metrics/distill-candidates-<日期>.md`（内含可一次性批量批准的清单）。**内容去重**：`light-cli distill` 按归一化 strategy 判重，重复重扫不会堆积重复基因（历史基因的审核状态也不会被重扫打回）。
 
-> **诚实边界**：当前生产会话形态下 `distillablePairs=0`——Hermes `request_dump` 是单条出站请求、按构造不含「失败→修复」叙述，OpenClaw 会话为 `.zst` 压缩需 `zstd` + 已知 schema。因此 `distill_sessions.mjs` 仅作诊断、不自动写库；真实基因来自 agent 修复后的 manual deposit（流程 B）。
+**对靶注入**：`evolver-recall.mjs --query "<任务文本>" [--top N]` 按 `signals_match` 命中 + 与 strategy 的 token 交集打分，**低于阈值即不注入**（避免不对靶注入的净开销）；无 query 时按入库顺序取最近 N 条，仅做数量封顶（不再任意截断）。
+
+环境变量（均可选，公共仓库已去除硬编码绝对路径）：`EVOX_ROOT`（默认 `$HOME/pi-evox-lab`）、`EVOX_STORE_DIR`（默认 `$HOME/.evomap/assets`）、`EVOX_NODE`（默认 `node`）、`EVOX_HITS_DIR`（默认 `$cwd/experiments`，**生产环境建议固定为 `$EVOX_ROOT/experiments`**，使 recall 调用计数与命中登记落入同一目录供 metrics_collect 汇总）、`EVOX_OC_DB` / `EVOX_HERMES_DB`（宿主会话存储路径）等。
+
+**生产接入（让继承真正发生）**：两条路——
+1. **提示词接入**：把「任务开始 recall / 修复后 deposit」写入智能体系统提示词（如 `AGENTS.md` / `SOUL.md`）；
+2. **原生钩子接入（推荐：机制保证，而非依赖智能体自觉）**：一类宿主用 `agent:bootstrap` 钩子注入一个**虚拟 bootstrap 文件**；另一类用 `pre_llm_call` shell hook 回 `{"context": …}`（该事件原生带 `is_first_turn`，可直接做「每会话仅首轮」闸）。两者都是**薄适配层，只调用 `evolver-recall.mjs` 这一个实现**；空库零注入、异常不影响宿主调度。
+
+> **诚实边界**：各宿主会话存储格式不一 —— 结构化标志（`isError` / `exit_code`）最可靠；只靠文本标记时召回率随宿主而异。另：bootstrap 类钩子可能**早于**当轮用户消息落库，此时该轮退化为「无查询 → top-N 封顶」；会话有历史后即为真对靶。
 
 ## 已知边界
 
@@ -199,4 +212,15 @@ npm 换国内镜像：`npm config set registry https://registry.npmmirror.com`�
 
 ## 致谢与上游
 
-基于 [pi-coding-agent](https://github.com/earendil-works/pi) 与 [@evomap/evolver](https://github.com/EvoMap/evolver)。实测中发现的 4+1 项上游缺口已提交官方 issue（evolver#624-#627、pi#9258），详见 README「上游致谢与缺口清单」。完整 22 节实验报告：`docs/experiment-report.md`。
+**上游引擎与宿主**：基于 [pi-coding-agent](https://github.com/earendil-works/pi) 与 [@evomap/evolver](https://github.com/EvoMap/evolver)。实测中发现的 4+1 项上游缺口已提交官方 issue（evolver#624-#627、pi#9258），详见 README 的致谢与缺口清单。完整 22 节实验报告：`docs/experiment-report.md`。
+
+**方法论与评测参考**（近期研读、按对本项目的影响排序）：
+
+- **[Palantir Ontology](https://www.palantir.com/docs/foundry/ontology/overview)** —— 概念层的参照系："语义层让你*读*业务，运营本体让你*运营*它"。其「**动作门控写 · 审计每次尝试 · 回写权威源**」三件套与本项目的「审核门控注入 · 召回/命中埋点 · 经验库单一真源」逐条对应；正是这个对照，让我们把「**回写（write-back）缺失**」识别为一个结构性缺口（跨实例经验库同步）。
+- **[gura105/operational-ontology](https://github.com/gura105/operational-ontology)**（MIT）—— 上述理念的**最小可运行参考实现**。我们研读其 `src/core.ts` 与示例（`defineObject` / `defineLink` / `defineAction`，以及 `preconditions` + `reject(code)` + `writeback`），作为「规则内置于动作、拒绝可被机器读取」这一设计的对照样本。
+- **[fstech-digital/operational-ontology-framework](https://github.com/fstech-digital/operational-ontology-framework)** —— 公开治理模型参考：**Data → Logic → Action → Evidence → Write-back** 纵向链条、Pin/Spec/Handoff/Facts 四类状态物，以及一份**反模式清单**（我们将其当作自检表使用）。
+- **[Leading-AI-IO/palantir-ontology-strategy](https://github.com/Leading-AI-IO/palantir-ontology-strategy)** —— 开源专著，把本体论讲成「名词（对象）与动词（动作）的统合 + 分支与评审的治理」。其"从只能看的数据，转向直接驱动业务的数据"的表述，与本研究"从记录经验，转向驱动下一轮行为"的取向同源。
+- **[ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)** —— 多平台智能体行为约束项目。对我们有两点价值：**工程组织方式**（同一规则面向多宿主做薄适配层，与本项目「一个实现 + 多个薄钩子」同构）与 **`evals/` 盲评评测体系**（多维度 rubric + 多次试验 + 加权），后者是可直接借鉴的第三方评测范式；其**发布门设计教训**（绝对化规则会让门永不可通过）也被我们用来复查自家守卫是否过严。
+- **论文 *From Procedural Skills to Strategy Genes***（arXiv:2604.15097，EvoMap）—— 提供「紧凑 Gene 优于冗长 Skill」「失败经验的最佳形态是极度蒸馏后的独立 **AVOID** 警告」两条结论的量化依据（4,590 次受控实验）。本项目的独立实测与之同向（"只注入标签比不注入更差"），据此我们保留了对**注入内容质量**的高优先关注。
+
+> 以上均为**研读与对照**：本项目与它们均无隶属关系，也不代表其观点；本仓库实现均为原创，默认后端是 MIT 的内置引擎。

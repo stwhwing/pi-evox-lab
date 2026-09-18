@@ -43,17 +43,28 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
 ## 仓库结构
 
 ```
-├── SKILL.md                 # Agent Skill 封装（一句话跑闭环实验）
+├── SKILL.md                     # Agent Skill 封装（一句话跑闭环实验）
 ├── code/
-│   ├── pi_evolve.mjs        # 一站式闭环编排器（Pi R1 → 适配 → 蒸馏 → 审核 → 策略注入 → Pi R2）
-│   ├── pi_session_adapter.js# Pi session v3 → generic-chat transcript 适配器（含 is_error 契约修复）
-│   ├── evolver-bridge.ts    # Pi 原生扩展：before_agent_start 动态注入已审核修法（含质量守卫）
-│   └── sum_tokens.js        # session token/工具调用/错误数聚合
-├── traps/                   # 确定性陷阱生成器（含一个「失败陷阱」样本作反面教材）
-├── examples/                # 任务文本样例
+│   ├── pi_evolve.mjs            # 一站式闭环编排器（R1 陷阱 → 适配 → 蒸馏 → 审核 → 注入 → R2 对比）
+│   ├── evolver-recall.mjs       # 召回 + 命中登记（唯一实现：审核门控 + 修法/叙述守卫 + 对靶 top-N）
+│   ├── light-cli.mjs            # 内置零依赖后端 CLI：distill / approve / quarantine / list / info（含内容去重）
+│   ├── evolver-bridge.ts        # 宿主原生扩展样例：启动钩子动态注入已审核修法（含质量守卫）
+│   ├── pi_session_adapter.js    # 会话轨迹 → generic-chat transcript 适配器（含 is_error 契约修复）
+│   ├── engine/                  # 内置引擎（light）：distill / ledger / store（基因与台账的零依赖实现）
+│   ├── metrics_collect.mjs      # 运维度量：基因数 / 已审核 / 隔离 / 命中 / recall 调用数
+│   ├── distill_sessions.mjs     # 生产会话蒸馏：直读宿主会话存储 → 参数差异抽取 → 两级门落库
+│   ├── evox-weekly.sh           # 周常包装（度量 + 蒸馏提交 + 候选报告）
+│   ├── setup.sh                 # 一键初始化（库目录 / 首个修法 / 自检）
+│   └── sum_tokens.js            # 跨轮 token / 工具调用 / 错误数聚合
+├── traps/                       # 确定性陷阱生成器（含一个「失败陷阱」样本作反面教材）
+├── examples/                    # 任务文本样例
+├── exp/                         # 陷阱模板与回归用 fixture
 └── docs/
-    ├── experiment-report.md # 21 节完整实测报告（含每一步的失败与排查）
-    └── adapter-design.md    # 适配器设计草案 + Pi Extensions API 预研
+    ├── experiment-report.md     # 完整实测报告（含每一步的失败与排查）
+    ├── adapter-design.md        # 适配器设计草案 + 宿主 Extensions API 预研
+    ├── other-agents.md          # 其他 Agent 宿主接入指南
+    ├── providers.md             # Provider 配置
+    └── security-and-license.md  # 安全与许可全文
 ```
 
 > **运维与度量**：本仓库在 `code/` 下附带 3 个零依赖运维脚本（`metrics_collect.mjs` / `distill_sessions.mjs` / `evox-weekly.sh`）与周常 cron 接线，用于观测「经验继承」是否真正生效。详见 [`SKILL.md` 的「运维与度量」小节](SKILL.md#运维与度量ops)。
@@ -91,14 +102,16 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - 完整实验过程（包括踩过的坑：注入缺口、BOM 陷阱失效、蒸馏质量方差、官方 cycle 路线 fail-closed）：[`docs/experiment-report.md`](docs/experiment-report.md)
 - Pi Extensions API 预研与适配器设计：[`docs/adapter-design.md`](docs/adapter-design.md)
 
-## 立足于两个上游项目（Acknowledgements）
+## 致谢（Acknowledgements）
 
-本项目**不是** Pi 或 Evolver 的一部分，也不代表其官方观点——它是一个独立的研究 Harness，站在两个优秀开源项目的肩膀上：
+本项目**不是**任何上游项目的一部分，也不代表它们各自的官方观点——它是一个独立的研究 Harness，站在一批优秀开源项目与公开方法论的肩膀上。
+
+### 一、上游引擎与宿主
 
 | 上游项目 | 在本研究中的角色 |
 |---|---|
-| **[pi-coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)**（Pi, 0.74.2） | 被测的极简编码智能体。任务执行、session v3 格式、`before_agent_start` 扩展钩子均来自 Pi；其包内 `docs/extensions.md` 是本机权威资料。 |
-| **[@evomap/evolver](https://www.npmjs.com/package/@evomap/evolver)**（Evolver, 2.0.30） | GEP（Genome Evolution Protocol）自进化引擎：Gene/Capsule/EvolutionEvent 资产模型、`ingest --distill → review → inject` 链路、fail-closed 审核治理。感谢其严格的治理设计，使"发现缺口"成为可能。 |
+| **[pi-coding-agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)**（0.74.2 起） | 被测的极简编码智能体。任务执行、session 格式、`before_agent_start` 扩展钩子均来自它；其包内 `docs/extensions.md` 是本机权威资料。 |
+| **[@evomap/evolver](https://www.npmjs.com/package/@evomap/evolver)**（2.0.30） | GEP（Genome Evolution Protocol）自进化引擎：Gene/Capsule/EvolutionEvent 资产模型、`ingest --distill → review → inject` 链路、fail-closed 审核治理。感谢其严格的治理设计，使"发现缺口"成为可能。 |
 
 **本研究回馈给上游的缺口清单**（均已提交为官方 issue，详见报告对应章节）：
 1. `evolver inject session-start` 只输出基因 summary 标签，不携带可执行的 `strategy` 字段——修法无法抵达下一轮（§16.1）→ [EvoMap/evolver#624](https://github.com/EvoMap/evolver/issues/624)
@@ -107,17 +120,35 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 4. 适配器契约缺口：generic-chat transcript 需显式 `is_error` 标志才能产生 strong 信号（§13，已在本仓库 adapter 中修复）→ [EvoMap/evolver#626](https://github.com/EvoMap/evolver/issues/626)
 5. pi 侧编排 DX 两则：models.json `$ENV` 插值不生效（401 字面量）+ `./package.json` 未导出 → [earendil-works/pi#9258](https://github.com/earendil-works/pi/issues/9258)
 
-如果本研究对你的工作有帮助，也请给上面两个上游项目点 star——它们是真正的主角。
+### 二、方法论与评测参考
 
-## 项目状态（2026-09-14）
+| 参考 | 借鉴之处 |
+|---|---|
+| **[Palantir Ontology](https://www.palantir.com/docs/foundry/ontology/overview)** | 概念层的参照系："语义层让你*读*业务，运营本体让你*运营*它"。其「**动作门控写 · 审计每次尝试 · 回写权威源**」三件套与本项目的「审核门控注入 · 召回/命中埋点 · 经验库单一真源」逐条对应；正是这个对照让我们把「**回写（write-back）缺失**」识别为结构性缺口。 |
+| **[gura105/operational-ontology](https://github.com/gura105/operational-ontology)**（MIT） | 上述理念的**最小可运行参考实现**。研读其 `src/core.ts` 与示例（`defineObject`/`defineLink`/`defineAction` + `preconditions` + `reject(code)` + `writeback`），作为「规则内置于动作、拒绝可被机器读取」的对照样本。 |
+| **[fstech-digital/operational-ontology-framework](https://github.com/fstech-digital/operational-ontology-framework)** | 公开治理模型：**Data → Logic → Action → Evidence → Write-back** 纵向链条、Pin/Spec/Handoff/Facts 四类状态物，以及一份**反模式清单**（我们将其当自检表用）。 |
+| **[Leading-AI-IO/palantir-ontology-strategy](https://github.com/Leading-AI-IO/palantir-ontology-strategy)** | 开源专著：把本体论讲成「名词（对象）与动词（动作）的统合 + 分支与评审的治理」；"从只能看的数据，转向直接驱动业务的数据"与本研究"从记录经验，转向驱动下一轮行为"同源。 |
+| **[ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)** | 多平台智能体行为约束项目。借鉴两点：**工程组织方式**（同一规则面向多宿主做薄适配层，与本项目「一个实现 + 多个薄钩子」同构）与 **`evals/` 盲评评测体系**（多维度 rubric + 多次试验 + 加权）；其**发布门设计教训**（绝对化规则会让门永不可通过）也被用来复查自家守卫是否过严。 |
+| **论文 *From Procedural Skills to Strategy Genes***（arXiv:2604.15097，EvoMap） | 提供「紧凑 Gene 优于冗长 Skill」「失败经验的最佳形态是极度蒸馏后的独立 **AVOID** 警告」两条结论的量化依据（4,590 次受控实验）。本项目独立实测与之同向，据此保留了对**注入内容质量**的高优先关注。 |
+
+> 以上均为**研读与对照**：本项目与它们均无隶属关系，也不代表其观点；本仓库实现均为原创，默认后端是 MIT 的内置引擎。
+
+如果本研究对你的工作有帮助，也请给上面这些项目点 star——它们是真正的主角。
+
+## 项目状态（2026-09-18）
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.13.1（版本轨迹：0.3.0 首发 → 0.13.1，共 15 个发布） |
+| 当前版本 | 0.14.3（版本轨迹：0.3.0 首发 → 0.14.3） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
+| 召回 | 唯一实现 `evolver-recall.mjs`：审核门控（台账 **last-write-wins**）+ 修法/叙述双守卫 + **对靶 top-N** |
+| 生产蒸馏 | `distill_sessions.mjs` 直读宿主会话存储，按**参数差异**抽取修法；两级门（低风险自动批 / 其余进候选报告）+ **内容去重** |
+| 自动召回 | 宿主原生钩子接入已落地（bootstrap 类与 `pre_llm_call` 类各一），端到端实测"会话有历史后即为真对靶" |
 | ClawHub | moderation **clean**；clawscan 剩余 findings 均为功能固有（已文档化） |
 | skillhub | TRACE「优秀」；科恩实验室 **benign**；云鼎剩余 1 项动态检测（密钥形态值出现在运行输出——LLM 工具普遍特征，已做全局输出脱敏，详见安全文档） |
 | 上游 | 4+1 项缺口已提交官方 issue（evolver #624-#627、pi #9258）；核心运行时不依赖其回应 |
+
+**0.14.3 本版要点**：① 召回侧修复「**隔离（quarantine）无法撤销已批准**」——台账改为按 assetId 的**最后一条状态**判定（last-write-wins）② 新增**叙述守卫**，把会话旁白/推理流水式文本挡在注入之外 ③ `distill_sessions.mjs` 由「诊断脚本」升级为**真实蒸馏适配器**（失败/重试的**参数差异**抽取 + 两级门 + 候选报告）④ `light-cli distill` 增加**内容去重**（重复沉淀不再堆积，也不会把已批准资产的审核状态打回）⑤ 召回新增**对靶 top-N**（与任务无关即不注入）。
 
 ## 许可提示
 

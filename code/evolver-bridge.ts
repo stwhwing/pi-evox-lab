@@ -22,17 +22,19 @@ const EVO_STORE = path.join(os.homedir(), ".evomap", "assets");
 const EVO_GENES = path.join(EVO_STORE, "genes.jsonl");
 const EVO_REVIEW = path.join(EVO_STORE, "review.jsonl");
 
-/** 读取 review.jsonl 中 state=approved 的 asset_id 集合（尊重审核门） */
+/** 读取 review.jsonl 台账「每个 assetId 的最后一条状态」，返回 state=approved 的集合（尊重审核门）。
+ *  修复（2026-09-17，与 evolver-recall.mjs 同步）：旧实现只要台账历史上出现过 approved 就计入，
+ *  导致 quarantine 无法撤销已批准 —— 被隔离的基因仍会被注入。追加式台账必须 last-write-wins。 */
 function approvedAssetIds(): Set<string> {
-	const approved = new Set<string>();
+	const latestState = new Map<string, string>();
 	try {
 		for (const line of fs.readFileSync(EVO_REVIEW, "utf8").split("\n")) {
 			const s = line.trim();
 			if (!s) continue;
 			try {
 				const r = JSON.parse(s);
-				if (r && typeof r.state === "string" && r.state.toLowerCase().includes("approv") && r.assetId) {
-					approved.add(r.assetId);
+				if (r && typeof r.assetId === "string" && r.assetId && typeof r.state === "string") {
+					latestState.set(r.assetId, r.state);
 				}
 			} catch {
 				/* 跳过坏行 */
@@ -40,6 +42,10 @@ function approvedAssetIds(): Set<string> {
 		}
 	} catch {
 		/* review.jsonl 不存在 → 空集合 */
+	}
+	const approved = new Set<string>();
+	for (const [assetId, state] of latestState) {
+		if (state.toLowerCase().includes("approv")) approved.add(assetId);
 	}
 	return approved;
 }
@@ -54,6 +60,19 @@ const REPAIR_SIGNAL_RE =
 
 function isRepairLike(text: string): boolean {
 	return REPAIR_SIGNAL_RE.test(text);
+}
+
+/**
+ * 叙述检测（2026-09-17 新增，与 evolver-recall.mjs 同步）：auto-distill 摘录常是
+ * 「会话旁白/推理流水」而非可执行修法（实测："Now I understand the context… let me…" 且被截断）。
+ * 这类文本含 gbk/error 等词能通过 REPAIR_SIGNAL_RE，但对下游无执行价值；自动召回下会被
+ * 每个会话稳定注入 ⇒ 放大噪声。只检查首段（旁白开场必在 strategy[0] 开头），命中即不注入。
+ */
+const NARRATION_RE =
+	/^\s*(now i (understand|see|have|know|remember|need|can)|let me\b|i'?(ll|ve|m)\b|i will\b|here'?s\b|done[.!\u2026]|confirmed[:.]|the output matches|to summarize|summarize\b|first,? i\b|next,? i\b|alright\b|okay\b)/i;
+
+function isNarrationLike(text: string): boolean {
+	return NARRATION_RE.test(text);
 }
 
 /**
@@ -83,6 +102,7 @@ function loadApprovedStrategies(): string[] {
 			if (!aid || !approved.has(aid)) continue;
 			const text = strategy.join(" ").slice(0, 1200);
 			if (!isRepairLike(text)) continue; // 守卫：无修法信号词 → 不注入
+			if (isNarrationLike(String(strategy[0] ?? "").trim())) continue; // 叙述守卫：旁白开场 → 不注入
 			out.push(`- [${g.category || "repair"}] ${text}`);
 		}
 	} catch {
