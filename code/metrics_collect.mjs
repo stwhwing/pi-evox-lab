@@ -13,10 +13,24 @@ const LOG = path.join(ROOT, 'exp/metrics/metrics.log');
 // 导致 recallCalls/hits 计数恒为 0（实际埋点文件已在 cwd/experiments/ 正常增长）。
 const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experiments');
 const countLines = (p) => { try { return fs.readFileSync(p,'utf8').split('\n').filter(l=>l.trim()).length; } catch { return 0; } };
-const countState = (p, s) => { try { return fs.readFileSync(p,'utf8').split('\n').filter(l=>l.trim() && l.includes('"state":"'+s+'"')).length; } catch { return 0; } };
+// 追加式台账 ⇒ 审核态以「每个 assetId 的最后一条状态」为准（last-write-wins）。
+// 修复（2026-09-23）：旧实现对「历史行」计数（l.includes('"state":"approved"')），会把「已 approved
+// 后又 quarantine」的资产仍计为 approved，导致 approved 高报、quarantined 少报（实测生产库 23 vs 13）。
+const latestReview = () => {
+  const latest = new Map();
+  try {
+    for (const l of fs.readFileSync(path.join(STORE,'review.jsonl'),'utf8').split('\n')) {
+      const s = l.trim(); if (!s) continue;
+      try { const r = JSON.parse(s); if (r && r.assetId) latest.set(String(r.assetId), r.state); } catch { /* 坏行跳过 */ }
+    }
+  } catch { /* 台账不存在 → 空 */ }
+  return latest;
+};
+const review = latestReview();
+const countLatest = (kw) => [...review.values()].filter(s=>typeof s==='string' && s.toLowerCase().includes(kw)).length;
 const genes = countLines(path.join(STORE,'genes.jsonl'));
-const approved = countState(path.join(STORE,'review.jsonl'),'approved');
-const quarantined = countState(path.join(STORE,'review.jsonl'),'quarantined');
+const approved = countLatest('approv');
+const quarantined = countLatest('quarant');
 const hits = countLines(path.join(HITS_DIR,'hits.jsonl'));
 const recallCalls = countLines(path.join(HITS_DIR,'recall_calls.jsonl'));
 let hermes = 'absent';

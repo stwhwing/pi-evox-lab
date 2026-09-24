@@ -31,7 +31,7 @@ const textOf = (m) => {
   return c == null ? '' : JSON.stringify(c);
 };
 
-const SIGNAL_RULES = [
+export const SIGNAL_RULES = [
   [/\bUnicodeDecodeError|invalid start byte|codec can't decode|invalid continuation byte/i, 'encoding-error'],
   [/\bPermissionError|EPERM|EACCES|Permission denied|operation not permitted/i, 'permission-denied'],
   [/\bFileNotFoundError|ENOENT|No such file or directory/i, 'file-not-found'],
@@ -93,7 +93,7 @@ export function extractStrategy(msgs, limit = 3) {
  * (arXiv:2604.15097)——最优控制形态是「极度蒸馏后的独立 AVOID 警告」，而非叙述型修法。
  * 目标：信号密度更高（≤60 词）、可直接约束行为。
  */
-const AVOID_TEMPLATES = {
+export const AVOID_TEMPLATES = {
   'encoding-error': "reading a non-UTF-8 (GBK/GB18030) file with the default utf-8 codec",
   'permission-denied': "writing to a read-only path without restoring write permission first",
   'file-not-found': "assuming a path exists before listing/verifying the directory",
@@ -160,7 +160,7 @@ export function formatAvoidFix(errTexts, fixSentence, signals = []) {
 }
 
 /** 组装 Gene（schema 1.13.0） */
-export function buildGene({ msgs, category = 'repair', strategy, summary, source, strategyFormat = 'narrative' }) {
+export function buildGene({ msgs, category = 'repair', strategy, summary, source, strategyFormat = 'narrative', antiPatterns = [] }) {
   const digest = crypto.createHash('sha256').update(JSON.stringify(msgs)).digest('hex');
   const { signals } = extractSignals(msgs);
   let strat = (strategy ?? extractStrategy(msgs)).slice(0, 3);
@@ -177,6 +177,7 @@ export function buildGene({ msgs, category = 'repair', strategy, summary, source
     category,
     signals_match: signals,
     strategy: strat.length ? strat : ['(no concrete fix sentence extracted — needs curation)'],
+    anti_patterns: Array.isArray(antiPatterns) ? antiPatterns : [],
     constraints: { max_files: 12, forbidden_paths: ['.git', 'node_modules'] },
     validation: [],
     summary: summary ?? `Light-distilled from session (UNPROVEN — curate via review): ${signals.join(', ')}`,
@@ -202,7 +203,11 @@ export function distillFromTranscript(transcriptPath, opts = {}) {
 }
 
 /** manual 蒸馏（LLM 精修路径使用）：直接给 strategy/summary 入库 */
-export function distillManual({ category = 'repair', signals = [], strategy, summary }) {
+export function distillManual({ category = 'repair', signals = [], strategy, summary, antiPatterns = [], source = 'light-manual' }) {
+  // 占位符守卫：引导草稿未补全 FIX 时拒绝落库（避免产出低质量基因）。
+  if (/<在此填写|<\s*在此/.test(String(strategy || ''))) {
+    return { gene: null, raw: '[light-distill] 拒绝：strategy 仍是占位符，请补全 FIX（具体参数/命令/编码）后再提交' };
+  }
   const payload = { strategy, signals, at: Date.now() };
   const digest = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
   const sig = signals.length ? signals : ['manual'];
@@ -213,10 +218,11 @@ export function distillManual({ category = 'repair', signals = [], strategy, sum
     category,
     signals_match: sig,
     strategy: [strategy],
+    anti_patterns: Array.isArray(antiPatterns) ? antiPatterns : [],
     constraints: { max_files: 12, forbidden_paths: ['.git', 'node_modules'] },
     validation: [],
     summary: summary ?? `Manually distilled: ${sig.join(', ')}`,
-    generation_meta: { source: 'light-manual' },
+    generation_meta: { source },
     claims: [{ predicate: 'output_contract', kind: 'behavioral' }],
     scope: { signals: sig.map((s) => `capability:${s}`) },
     asset_id: `sha256:${digest}`,

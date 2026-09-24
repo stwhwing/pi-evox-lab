@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.3
+version: 0.14.4
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -62,26 +62,44 @@ node code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"
 - 同一坑在历史任务中出现过第二次。
 （不满足任一条的普通失败不必沉淀——避免经验库噪声。）
 
-
-当你修复了一个不显而易见的坑（环境怪癖、反直觉报错、特定参数/编码/绕过方式），把修法沉淀入库：
+**推荐路径：引导式（贴原始报错，信号与「负经验」自动抽取）**
 
 ```bash
-node_modules/.bin/evolver distill --category repair --signals bash,exception \
+# 1) 生成草稿：自动抽 signals_match + 预填 AVOID 模板 + 写入 anti_patterns（负经验 token）
+node code/light-cli.mjs draft --error "<原始报错文本>" \
+    --tool <出错工具名> --context "<你当时在做什么>"
+
+# 2) 照草稿补全 FIX 后落库（--strategy 覆盖预填占位符）
+node code/light-cli.mjs draft --error "<原始报错文本>" \
+    --strategy "AVOID: <什么不该做> FIX: <具体参数/命令/编码>" --commit
+
+# 3) 审核
+node code/light-cli.mjs approve <gene_id>
+```
+
+- `draft` 只替你预填 **AVOID**（"什么不该做"）与 **`anti_patterns`**；**FIX 必须你自己补**，且要具体到参数 / 命令 / 编码；
+- **未补 FIX 的占位符草稿会被守卫拒绝落库**——这保证入库的一定是可执行修法，而非半成品；
+- 若你已能直接写出修法，可用一行式：`node code/light-cli.mjs distill --error "<报错>" --strategy "FIX: <修法>"`。
+
+**备选路径：手写式（已明确 signals 时）**
+
+```bash
+# 内置后端（默认，零依赖）
+node code/light-cli.mjs distill --category repair --signals bash,exception \
     --strategy "<一句话修法；多步用分号分隔；要具体到参数/命令/编码>" \
     --summary "<坑的一句话描述>"
-node_modules/.bin/evolver review --approve <distill 输出的 gene_id>
+node code/light-cli.mjs approve <gene_id>     # 审核通过（可注入）
+node code/light-cli.mjs list                  # 查看台账
+
+# 可选集成 evolver（已 npm install 时）
+node_modules/.bin/evolver distill --category repair --signals bash,exception \
+    --strategy "<...>" --summary "<...>"
+node_modules/.bin/evolver review --approve <gene_id>
 ```
 
 - strategy 必须写成**可执行修法**（含具体参数/命令），不要写成功总结——召回侧有修法守卫，成功总结会被过滤（宁缺毋滥）；
 - `--approve` 是否自动化由你的部署策略决定：单用户环境可自动（召回守卫兜底防噪声），多人/严谨场景保留人工审核门；
-- **内置后端（默认）的沉淀/审核命令**（零依赖）：
-  ```bash
-  node code/light-cli.mjs distill --signals bash,encoding-error \
-       --strategy "用 encoding='gbk' 读取文件" --summary "GBK 文件按 utf-8 解码失败"
-  node code/light-cli.mjs approve <gene_id>     # 审核通过（可注入）
-  node code/light-cli.mjs list                  # 查看台账
-  ```
-  （若已安装可选集成 evolver，也可继续使用 `evolver distill` / `evolver review --approve`。）
+- **沉淀门槛的真实数据（诚实边界）**：在**生产真实会话**中可自动抽取的"干净修法对"密度很低（实测 `distillablePairs=0`）。因此**本库当前基因主要来自人工/引导式沉淀**——引导式 `draft` 正是为降低这一门槛而设。
 
 ## 流程 C（可选）：受控闭环实验 — 量化继承收益
 
@@ -222,5 +240,7 @@ npm 换国内镜像：`npm config set registry https://registry.npmmirror.com`�
 - **[Leading-AI-IO/palantir-ontology-strategy](https://github.com/Leading-AI-IO/palantir-ontology-strategy)** —— 开源专著，把本体论讲成「名词（对象）与动词（动作）的统合 + 分支与评审的治理」。其"从只能看的数据，转向直接驱动业务的数据"的表述，与本研究"从记录经验，转向驱动下一轮行为"的取向同源。
 - **[ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)** —— 多平台智能体行为约束项目。对我们有两点价值：**工程组织方式**（同一规则面向多宿主做薄适配层，与本项目「一个实现 + 多个薄钩子」同构）与 **`evals/` 盲评评测体系**（多维度 rubric + 多次试验 + 加权），后者是可直接借鉴的第三方评测范式；其**发布门设计教训**（绝对化规则会让门永不可通过）也被我们用来复查自家守卫是否过严。
 - **论文 *From Procedural Skills to Strategy Genes***（arXiv:2604.15097，EvoMap）—— 提供「紧凑 Gene 优于冗长 Skill」「失败经验的最佳形态是极度蒸馏后的独立 **AVOID** 警告」两条结论的量化依据（4,590 次受控实验）。本项目的独立实测与之同向（"只注入标签比不注入更差"），据此我们保留了对**注入内容质量**的高优先关注。
+- **[FlyLoRA](https://arxiv.org/abs/2510.08396)**（NeurIPS 2025，清华大学；[代码](https://github.com/gfyddha/FlyLoRA)）—— 权重空间的隐式秩专家 PEFT，与本项目（**提示空间**的推理期继承）不在同一层、**不是可直接插入的组件**；但本版显式迁移了两条原理：① **负载均衡偏置**（召回打分加 `-u·sign(c_i − c̄)`，`c_i` = 该基因历史命中数），② **免训练合并不干扰**（落到提示层 = 注入冲突守卫，`anti_patterns` 互斥者剔除低分项）。其 **FlyHash 式免参数路由**是我们的 **P2（鲁棒召回）** 参考方向，**当前尚未实现**。
+- **[Switch Transformer](https://arxiv.org/abs/2101.03961)**（Fedus et al., 2021）—— 上述"负载均衡偏置"的思想源头之一（MoE 以每专家计数 `c_i` 与均值的偏离为据），本版 P1④ 沿用同一形式。
 
 > 以上均为**研读与对照**：本项目与它们均无隶属关系，也不代表其观点；本仓库实现均为原创，默认后端是 MIT 的内置引擎。

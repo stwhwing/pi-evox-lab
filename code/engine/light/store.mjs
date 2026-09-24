@@ -55,12 +55,20 @@ export function appendReview(rec) {
   return entry;
 }
 
-/** 已 approved 的 asset_id 集合（fail-closed：台账不可用时为空集，调用方据此跳过注入） */
+/** 已 approved 的 asset_id 集合（fail-closed：台账不可用时为空集，调用方据此跳过注入）
+ *  追加式台账 ⇒ 以「每个 assetId 的最后一条状态」为准（last-write-wins）。
+ *  修复（2026-09-23）：旧实现只要历史上出现过 approved 就计入，导致 quarantine 无法撤销已批准
+ *  —— 与 evolver-recall.mjs / evolver-bridge.ts 的 2026-09-17 修复对齐（此前遗漏本处）。 */
 export function approvedAssetIds() {
-  const set = new Set();
+  const latestState = new Map();
   for (const r of readReview()) {
-    const state = typeof r?.state === 'string' ? r.state : '';
-    if (state.toLowerCase().includes('approv') && r.assetId) set.add(String(r.assetId).replace(/^"|"$/g, ''));
+    if (r && typeof r.assetId === 'string' && r.assetId) {
+      latestState.set(String(r.assetId).replace(/^"|"$/g, ''), r.state);
+    }
+  }
+  const set = new Set();
+  for (const [assetId, state] of latestState) {
+    if (typeof state === 'string' && state.toLowerCase().includes('approv')) set.add(assetId);
   }
   return set;
 }

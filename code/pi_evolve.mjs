@@ -175,19 +175,24 @@ const isRepairLike = (t) => REPAIR_SIGNAL_RE.test(t);
 function loadApprovedStrategy() {
   try {
     // 1) 收集已 approved 的 asset_id 集合
-    const approved = new Set();
+    //    追加式台账 ⇒ 以「每个 assetId 的最后一条状态」为准（last-write-wins）；
+    //    否则 quarantine 无法撤销已批准，被隔离的基因仍会被注入。
+    //    修复（2026-09-23）：与 evolver-recall.mjs / evolver-bridge.ts 的 2026-09-17 修复对齐（此前遗漏本处）。
+    const latestState = new Map();
     try {
       for (const line of fs.readFileSync(EVO_REVIEW, 'utf8').split('\n')) {
         const s = line.trim();
         if (!s) continue;
         try {
           const r = JSON.parse(s);
-          if (r && (r.state === 'approved' || (r.state || '').toLowerCase().includes('approv'))) {
-            approved.add(r.assetId);
-          }
+          if (r && typeof r.assetId === 'string' && r.assetId) latestState.set(r.assetId, r.state);
         } catch {}
       }
     } catch {}
+    const approved = new Set();
+    for (const [assetId, state] of latestState) {
+      if (typeof state === 'string' && state.toLowerCase().includes('approv')) approved.add(assetId);
+    }
     // 2) 抽取这些基因的 strategy
     const out = [];
     for (const line of fs.readFileSync(EVO_GENES, 'utf8').split('\n')) {

@@ -41,8 +41,6 @@ const OC_DB = process.env.EVOX_OC_DB || path.join(HOME, ".openclaw/agents/main/a
 const HM_DB = process.env.EVOX_HERMES_DB || path.join(HOME, ".hermes/state.db");
 const LIGHT_CLI = process.env.EVOX_LIGHT_CLI || path.join(HOME, "pi-evox-lab/code/light-cli.mjs");
 
-const STRONG_ERR_RE =
-	/(Traceback \(most recent call last\)|\bUnicodeDecodeError\b|\bJSONDecodeError\b|\bAttributeError\b|\bTypeError\b|\bKeyError\b|\bValueError\b|\bException\b|\bError:|\bFAILED\b|panic:|command not found|No such file or directory|ENOENT)/;
 const REPAIR_SIGNAL_RE =
 	/error|exception|traceback|failed|invalid|cannot|unable|missing|not found|wrong|instead|avoid|fix|encoding\s*[=:]|errors\s*=|utf-?8|gbk|gb18030|latin-1|\brb\b|except|skip/i;
 const NARRATION_RE =
@@ -196,9 +194,11 @@ function scanOpenClaw() {
 				if (!m || m.role !== "toolResult") continue;
 				res.toolResults++;
 				const body = textOfContent(m.content);
-				const isExecTool = /exec|bash|shell|terminal|command/i.test(m.toolName || "");
-				// 内容标记只对「命令执行类」工具有意义——读一份「讲错误的文档」不该被判成失败
-				if (!(m.isError === true || (isExecTool && STRONG_ERR_RE.test(body)))) continue;
+			// 失败判定：以运行时显式 isError 为准。
+			// 实测（2026-09-23）：OpenClaw 对 exec 命令失败**不置** isError，从输出正文做错误启发式
+			// 不可靠——自审报告/file 命令/grep/侦察脚本源码里的 "error" 字样会被误判，且一旦附近出现
+			// 同工具重试就会产出噪声基因。故只采纳 isError===true（宁漏真实命令失败，不引入噪声）。
+			if (m.isError !== true) continue;
 				res.failures++;
 				const errHead = flat(body) || "tool reported isError=true";
 				let retry = null;
@@ -206,9 +206,9 @@ function scanOpenClaw() {
 				for (let j = i + 1; j < Math.min(turns.length, i + 20); j++) {
 					const m2 = turns[j] && turns[j].message;
 					if (!m2 || m2.role !== "toolResult" || m2.toolName !== m.toolName) continue;
-					const b2 = textOfContent(m2.content);
-					const isExec2 = /exec|bash|shell|terminal|command/i.test(m2.toolName || "");
-					if (!(m2.isError === true || (isExec2 && STRONG_ERR_RE.test(b2)))) { retry = m2; retryIdx = j; }
+				const b2 = textOfContent(m2.content);
+				// 重试 = 同工具且未报错（isError 非 true）的结果
+				if (m2.isError !== true) { retry = m2; retryIdx = j; }
 					break;
 				}
 				if (!retry) { res.rejected.noRetry = (res.rejected.noRetry || 0) + 1; continue; }
@@ -275,9 +275,8 @@ function scanHermes() {
 				const out = p && typeof p === "object" ? String(p.output ?? "") : String(m.content ?? "");
 				const ec = p && typeof p === "object" ? p.exit_code : undefined;
 				const er = p && typeof p === "object" ? p.error : undefined;
-				const isExecTool = /terminal|exec|bash|shell|execute_code|command/i.test(m.tool_name || "");
-				// 内容标记只对「命令执行类」工具有意义（读文档 ≠ 失败）
-				if (!((typeof ec === "number" && ec !== 0) || !!er || (isExecTool && STRONG_ERR_RE.test(out)))) continue;
+			// Hermes 有显式 exit_code / error 字段，以之为准（比正文启发式可靠）。
+			if (!((typeof ec === "number" && ec !== 0) || !!er)) continue;
 				res.failures++;
 				const errHead = flat(out) || (typeof ec === "number" ? `exit_code=${ec}` : "tool reported error");
 				let retry = null;
@@ -290,8 +289,7 @@ function scanHermes() {
 					const o2 = p2 && typeof p2 === "object" ? String(p2.output ?? "") : String(m2.content ?? "");
 					const e2 = p2 && typeof p2 === "object" ? p2.exit_code : undefined;
 					const r2 = p2 && typeof p2 === "object" ? p2.error : undefined;
-					const isExec2 = /terminal|exec|bash|shell|execute_code|command/i.test(m2.tool_name || "");
-					if (!((typeof e2 === "number" && e2 !== 0) || !!r2 || (isExec2 && STRONG_ERR_RE.test(o2)))) { retry = m2; retryIdx = j; }
+				if (!((typeof e2 === "number" && e2 !== 0) || !!r2)) { retry = m2; retryIdx = j; }
 					break;
 				}
 				if (!retry) { res.rejected.noRetry = (res.rejected.noRetry || 0) + 1; continue; }

@@ -26,11 +26,21 @@ const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experime
 const HITS_FILE = path.join(HITS_DIR, 'hits.jsonl');
 const RECALL_CALLS_FILE = path.join(HITS_DIR, 'recall_calls.jsonl');
 
-/** 埋点：记录一次 recall 调用（仅 recall 模式，不含 register-hit），用于度量"技能是否在真实任务中被主动调用"。写失败不影响主流程。 */
-function recordRecallCall() {
+/**
+ * 埋点：记录一次 recall 调用（仅 recall 模式，不含 register-hit）。
+ * P3（2026-09-23）扩为**按调用方**记录：agent + 是否对靶 + 实际注入条数 + 查询摘要。
+ * 动机：旧埋点只有 {ts,mode}，无法回答"哪个宿主注入了几条、是否多为空注入"——
+ * 多个智能体宿主共享本实现，需按 agent 分离观测。
+ * 向后兼容：未传 --agent 时记为 'unknown'；写失败不影响 recall 主流程。
+ */
+function recordRecallCall(extra = {}) {
 	try {
 		fs.mkdirSync(HITS_DIR, { recursive: true });
-		fs.appendFileSync(RECALL_CALLS_FILE, JSON.stringify({ ts: new Date().toISOString(), mode: 'recall' }) + '\n');
+		fs.appendFileSync(RECALL_CALLS_FILE, JSON.stringify({
+			ts: new Date().toISOString(), mode: 'recall', agent: AGENT,
+			targeted: !!extra.targeted, injected: Number.isFinite(extra.injected) ? extra.injected : 0,
+			query: String(extra.query ?? '').slice(0, 200),
+		}) + '\n');
 	} catch { /* 写失败不影响 recall 主流程 */ }
 }
 
@@ -61,6 +71,23 @@ function readJsonl(p) {
 		}
 	} catch { /* 文件不存在 → 空 */ }
 	return out;
+}
+
+/**
+ * 聚合 experiments/hits.jsonl 得 per-gene 命中计数（按 gene_id）。
+ * P1④ 负载均衡偏置的数据基础（FlyLoRA / Switch Transformer 的 c_i）。
+ */
+function aggregateHits() {
+	const counts = new Map();
+	let total = 0;
+	for (const h of readJsonl(HITS_FILE)) {
+		const id = h && h.gene_id;
+		if (!id) continue;
+		counts.set(id, (counts.get(id) || 0) + 1);
+		total++;
+	}
+	const mean = counts.size ? total / counts.size : 0;
+	return { counts, mean };
 }
 
 function approvedAssetIds() {
@@ -97,6 +124,8 @@ function recallList() {
 			category: g.category || 'repair',
 			text: text.slice(0, 600),
 			signals: Array.isArray(g.signals_match) ? g.signals_match : [],
+			antiPatterns: Array.isArray(g.anti_patterns) ? g.anti_patterns : [],
+			scope: g.scope || null,
 		});
 	}
 	return out;
@@ -118,6 +147,13 @@ const TOPN = (() => {
 	return Number.isFinite(n) && n > 0 ? n : 5;
 })();
 const SELECTION_FILE = path.join(HITS_DIR, '.evox-last-selection.json');
+/** P3 溯源（2026-09-23）：调用方身份（宿主）——由钩子以 `--agent <name>` 或 EVOX_AGENT 传入。
+ *  仅允许安全字符集；未传/非法 → 'unknown'（向后兼容，不影响既有调用方）。 */
+const AGENT = (() => {
+	const i = process.argv.indexOf('--agent');
+	const v = i >= 0 ? process.argv[i + 1] : process.env.EVOX_AGENT;
+	return /^[a-z0-9_.-]{1,32}$/i.test(String(v || '')) ? String(v) : 'unknown';
+})();
 
 /**
  * 停用词表：常见英文虚词/泛化词不应制造「假对靶」。
@@ -143,27 +179,69 @@ function queryTokens(s) {
 	return new Set(raw.filter((t) => !STOP_WORDS.has(t)));
 }
 
-function scoreGene(item, qTokens) {
+function scoreGene(item, qTokens, hitInfo) {
 	let score = 0;
 	for (const sig of item.signals) {
 		if (sig && qTokens.has(String(sig).toLowerCase())) score += 3;
 	}
 	const st = queryTokens(item.text);
 	for (const t of qTokens) if (st.has(t)) score += 1;
+	// P1④ 负载均衡偏置（FlyLoRA / Switch Transformer 转移）：d_i = -u·sign(c_i − c̄)，
+	// 冷门基因（c_i < c̄）上抬、热门（c_i > c̄）下压，缓解"高信号重叠热门基因恒霸榜"；
+	// 温和封顶（u=0.4，最大 ±2.0），规模未到（命中全 0 → c_i=c̄=0）时无作用。
+	if (hitInfo) {
+		const c = hitInfo.counts.get(item.id) || 0;
+		const d = c - hitInfo.mean;
+		score += -0.4 * Math.sign(d) * Math.min(Math.abs(d), 5);
+	}
 	return score;
+}
+
+/**
+ * P1⑤ 注入冲突守卫（FlyLoRA「免训练合并不干扰」在提示层的落地）：
+ * 选中的 top-N 中，若两条基因相互矛盾，剔除低分者（保高分的）。
+ * 判定极保守——仅在「一方 anti_patterns 字面命中另一方 strategy 文本」时冲突，
+ * 即一方明令禁止的动作被另一方倡导。不引入编码重叠等脆弱启发式（易误删正确基因，违背宁缺毋滥）。
+ * 预埋无害：基因普遍无 anti_patterns 或策略不重叠时，守卫不触发。
+ */
+function tokenSet(str) {
+	return new Set(String(str || '').toLowerCase().match(/[a-z0-9_.-]+/g) || []);
+}
+function geneConflicts(a, b) {
+	const aAnti = new Set((a.antiPatterns || []).map((s) => String(s).toLowerCase()));
+	const bAnti = new Set((b.antiPatterns || []).map((s) => String(s).toLowerCase()));
+	const aTok = tokenSet(a.text), bTok = tokenSet(b.text);
+	for (const ap of aAnti) if (bTok.has(ap)) return true;
+	for (const bp of bAnti) if (aTok.has(bp)) return true;
+	return false;
+}
+/** 贪心冲突消解：保留高分项，剔除与已保留项冲突的低分项（若新项更强则替换旧项） */
+function resolveConflicts(items, scored) {
+	const kept = [];
+	for (const it of items) {
+		const conflict = kept.find((k) => geneConflicts(k, it));
+		if (!conflict) { kept.push(it); continue; }
+		if ((scored.get(it.id) || 0) > (scored.get(conflict.id) || 0)) {
+			kept.splice(kept.indexOf(conflict), 1);
+			kept.push(it);
+		}
+	}
+	return kept;
 }
 
 /** 对靶 + top-N 选取；并落一份「本次选中」sidecar，供 --register-hit 正确解析编号 */
 function selectList(all) {
 	const qTokens = queryTokens(QUERY);
+	const hitInfo = aggregateHits();
 	let picked;
 	if (qTokens.size > 0) {
-		picked = all
-			.map((it) => ({ it, s: scoreGene(it, qTokens) }))
+		const scoredArr = all
+			.map((it) => ({ it, s: scoreGene(it, qTokens, hitInfo) }))
 			.filter((x) => x.s >= MIN_MATCH_SCORE)
 			.sort((a, b) => b.s - a.s)
-			.slice(0, TOPN)
-			.map((x) => x.it);
+			.slice(0, TOPN);
+		const scored = new Map(scoredArr.map((x) => [x.it.id, x.s]));
+		picked = resolveConflicts(scoredArr.map((x) => x.it), scored);
 	} else {
 		// 无查询：按入库顺序取「最近」的 N 条（追加式台账，靠后=更新）
 		picked = all.slice(-TOPN);
@@ -205,11 +283,11 @@ function registerHit(n, note) {
 }
 
 function recall() {
-	recordRecallCall();
 	const all = readJsonl(EVO_GENES);
 	const approved = approvedAssetIds();
 	const full = recallList();
 	const { picked, total, targeted } = selectList(full);
+	recordRecallCall({ targeted, injected: picked.length, query: QUERY });
 	console.log(
 		`[Evolver 经验库] 基因总数=${all.length} | 已审核=${approved.size} | 守卫通过=${full.length} | ` +
 		`${targeted ? '对靶' : '未对靶'}选中=${picked.length}/${total}${targeted ? '' : ` (top${TOPN})`}`,
