@@ -28,7 +28,7 @@ const EVO_REVIEW = path.join(EVO_STORE, "review.jsonl");
 function approvedAssetIds(): Set<string> {
 	const latestState = new Map<string, string>();
 	try {
-		for (const line of fs.readFileSync(EVO_REVIEW, "utf8").split("\n")) {
+		for (const [idx, line] of fs.readFileSync(EVO_REVIEW, "utf8").split("\n").entries()) {
 			const s = line.trim();
 			if (!s) continue;
 			try {
@@ -36,8 +36,10 @@ function approvedAssetIds(): Set<string> {
 				if (r && typeof r.assetId === "string" && r.assetId && typeof r.state === "string") {
 					latestState.set(r.assetId, r.state);
 				}
-			} catch {
-				/* 跳过坏行 */
+			} catch (err) {
+				console.error(
+					`[pi-evox] 警告：review.jsonl 第 ${idx + 1} 行不是合法 JSON，已跳过（原因：${(err as Error).message}）`,
+				);
 			}
 		}
 	} catch {
@@ -84,13 +86,16 @@ function loadApprovedStrategies(): string[] {
 	const out: string[] = [];
 	const approved = approvedAssetIds();
 	try {
-		for (const line of fs.readFileSync(EVO_GENES, "utf8").split("\n")) {
+		for (const [idx, line] of fs.readFileSync(EVO_GENES, "utf8").split("\n").entries()) {
 			const s = line.trim();
 			if (!s) continue;
 			let g: any;
 			try {
 				g = JSON.parse(s);
-			} catch {
+			} catch (err) {
+				console.error(
+					`[pi-evox] 警告：genes.jsonl 第 ${idx + 1} 行不是合法 JSON，已跳过（原因：${(err as Error).message}）`,
+				);
 				continue;
 			}
 			const strategy = g && Array.isArray(g.strategy) ? g.strategy : null;

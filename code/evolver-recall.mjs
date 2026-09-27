@@ -64,10 +64,14 @@ const NARRATION_RE =
 function readJsonl(p) {
 	const out = [];
 	try {
-		for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+		for (const [idx, line] of fs.readFileSync(p, 'utf8').split('\n').entries()) {
 			const s = line.trim();
 			if (!s) continue;
-			try { out.push(JSON.parse(s)); } catch { /* 跳过坏行 */ }
+			try {
+				out.push(JSON.parse(s));
+			} catch (err) {
+				console.error(`[pi-evox] 警告：${p} 第 ${idx + 1} 行不是合法 JSON，已跳过（原因：${err.message}）`);
+			}
 		}
 	} catch { /* 文件不存在 → 空 */ }
 	return out;

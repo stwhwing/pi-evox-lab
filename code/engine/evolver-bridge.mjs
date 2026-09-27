@@ -16,11 +16,18 @@ export function available(root) {
   try { return fs.existsSync(path.join(root, EVOLVER_ENTRY_REL)); } catch { return false; }
 }
 
-function runCli(root, args, { silent = false, mergeStderr = false, allowFail = false } = {}) {
+function runCli(root, args, { silent = false, mergeStderr = false, allowFail = false, timeout = 60000 } = {}) {
   const entry = path.join(root, EVOLVER_ENTRY_REL);
   const r = spawnSync(process.execPath, [entry, ...args], {
-    cwd: root, encoding: 'utf8', maxBuffer: 1 << 26,
+    cwd: root, encoding: 'utf8', maxBuffer: 1 << 26, timeout,
   });
+  if (r.error) {
+    // 超时 / 启动失败：allowFail 调用方（inject/approve 为尽力而为）静默返回，其余抛出可读错误
+    if (allowFail) return '';
+    const err = new Error(`evolver CLI 调用失败（${r.error.code || 'error'}）：${String(r.error.message).slice(0, 200)}`);
+    err.code = r.error.code;
+    throw err;
+  }
   const out = (r.stdout ?? '') + (mergeStderr ? (r.stderr ?? '') : '');
   if (!allowFail && r.status !== 0) {
     const err = new Error(`evolver exit ${r.status}: ${String(r.stderr ?? '').trim().slice(0, 200)}`);

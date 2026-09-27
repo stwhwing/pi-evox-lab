@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.4
+version: 0.14.5
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -13,6 +13,27 @@ homepage: https://github.com/stwhwing/pi-evox-lab
 # Pi × EvoX Loop — 智能体经验继承 Skill
 
 > 让 Agent 的每个坑只踩一次：失败经验自动入库（守卫过滤），同类任务自动召回已验证修法。
+
+## 30 秒上手（Quick-Start）
+
+> 本 Skill 只做三件事：**A 任务开始召回**已验证修法、**B 修复失败后背沉淀**、**C（可选）受控实验量化收益**。日常只用 A/B，C 是研究开关（默认全关，请勿用于生产）。
+
+```bash
+# A — 任务开始，对靶召回（替换成你的任务一句话）
+node code/evolver-recall.mjs --query "处理 GBK 编码文件报错" --top 5
+
+# B — 修复了非显而易见的失败后，贴原始报错生成草稿，再补 FIX 落库
+node code/light-cli.mjs draft --error "<原始报错>" --tool <工具名> --context "<当时在做什么>"
+node code/light-cli.mjs draft --error "<原始报错>" --strategy "FIX: <具体参数/命令/编码>" --commit
+node code/light-cli.mjs approve <gene_id>
+```
+
+命令均在本仓库根目录执行；未安装依赖先见下方「安装」。
+
+### 新手必读（高频问答速览）
+- **首次运行召回显示「无可召回修法」？** 正常——库从零开始，先跑一次 B 沉淀即可点亮（详见文末 FAQ·Q1）。
+- **Node 版本要求？** 需 **≥22**（traps 生成器还需 Python 3），过低 pi/evolver 会启动失败（FAQ·Q8）。
+- **更多问题**见文末 FAQ（Q1–Q8，含 `$ENV` 插值、auto-approve、`--fresh` 备份等）。
 
 ## 安装（一次性）
 
@@ -193,6 +214,17 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 **生产接入（让继承真正发生）**：两条路——
 1. **提示词接入**：把「任务开始 recall / 修复后 deposit」写入智能体系统提示词（如 `AGENTS.md` / `SOUL.md`）；
 2. **原生钩子接入（推荐：机制保证，而非依赖智能体自觉）**：一类宿主用 `agent:bootstrap` 钩子注入一个**虚拟 bootstrap 文件**；另一类用 `pre_llm_call` shell hook 回 `{"context": …}`（该事件原生带 `is_first_turn`，可直接做「每会话仅首轮」闸）。两者都是**薄适配层，只调用 `evolver-recall.mjs` 这一个实现**；空库零注入、异常不影响宿主调度。
+
+**支持的智能体宿主（已验证 / 设计支持）**
+
+| 宿主 | 推荐接入 | 钩子 / 机制 |
+|---|---|---|
+| OpenClaw | 原生钩子 | `agent:bootstrap` 注入虚拟 bootstrap 文件（或 `pre_llm_call` shell hook 回 `{"context": …}`） |
+| Hermes | 原生钩子 | `pre_llm_call` shell hook，`is_first_turn` 做「每会话仅首轮」闸 |
+| WorkBuddy / 通用 Agent | 提示词接入 | 把「任务开始 recall / 修复后 deposit」写入系统提示（`AGENTS.md` / `SOUL.md`） |
+| 任意支持 system prompt 或钩子的宿主 | 薄适配层 | 只需调用 `evolver-recall.mjs` 这一个实现；空库零注入、异常不影响宿主调度 |
+
+> 两类原生钩子均为**薄适配层**，只调用 `evolver-recall.mjs`；是否原生支持取决于宿主是否提供 `agent:bootstrap` / `pre_llm_call` 事件（OpenClaw、Hermes 已验证）。其余宿主走提示词接入即可。
 
 > **诚实边界**：各宿主会话存储格式不一 —— 结构化标志（`isError` / `exit_code`）最可靠；只靠文本标记时召回率随宿主而异。另：bootstrap 类钩子可能**早于**当轮用户消息落库，此时该轮退化为「无查询 → top-N 封顶」；会话有历史后即为真对靶。
 
