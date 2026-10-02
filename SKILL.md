@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.5
+version: 0.14.6
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -29,6 +29,16 @@ node code/light-cli.mjs approve <gene_id>
 ```
 
 命令均在本仓库根目录执行；未安装依赖先见下方「安装」。
+
+### 首次运行 · 3 步就绪（先跑自检，再沉淀）
+
+> 首次运行若遇到环境问题（Node 版本、目录权限），先跑**一键自检**定位，失败项会给出**修正指引**：
+> ```bash
+> node code/light-cli.mjs doctor
+> ```
+> 1. **装 Node ≥22**（traps 生成器与 pi/evolver 均要求；见 FAQ·Q8）；
+> 2. **自检环境**：`node code/light-cli.mjs doctor` —— 校验 Node 版本、经验库目录可写、命中登记目录可达；
+> 3. **点亮经验库**：空库无修法可召回属正常，按下方流程 B 沉淀第一条修法即点亮（见「何时该沉淀」）。
 
 ### 新手必读（高频问答速览）
 - **首次运行召回显示「无可召回修法」？** 正常——库从零开始，先跑一次 B 沉淀即可点亮（详见文末 FAQ·Q1）。
@@ -82,6 +92,14 @@ node code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"
 - 报错信息反直觉，或与文档描述不符；
 - 同一坑在历史任务中出现过第二次。
 （不满足任一条的普通失败不必沉淀——避免经验库噪声。）
+
+> 📌 **何时该沉淀一条经验（决策清单）**：触发词——经验召回 / 错题本 / 经验继承 / 避坑 / distill。
+> 修好一个不显而易见的坑后，满足以下**任一条**即值得沉淀，否则不要（避免噪声）：
+> · 排查需查文档 / 试错 ≥2 次才解决；
+> · 依赖本机或环境特性（编码、路径规范、shell 差异、网络）；
+> · 报错反直觉，或与文档描述不符；
+> · 同一坑在历史上出现过第二次。
+> 落库：贴原始报错用 `node code/light-cli.mjs draft --error "<报错>"` 一键生成草稿，补 FIX 后 `--commit`，再 `approve`。
 
 **推荐路径：引导式（贴原始报错，信号与「负经验」自动抽取）**
 
