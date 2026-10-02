@@ -15,6 +15,8 @@
  * 说明：库路径默认 ~/.evomap/assets，可用 EVO_STORE_DIR 覆盖（与 evolver 后端共用同一格式）。
  * 去重：distill 按「归一化 strategy」判重，库中已有相同修法则跳过（不写基因也不写台账）。
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
 import { STORE_DIR, readGenes, readReview, approvedAssetIds } from './engine/light/store.mjs';
@@ -83,6 +85,7 @@ function usage() {
   console.log(`light-cli — 内置经验库运维命令（零依赖）
 
 用法：
+  node code/light-cli.mjs doctor                                                   # 首次运行自检（Node/目录/权限）
   node code/light-cli.mjs distill --signals <a,b> --strategy "<可执行修法>" [--summary "<坑>"] [--category repair]
   node code/light-cli.mjs distill --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>]   # 引导式：自动抽信号
   node code/light-cli.mjs draft  --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--commit]   # 生成可编辑草稿
@@ -92,6 +95,33 @@ function usage() {
   node code/light-cli.mjs info
 
 库路径：${STORE_DIR}（可用 EVO_STORE_DIR 覆盖）`);
+}
+
+/**
+ * doctor —— 首次运行自检（0.14.6 P2a，回应 skillhub usability 4.3「首次运行无引导」）。
+ * 校验：Node 版本、经验库目录可写、命中登记目录可达，失败项给出**修正指引**而非只报错误。
+ */
+function doctor() {
+  const checks = [];
+  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  checks.push({ name: 'Node 版本 ≥22', ok: nodeMajor >= 22, detail: `当前 v${process.versions.node}`, fix: '升级到 Node ≥22（traps 生成器与 pi/evolver 均要求）后重试（FAQ·Q8）' });
+  let storeOk = true, storeDetail = STORE_DIR;
+  try {
+    fs.mkdirSync(STORE_DIR, { recursive: true });
+    const probe = path.join(STORE_DIR, '.pi-evox-doctor');
+    fs.writeFileSync(probe, 'ok'); fs.rmSync(probe, { force: true });
+  } catch (e) { storeOk = false; storeDetail = `${STORE_DIR} 不可写：${String(e.message).slice(0, 80)}`; }
+  checks.push({ name: '经验库目录可写', ok: storeOk, detail: storeDetail, fix: '检查目录权限（Linux 用 chmod，Windows 检查只读属性 / 杀软拦截）' });
+  const hitsEnv = process.env.EVOX_HITS_DIR;
+  checks.push({ name: '命中登记目录可达', ok: true, detail: hitsEnv ? hitsEnv : `默认 ${process.cwd()}/experiments（需当前目录可写）`, fix: '如需固定落点，设 EVOX_HITS_DIR 环境变量指向可写目录' });
+  const failed = checks.filter((c) => !c.ok);
+  console.log('light-cli 自检（doctor）结果：');
+  for (const c of checks) {
+    console.log(`  [${c.ok ? '✓' : '✗'}] ${c.name} —— ${c.detail}`);
+    if (!c.ok) console.log(`      → 修正：${c.fix}`);
+  }
+  console.log(failed.length ? `\n自检未通过 ${failed.length} 项，请先修正后再用本技能（日常 recall / 沉淀不受影响）。` : `\n✓ 全部就绪，可正常使用 recall / 沉淀。`);
+  process.exit(failed.length ? 1 : 0);
 }
 
 switch (cmd) {
@@ -187,6 +217,10 @@ switch (cmd) {
     const r = ledger.quarantine(id, flag('reason', 'manually quarantined'));
     console.log(r.ok ? `✓ 已隔离：${r.assetId}` : `✗ ${r.reason}`);
     process.exit(r.ok ? 0 : 1);
+    break;
+  }
+  case 'doctor': {
+    doctor();
     break;
   }
   case 'list': {
