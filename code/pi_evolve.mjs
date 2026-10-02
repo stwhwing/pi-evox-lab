@@ -214,7 +214,46 @@ function loadApprovedStrategy() {
   } catch { return ''; }
 }
 
+// ---------- 实验环境自检（preflight，0.14.6 P3a，回应 skillhub stability 4.4「环境配错难排查」）----------
+// 流程 C 启动前校验 Node / pi 版本 / 可选 evolver 后端 / 经验库可写，配错时打印明确诊断而非静默失败。
+function preflight() {
+  const checks = [];
+  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  checks.push({ name: 'Node ≥22', ok: nodeMajor >= 22, detail: `v${process.versions.node}`, fix: '升级到 Node ≥22 后重试（pi/evolver 与 traps 均要求）' });
+  const piPkgPath = path.join(LAB, 'node_modules', '@earendil-works', 'pi-coding-agent', 'package.json');
+  if (fs.existsSync(piPkgPath)) {
+    try {
+      const v = JSON.parse(fs.readFileSync(piPkgPath, 'utf8')).version || '0.0.0';
+      const [maj, min, pat] = v.split('.').map((n) => parseInt(n, 10) || 0);
+      const ok = maj > 0 || min > 85 || (min === 85 && pat >= 1);
+      checks.push({ name: 'pi ≥0.85.1（支持 $ENV 插值）', ok, detail: `v${v}`, fix: '升级 pi-coding-agent ≥0.85.1；否则 models.json 的 $ENV 插值需改用 --api-key 显式传（见 FAQ·Q2）' });
+    } catch { checks.push({ name: 'pi 版本可解析', ok: false, detail: 'package.json 解析失败', fix: '重新 npm install' }); }
+  } else {
+    checks.push({ name: 'pi 已安装', ok: false, detail: 'node_modules/@earendil-works/pi-coding-agent 缺失', fix: '先在仓库根目录执行 npm install' });
+  }
+  if (opts.engine === 'evolver') {
+    const evoOk = fs.existsSync(path.join(LAB, 'node_modules', '@evomap', 'evolver', 'bin', 'evolver.js'));
+    checks.push({ name: 'evolver 后端已安装（--engine evolver）', ok: evoOk, detail: evoOk ? '已就位' : '缺失', fix: 'npm install 安装 @evomap/evolver（GPL，可选集成）' });
+  }
+  let storeOk = true, storeDetail = EVO_STORE;
+  try {
+    fs.mkdirSync(EVO_STORE, { recursive: true });
+    const probe = path.join(EVO_STORE, '.pi-evox-pf');
+    fs.writeFileSync(probe, 'ok'); fs.rmSync(probe, { force: true });
+  } catch (e) { storeOk = false; storeDetail = `${EVO_STORE} 不可写：${String(e.message).slice(0, 80)}`; }
+  checks.push({ name: '经验库目录可写', ok: storeOk, detail: storeDetail, fix: '检查目录权限 / 杀软拦截' });
+  log('=== 实验环境自检（preflight） ===');
+  let fail = 0;
+  for (const c of checks) {
+    log(`  [${c.ok ? '✓' : '✗'}] ${c.name} —— ${c.detail}`);
+    if (!c.ok) { log(`      → 修正：${c.fix}`); fail++; }
+  }
+  if (fail) { logErr(`\npreflight 未通过 ${fail} 项，请修正后再跑流程 C 实验（日常 A/B 流程不受影响）。`); process.exit(2); }
+  log('✓ 实验环境就绪。');
+}
+
 // ---------- 工作区 ----------
+preflight();
 const root = opts.root ?? path.join(LAB, 'exp', `loop-${Date.now()}`);
 fs.mkdirSync(root, { recursive: true });
 fs.writeFileSync(path.join(root, 'task.txt'), taskText);
