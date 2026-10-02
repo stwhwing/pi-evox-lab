@@ -71,6 +71,7 @@ function readJsonl(p) {
 				out.push(JSON.parse(s));
 			} catch (err) {
 				console.error(`[pi-evox] 警告：${p} 第 ${idx + 1} 行不是合法 JSON，已跳过（原因：${err.message}）`);
+				console.error(`    → 修正：检查该行是否为合法 JSON（缺引号/逗号/括号），或用 light-cli 重新沉淀该条；不影响其他基因流转。`);
 			}
 		}
 	} catch { /* 文件不存在 → 空 */ }
