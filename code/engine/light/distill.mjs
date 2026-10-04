@@ -195,10 +195,10 @@ export function distillFromTranscript(transcriptPath, opts = {}) {
   const st = extractSignals(msgs);
   // 行为对齐 evolver：无真实错误（is_error 计数为 0）时不起草 —— "not enough to distill, Nothing stored"
   if (st.errorCount === 0) {
-    return { gene: null, raw: '[light-distill] no error signals in session (is_error count = 0) — Nothing stored' };
+    return { gene: null, raw: '[pi-evox] no error signals in session (is_error count = 0) — Nothing stored' };
   }
   const gene = buildGene({ msgs, category: opts.category ?? 'repair', source: 'light-distill', strategyFormat: opts.strategyFormat ?? 'narrative' });
-  const raw = `[light-distill] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined\n            signals_match: ${gene.signals_match.join(', ')}\n            errors seen: ${st.errorCount}`;
+  const raw = `[pi-evox] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined\n            signals_match: ${gene.signals_match.join(', ')}\n            errors seen: ${st.errorCount}`;
   return { gene, raw };
 }
 
@@ -206,7 +206,7 @@ export function distillFromTranscript(transcriptPath, opts = {}) {
 export function distillManual({ category = 'repair', signals = [], strategy, summary, antiPatterns = [], source = 'light-manual' }) {
   // 占位符守卫：引导草稿未补全 FIX 时拒绝落库（避免产出低质量基因）。
   if (/<在此填写|<\s*在此/.test(String(strategy || ''))) {
-    return { gene: null, raw: '[light-distill] 拒绝：strategy 仍是占位符，请补全 FIX（具体参数/命令/编码）后再提交' };
+    return { gene: null, raw: '[pi-evox] 拒绝：strategy 仍是占位符，请补全 FIX（具体参数/命令/编码）后再提交' };
   }
   const payload = { strategy, signals, at: Date.now() };
   const digest = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
@@ -227,5 +227,5 @@ export function distillManual({ category = 'repair', signals = [], strategy, sum
     scope: { signals: sig.map((s) => `capability:${s}`) },
     asset_id: `sha256:${digest}`,
   };
-  return { gene, raw: `[light-distill] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined` };
+  return { gene, raw: `[pi-evox] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined` };
 }
