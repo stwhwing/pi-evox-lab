@@ -144,24 +144,29 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 如果本研究对你的工作有帮助，也请给上面这些项目点 star——它们是真正的主角。
 
-## 项目状态（2026-09-24）
+## 项目状态（2026-10-04）
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.14.4（版本轨迹：0.3.0 首发 → 0.14.4） |
+| 当前版本 | 0.14.7（版本轨迹：0.3.0 首发 → 0.14.7） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 召回 | 唯一实现 `evolver-recall.mjs`：审核门控（台账 **last-write-wins**）+ 修法/叙述双守卫 + **对靶 top-N** + **负载均衡偏置**（本版新增）+ **注入冲突守卫** |
 | 沉淀 | **引导式 `light-cli draft --error`**（本版新增：自动抽信号 + 预填 AVOID + 写 `anti_patterns`，人只补 FIX）+ 手写式 `distill`；内容去重 |
 | 生产蒸馏 | `distill_sessions.mjs` 直读宿主会话存储，**只信权威错误标志**（`isError` / 非零 `exit_code`，不再扫正文关键词）；两级门 + 候选报告 |
 | 自动召回 | 宿主原生钩子接入已落地（bootstrap 类与 `pre_llm_call` 类各一），并**按宿主记录注入埋点**（`agent` / `targeted` / `injected`） |
 | 供给现状（诚实） | 真实生产会话可自动抽取的干净修法对密度低（实测 `distillablePairs=0`）⇒ 基因库主要来自**人工 / 引导式沉淀** |
-| ClawHub | moderation **clean**；clawscan 剩余 findings 均为功能固有（已文档化） |
-| skillhub | TRACE「优秀」；科恩实验室 **benign**；云鼎残余项为 LLM 工具普遍特征（中立声明见下） |
+| ClawHub | moderation **CLEAN**；static-analysis / skillspector 剩余 findings 均为功能固有（已被 moderate=clean 裁决覆盖，已文档化） |
+| skillhub | 评测均值 ≈4.55（15 维）；科恩实验室 **benign**；云鼎 suspicious 为 LLM 工具普遍特征（中立声明见下）；usability 4.7（较 0.14.5 的 4.3 提升） |
 | 上游 | 4+1 项缺口已提交官方 issue（evolver #624-#627、pi #9258）；核心运行时不依赖其回应 |
 
 **0.14.4 本版要点**：① 新增**引导式沉淀** `light-cli draft --error`（自动抽 signals + 预填 AVOID + 写入 `anti_patterns`，未补 FIX 的占位符草稿被守卫拒绝落库）② `anti_patterns` 改为**单 token 字面量**（方案A 词汇对齐），使**注入冲突守卫**真正可触发 ③ 召回新增**负载均衡偏置**（借鉴 FlyLoRA / Switch Transformer 形式，冷门基因不再被热门长期霸榜）④ 新增**按宿主的注入观测**（`recall_calls.jsonl` 记录 `agent` / `targeted` / `injected` / `query`）⑤ **审核语义 last-write-wins 补齐**（`pi_evolve` / `light/store` / `metrics_collect` 三处此前遗漏的读取侧——此前被 quarantine 的基因在部分路径仍会被注入）⑥ 生产蒸馏只信**权威错误标志**（消除 9 例把成功命令误判为失败的噪声）。
 
 **0.14.3 本版要点**：① 召回侧修复「**隔离（quarantine）无法撤销已批准**」——台账改为按 assetId 的**最后一条状态**判定（last-write-wins）② 新增**叙述守卫**，把会话旁白/推理流水式文本挡在注入之外 ③ `distill_sessions.mjs` 由「诊断脚本」升级为**真实蒸馏适配器**（失败/重试的**参数差异**抽取 + 两级门 + 候选报告）④ `light-cli distill` 增加**内容去重**（重复沉淀不再堆积，也不会把已批准资产的审核状态打回）⑤ 召回新增**对靶 top-N**（与任务无关即不注入）。
+
+**0.14.5 / 0.14.6 / 0.14.7 本版要点**：
+- **0.14.5**：拉升 progressive / antiPatternFaq / boundary 等分项的评测分。
+- **0.14.6（内容/UX 版）**：新增 `light-cli doctor` 首次运行自检 + SKILL.md「3 步就绪」；坏行警告补「如何修正」；实验 preflight（Node≥22 / pi≥0.85.1）；新增「何时该沉淀」决策框。
+- **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
 
 ### 关于第三方静态 / 动态扫描结果的说明（中立声明）
 
