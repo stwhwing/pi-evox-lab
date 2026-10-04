@@ -81,6 +81,15 @@ function proposeFromError(error, { tool = '', context = '' } = {}) {
   };
 }
 
+// ── 统一错误输出（0.14.7，回应 skillhub errorHandling 4.3「缺统一错误码 / 中英文混杂 / 生硬退出」）──
+// 退出码约定：0=成功；1=运行期失败；2=用法错误（缺参数 / 未知命令）。
+// 所有错误统一前缀 [pi-evox]，需要时附「→ 修正：」一行可执行指引，避免只丢退出码让用户对着文档猜。
+function fail(msg, { hint, code = 2 } = {}) {
+  console.error(`[pi-evox] ✗ ${msg}`);
+  if (hint) console.error(`         → 修正：${hint}`);
+  process.exit(code);
+}
+
 function usage() {
   console.log(`light-cli — 内置经验库运维命令（零依赖）
 
@@ -100,6 +109,10 @@ function usage() {
 /**
  * doctor —— 首次运行自检（0.14.6 P2a，回应 skillhub usability 4.3「首次运行无引导」）。
  * 校验：Node 版本、经验库目录可写、命中登记目录可达，失败项给出**修正指引**而非只报错误。
+ *
+ * 用法示例：
+ *   node code/light-cli.mjs doctor
+ * 退出码：0=全部就绪；1=存在未通过项（日常 recall / 沉淀不受影响，仅提示先解决环境）。
  */
 function doctor() {
   const checks = [];
@@ -136,7 +149,7 @@ switch (cmd) {
       signalsArg = [...auto].join(',');
     }
     const strategy = flag('strategy') || (proposed ? proposed.strategy : undefined);
-    if (!strategy) { console.error('缺少 --strategy（写可执行修法：具体参数/命令/编码）'); process.exit(2); }
+    if (!strategy) fail('缺少 --strategy（写可执行修法：具体参数/命令/编码）', { hint: '参考上方用法示例；或从错误文本引导：node code/light-cli.mjs draft --error "<错误文本>"' });
     const signals = (signalsArg || 'manual').split(',').map((s) => s.trim()).filter(Boolean);
     // ── 内容去重（2026-09-18 实测补充）──────────────────────────────────────
     // asset_id **不是内容派生**的：同一条 strategy 连跑两次 distill 会得到两个不同 sha256，
@@ -147,7 +160,7 @@ switch (cmd) {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const target = norm(strategy);
     if (readGenes().some((g) => norm((g.strategy || []).join(' ')) === target)) {
-      console.log('[light-distill] 跳过：库中已存在相同 strategy 的基因（内容去重）');
+      console.log('[pi-evox] 跳过：库中已存在相同 strategy 的基因（内容去重）');
       break;
     }
     const { gene, raw } = distill.distillManual({
@@ -171,7 +184,7 @@ switch (cmd) {
   case 'draft': {
     // 引导式草稿：从错误直接生成可编辑的 distill 草稿（预填 AVOID + anti_patterns），人只补 FIX。
     const errorText = flag('error');
-    if (!errorText) { console.error('用法：light-cli.mjs draft --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--commit]'); process.exit(2); }
+    if (!errorText) fail('draft 需至少 --error "<错误文本>" 以自动抽信号', { hint: '用法：light-cli.mjs draft --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--commit]' });
     const proposed = proposeFromError(errorText, { tool: flag('tool', ''), context: flag('context', '') });
     // 人可补 --strategy 覆盖（写完整的 AVOID+FIX）；缺省用预填占位符（需审核前补全）。
     const strategy = flag('strategy') || proposed.strategy;
@@ -185,7 +198,7 @@ switch (cmd) {
       const { appendGene, appendReview, readGenes } = await import('./engine/light/store.mjs');
       const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
       if (readGenes().some((g) => norm((g.strategy || []).join(' ')) === norm(strategy))) {
-        console.log('\n[light-draft] 跳过：库中已存在相同 strategy 的基因（内容去重）');
+        console.log('\n[pi-evox] 跳过：库中已存在相同 strategy 基因已存在（内容去重）');
         break;
       }
       const { gene, raw } = distill.distillManual({
@@ -205,7 +218,7 @@ switch (cmd) {
   }
   case 'approve': {
     const id = positional[0];
-    if (!id) { console.error('用法：light-cli.mjs approve <gene_id>'); process.exit(2); }
+    if (!id) fail('approve 需传入 <gene_id>', { hint: '先运行 node code/light-cli.mjs list 查看可用 gene_id' });
     const r = ledger.approve(id);
     console.log(r.ok ? `✓ 已审核通过${r.alreadyApproved ? '（此前已通过）' : ''}：${r.assetId}` : `✗ ${r.reason}`);
     process.exit(r.ok ? 0 : 1);
@@ -213,7 +226,7 @@ switch (cmd) {
   }
   case 'quarantine': {
     const id = positional[0];
-    if (!id) { console.error('用法：light-cli.mjs quarantine <gene_id> [--reason ...]'); process.exit(2); }
+    if (!id) fail('quarantine 需传入 <gene_id>', { hint: '先运行 node code/light-cli.mjs list 查看可用 gene_id' });
     const r = ledger.quarantine(id, flag('reason', 'manually quarantined'));
     console.log(r.ok ? `✓ 已隔离：${r.assetId}` : `✗ ${r.reason}`);
     process.exit(r.ok ? 0 : 1);
@@ -241,6 +254,7 @@ switch (cmd) {
     break;
   }
   default:
+    if (cmd) fail(`未知命令：${cmd}`, { hint: '运行不带参数查看完整用法' });
     usage();
-    process.exit(cmd ? 2 : 0);
+    process.exit(0);
 }
