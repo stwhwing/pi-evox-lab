@@ -140,10 +140,22 @@ function classifyError(text) {
   for (const [re, hint] of ERROR_HINTS) if (re.test(text)) return hint;
   return null;
 }
-function runCli(entry, args, { cwd = LAB, silent = false, mergeStderr = false, allowFail = false, extraEnv = null } = {}) {
+function runCli(entry, args, { cwd = LAB, silent = false, mergeStderr = false, allowFail = false, extraEnv = null, timeout = Number(process.env.EVOX_CLI_TIMEOUT_MS) || 600000 } = {}) {
   const env = { ...process.env, ...(extraEnv ?? {}) };
   if (MANAGED_NODE) env.PATH = `${MANAGED_NODE}${path.delimiter}${env.PATH ?? ''}`;
-  const r = spawnSync(process.execPath, [entry, ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 26, env });
+  const r = spawnSync(process.execPath, [entry, ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 26, env, timeout });
+  if (r.error) {
+    // 超时 / 启动失败：allowFail 调用方（sum_tokens / adapter 等尽力而为）静默返回，其余抛出可读错误。
+    // 超时（code=ETIMEDOUT）按网络类诊断提示，并说明可用 EVOX_CLI_TIMEOUT_MS 调整上限。
+    if (allowFail) return '';
+    const code = r.error.code || 'error';
+    const hint = classifyError(code === 'ETIMEDOUT'
+      ? 'ETIMEDOUT 子进程超时（可用环境变量 EVOX_CLI_TIMEOUT_MS 调大上限，单位毫秒，默认 600000）'
+      : code);
+    const err = new Error(`子进程调用失败（${code}）：${String(r.error.message).slice(0, 200)}${hint ? `\n  ↳ 诊断：${hint}` : ''}`);
+    err.code = code;
+    throw err;
+  }
   const out = (r.stdout ?? '') + (mergeStderr ? (r.stderr ?? '') : '');
   if (!allowFail && r.status !== 0) {
     const detail = String(r.stderr ?? '').trim().slice(0, 200);
