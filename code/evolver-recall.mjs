@@ -19,6 +19,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+// ── 统一错误输出（0.14.7，回应 skillhub errorHandling 4.3「缺统一错误码 / 中英文混杂 / 生硬退出」）──
+// 退出码约定：0=成功；1=运行期失败；2=用法错误（缺参数 / 用法错误）。统一前缀 [pi-evox]，
+// 需要时附「→ 修正：」一行可执行指引，避免只丢退出码。本文件全程 fail-closed / 守卫不变。
+function fail(msg, { hint, code = 2 } = {}) {
+	console.error(`[pi-evox] ✗ ${msg}`);
+	if (hint) console.error(`         → 修正：${hint}`);
+	process.exit(code);
+}
+
 const EVO_STORE = process.env.EVO_STORE_DIR || path.join(os.homedir(), '.evomap', 'assets');
 const EVO_GENES = path.join(EVO_STORE, 'genes.jsonl');
 const EVO_REVIEW = path.join(EVO_STORE, 'review.jsonl');
@@ -70,8 +79,10 @@ function readJsonl(p) {
 			try {
 				out.push(JSON.parse(s));
 			} catch (err) {
-				console.error(`[pi-evox] 警告：${p} 第 ${idx + 1} 行不是合法 JSON，已跳过（原因：${err.message}）`);
-				console.error(`    → 修正：检查该行是否为合法 JSON（缺引号/逗号/括号），或用 light-cli 重新沉淀该条；不影响其他基因流转。`);
+				const preview = s.length > 140 ? s.slice(0, 140) + '…' : s;
+				console.error(`[pi-evox] ⚠ ${p} 第 ${idx + 1} 行不是合法 JSON，已跳过（原因：${err.message}）`);
+				console.error(`         该行内容：${preview}`);
+				console.error(`         → 修正：检查该行是否缺引号/逗号/括号；或用 light-cli 重新沉淀该条；不影响其他基因流转。`);
 			}
 		}
 	} catch { /* 文件不存在 → 空 */ }
@@ -270,10 +281,7 @@ function registerHit(n, note) {
 	} catch { /* 无留痕 → 退化为全量列表 */ }
 	if (!list) list = recallList();
 	const item = list[n - 1];
-	if (!item) {
-		console.error(`登记失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`);
-		process.exit(1);
-	}
+	if (!item) fail(`登记失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '用 recall 输出顶部的编号，或重新运行 recall 查看最新编号' });
 	fs.mkdirSync(HITS_DIR, { recursive: true });
 	const rec = {
 		ts: new Date().toISOString(),
@@ -283,8 +291,8 @@ function registerHit(n, note) {
 		note: String(note).slice(0, 300),
 	};
 	fs.appendFileSync(HITS_FILE, JSON.stringify(rec) + '\n');
-	console.log(`[Evolver] 命中已登记 #${n} (${item.id}) → ${HITS_FILE}`);
-	console.log(`[Evolver] 当前命中总数: ${readJsonl(HITS_FILE).length}`);
+	console.log(`[pi-evox] 命中已登记 #${n} (${item.id}) → ${HITS_FILE}`);
+	console.log(`[pi-evox] 当前命中总数: ${readJsonl(HITS_FILE).length}`);
 }
 
 function recall() {
@@ -294,7 +302,7 @@ function recall() {
 	const { picked, total, targeted } = selectList(full);
 	recordRecallCall({ targeted, injected: picked.length, query: QUERY });
 	console.log(
-		`[Evolver 经验库] 基因总数=${all.length} | 已审核=${approved.size} | 守卫通过=${full.length} | ` +
+		`[pi-evox] 基因总数=${all.length} | 已审核=${approved.size} | 守卫通过=${full.length} | ` +
 		`${targeted ? '对靶' : '未对靶'}选中=${picked.length}/${total}${targeted ? '' : ` (top${TOPN})`}`,
 	);
 	if (picked.length === 0) {
@@ -323,8 +331,7 @@ const argv = process.argv.slice(2);
 if (argv[0] === '--register-hit') {
 	const n = parseInt(argv[1], 10);
 	if (!Number.isInteger(n) || n < 1) {
-		console.error('用法: evolver-recall.mjs --register-hit <N> --note "<任务一句话>"');
-		process.exit(2);
+		fail('用法: evolver-recall.mjs --register-hit <N> --note "<任务一句话>"');
 	}
 	const ni = argv.indexOf('--note');
 	registerHit(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
