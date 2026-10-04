@@ -1,3 +1,9 @@
+# 0.14.7 稳定性：启动前校验 Python 可用性（回应 skillhub stability 4.3「trap 生成器依赖 Python 但未做可用性检查」）
+import sys as _sys
+if _sys.version_info < (3, 8):
+    _sys.stderr.write("[pi-evox] 需要 Python >= 3.8（当前 %d.%d）\n" % (_sys.version_info[0], _sys.version_info[1]))
+    _sys.exit(2)
+
 import os
 d = os.path.join('exp', 'encoding-trap-template', 'data')
 os.makedirs(d, exist_ok=True)
