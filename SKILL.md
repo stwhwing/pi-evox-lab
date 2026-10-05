@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.7
+version: 0.14.8
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -194,16 +194,40 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 - `@evomap/evolver` 为**可选集成**（GPL-3.0-or-later）——仅在主动安装并使用 `--engine evolver` 时涉及；
 - 详细说明与上游许可核对记录：[`docs/security-and-license.md`](docs/security-and-license.md)。
 
+## 目录与文档导航
+
+> 按「想做什么」直达，不必通读全文。
+
+| 路径 | 作用 | 何时看 |
+|------|------|--------|
+| `SKILL.md`（本文件） | 用法、流程 A/B/C、FAQ、反模式 | 首次使用与日常 A/B 流程 |
+| `code/evolver-recall.mjs` | 流程 A：召回 + 命中登记（**唯一召回实现**） | 接智能体 / 排查召回为空 |
+| `code/light-cli.mjs` | 流程 B：沉淀 / 审核（内置零依赖引擎） | 沉淀修法、审核基因 |
+| `code/pi_evolve.mjs` | 流程 C：受控闭环实验编排（**研究用，默认关**） | 想量化继承收益 |
+| `code/engine/light/` | 轻量引擎：`distill` / `ledger` / `store` 三件套 | 想理解蒸馏或审核语义 |
+| `code/distill_sessions.mjs` | 生产会话蒸馏适配器（直读宿主 SQLite） | 定期从**真实会话**抽修法 |
+| `docs/other-agents.md` | 多宿主接入（OpenClaw / Hermes 等） | 接非 WorkBuddy 智能体 |
+| `docs/providers.md` | LLM provider / `models.json` 配置 | 跑流程 C 之前 |
+| `docs/security-and-license.md` | 安全边界 / 数据外发 / 上游许可 | **引入生产前必读** |
+| `docs/experiment-report.md` | 完整 22 节实验报告（收益量化） | 想知道「效果到底多大」 |
+| `docs/adapter-design.md` | 注入通道 / 适配器设计 | 做深度集成 |
+| `examples/walkthrough-*.md` | 端到端走查（GBK 编码 / 非法 JSON 两种场景） | **第一次照着跑一遍** |
+| `examples/task-*.txt`、`sample-run-log.md` | 各陷阱任务样例 + 一次真实运行日志 | 自建实验 |
+| `traps/make_*_trap.py` | 6 种确定性陷阱生成器（各需 Python ≥ 3.8） | 流程 C 造失败环境 |
+| `exp/` | **实验工作区（非运行必需）**：`*-trap-template/`=各陷阱的可复制实验模板；`regress-shq/`=回归测试集；`metrics/`=度量日志 | 跑流程 C / 复现实验时 |
+
 ## 常见错误用法（反模式速查）
 
-| 错误做法 | 后果 | 正确做法 |
-|----------|------|----------|
-| 注入「成功总结」型 strategy（"脚本运行正确，结果如下…"） | 守卫过滤 / 等效噪声，比不注入更差（实测 +36pp） | 写成可执行修法（含参数/命令/编码："用 `encoding='gbk'` 打开"） |
-| 用「模型可能犯错」型陷阱做实验（BOM、`int("120.0")`） | 命中率不可控（实测 0/3），结论不可复现 | 改用「环境必然失败」型（无效 UTF-8 字节、非法 JSON） |
-| token 降幅直接当继承收益 | 把重复执行效应（≈ -22%）误算成继承 | 设无注入对照组，报告净收益 |
-| 用字符串计数统计错误 | 把文本提及误计为错误（曾致"11→4"实为 8→4） | 用精确口径：`isError=true` 的 toolResult |
-| 冷启动就期待避坑效果 | 空库无修法可召回，误判工具无效 | 先按流程 B 沉淀，价值随使用复利增长 |
-| 在生产环境开 `--auto-approve --llm-refine` | 未复核的 LLM 重写内容直接注入 | 保留人工审核门；确需演示时加 `--allow-unreviewed-refine` 并知悉风险 |
+> 每条附「**为什么会错**」——讲机制而非现象；记住机制才不会再犯（而非只记住这条别做）。
+
+| 错误做法 | 为什么会错（机制） | 后果 | 正确做法 |
+|----------|--------------------|------|----------|
+| 注入「成功总结」型 strategy（"脚本运行正确，结果如下…"） | 软提示里「结论」对智能体是零信息；只有**可执行动作**能改变下一轮行为 | 守卫过滤 / 等效噪声，比不注入更差（实测 +36pp） | 写成可执行修法（含参数/命令/编码："用 `encoding='gbk'` 打开"） |
+| 用「模型可能犯错」型陷阱做实验（BOM、`int("120.0")`） | 陷阱可靠性是「陷阱 × 模型」的联合属性——模型可能自主绕过（如改用 `'rb'` 二进制读） | 命中率不可控（实测 0/3），结论不可复现 | 改用「环境必然失败」型（无效 UTF-8 字节、非法 JSON） |
+| token 降幅直接当继承收益 | 重复执行本身有学习效应（≈ -22%），不设对照组无法从中剥离基因净贡献 | 把重复执行效应误算成继承 | 设无注入对照组，报告净收益 |
+| 用字符串计数统计错误 | 正文「提到 error」≠「真的报错」，grep 计数把文本提及混入 | 把文本提及误计为错误（曾致"11→4"实为 8→4） | 用精确口径：`isError=true` 的 toolResult |
+| 冷启动就期待避坑效果 | 召回是「对靶注入」，空库时物理上无可注入修法 | 空库无修法可召回，误判工具无效 | 先按流程 B 沉淀，价值随使用复利增长 |
+| 在生产环境开 `--auto-approve --llm-refine` | 人工审核门是唯一质量闸，跳过即让未复核的 LLM 改写直达注入 | 未复核的 LLM 重写内容直接注入 | 保留人工审核门；确需演示时加 `--allow-unreviewed-refine` 并知悉风险 |
 
 ## 安全与数据外发声明（精简版，全文见 [`docs/security-and-license.md`](docs/security-and-license.md)）
 
@@ -254,20 +278,29 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 ## FAQ（常见问题）
 
 **Q1：召回输出「无可召回修法」是坏了吗？**
-不是。经验库从零开始，首次运行必然为空——价值随使用积累。跑一次流程 B（沉淀一个修法）即可点亮。
+不是。经验库从零开始，首次运行必然为空——价值随使用积累。点亮只需把踩过的坑沉淀成修法：
+```bash
+node code/light-cli.mjs draft --error "<这次的真实报错>" --context "<你在做什么>"   # 预填草稿，人补 FIX
+node code/light-cli.mjs approve <gene_id>                                          # 审核通过后才可注入
+```
 
 **Q2：models.json 里配 `$ENV` 环境变量不生效？**
 pi **0.85.1 起已支持 `$ENV` 插值**（实测确认，上游 issue #9258 已闭环该项）；**0.74.2 及更早版本不支持**，需用 `--api-key "$MY_KEY"` 显式传。
 
 **Q3：`--fresh` 会不会丢数据？**
-不会丢——运行前自动备份到 `~/.evomap/assets/backup-<时间戳>/`，可随时恢复。但清空动作仍是破坏性的，执行前请确认。
+不会丢——运行前自动备份到 `~/.evomap/assets/backup-<时间戳>/`。恢复时把该目录下的 `genes.jsonl` 与 `review.jsonl` 拷回 `~/.evomap/assets/` 即可（两者配套，勿只拷一个）。但清空动作仍是破坏性的，执行前请确认。
 
 **Q4：修法注入后还是踩坑了，为什么？**
 修法注入是软提示（system prompt），遵从度模型相关——它把「多次试错」压成「最多一次教训」，但不承诺 100% 避坑（诚实边界见报告 §22）。
 
 **Q5：沉淀/审核时报「命令找不到」？**
-默认后端（light）无需任何外部命令——用 `node code/light-cli.mjs distill|approve|list`；
-若在用 evolver 集成（`--engine evolver`），则需先 `npm install` 使其 CLI 就位。
+默认后端（light）**零外部依赖**，只要 node ≥22 就能跑：
+```bash
+node code/light-cli.mjs doctor    # 环境自检（Node 版本 / 目录可写）
+node code/light-cli.mjs list      # 查看台账（state | id | strategy）
+node code/light-cli.mjs distill --error "<报错>" --strategy "AVOID: ... FIX: ..."
+```
+只有在用 evolver 集成（`--engine evolver`）时，才需先 `npm install` 让其 CLI 就位。
 
 **Q6：approve 能全自动吗？**
 可以（`--auto-approve` 或部署时授权），默认是人工审核门。自动化后召回/沉淀双向守卫仍兜底，但建议定期 `evolver review --list` 复查。
