@@ -154,8 +154,31 @@ function recallList() {
 //     **只保留 score>0**（不对靶就不注入——避免不对靶注入的净开销），按分排序取前 N。
 //   · 无 query：退化为按入库顺序（追加式 → 靠后更新）取前 N，仅做**数量封顶**，不再任意截断。
 const QUERY = (() => {
+	const argv = process.argv.slice(2);
+	// 位置参数护栏（0.14.8）：query 必须用 --query "<文本>" 或 EVOX_QUERY。
+	// 旧版把裸位置参数（如 `evolver-recall.mjs "处理 GBK 报错"`）静默忽略，回落成
+	// 「按入库顺序注入尾部 N 条」——看似有结果实则与当前任务无关，非开发者极难察觉。
+	// 现把首个裸位置参数提升为 query 并提示规范写法，消除该静默 footgun。
+	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note'];
+	const consumed = new Set();
+	for (const f of VALUED) {
+		const i = argv.indexOf(f);
+		if (i >= 0) { consumed.add(i); if (i + 1 < argv.length) consumed.add(i + 1); }
+	}
+	const stray = argv.filter((a, i) => !consumed.has(i) && !String(a).startsWith('--'));
 	const i = process.argv.indexOf('--query');
-	return i >= 0 ? (process.argv[i + 1] ?? '') : (process.env.EVOX_QUERY ?? '');
+	let q = i >= 0 ? (process.argv[i + 1] ?? '') : (process.env.EVOX_QUERY ?? '');
+	if (stray.length) {
+		const head = String(stray[0]).replace(/\s+/g, ' ').trim().slice(0, 60);
+		if (!q) {
+			q = String(stray[0]);
+			console.error(`[pi-evox] ⚠ 检测到位置参数，已按 query 处理：「${head}」`);
+			console.error('         → 修正：query 请用 --query "' + head.slice(0, 40) + '" 显式传参（位置参数写法不推荐）');
+		} else {
+			console.error(`[pi-evox] ⚠ 位置参数「${head}」已被忽略（当前 query 由 --query / EVOX_QUERY 提供）`);
+		}
+	}
+	return q;
 })();
 const TOPN = (() => {
 	const i = process.argv.indexOf('--top');
