@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.14.8
+version: 0.15.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -215,6 +215,57 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 | `examples/task-*.txt`、`sample-run-log.md` | 各陷阱任务样例 + 一次真实运行日志 | 自建实验 |
 | `traps/make_*_trap.py` | 6 种确定性陷阱生成器（各需 Python ≥ 3.8） | 流程 C 造失败环境 |
 | `exp/` | **实验工作区（非运行必需）**：`*-trap-template/`=各陷阱的可复制实验模板；`regress-shq/`=回归测试集；`metrics/`=度量日志 | 跑流程 C / 复现实验时 |
+
+## 共享基因库（跨实例 / 跨用户，0.14.9 新增）
+
+> 让「一个坑只踩一次」跨实例生效：把**已验证的修法**沉淀的基因放进**自建共享池**，其他实例拉取复用。**本地库始终是权威源**，共享是增量；离线完全可用。
+
+**三步**：
+```bash
+# 1) 沉淀时标记「可共享」（默认不共享 = 不外发；命中脱敏闸门的私有内容永不外流）
+node code/light-cli.mjs distill --signals gbk,encoding --strategy "FIX: 用 encoding='gbk' 读老文件" --shareable
+# 2) 过闸写入自建共享池（幂等；私有IP/绝对路径/密钥/内网服务命中即拦截，不出网）
+node code/light-cli.mjs gene submit --pool <自有共享池目录>
+# 3) 其他实例拉取（按 asset_id 幂等合并；审核态由你指定的池信任级别决定）
+node code/light-cli.mjs gene import <池文件>                 # 默认 community → 待审
+node code/light-cli.mjs gene import <自建池文件> --tier official   # 自建策展池 → 自动通过
+```
+
+**设计要点（务必知悉）**：
+- **脱敏闸门 fail-closed**：基因**离开本机/入池前**必扫全部文本字段（summary/strategy/anti_patterns/signals），命中私有 IP、绝对本地路径、密钥、内网服务/代号即**拦截**，不出网。
+- **opt-in 共享**：`shareable` 默认 **false**；只有显式 `--shareable` 的基因才可导出。
+- **审核门控不被绕过**：导入基因默认 **待审（quarantined）**；仅当**你显式信任某个自建池**（`--tier official`）才自动通过。tier 由**操作者指定的池**决定，**不读取基因自称的 tier**（防恶意池伪装）。
+- **幂等合并**：拉取按 `asset_id`(sha256) 去重，重复拉取不产生重复。
+- 池目录默认 `~/.evomap/pool`（`EVO_POOL_DIR` 覆盖）。池可放自有 Git 仓（版本化 + 天然审计 + 权限即鉴权）。
+
+## 宿主接入契约（0.15.0 融入实际应用的关键）
+
+> 经验继承**不是"装上就生效"**——它依赖宿主把「任务意图」喂进来、把「效果」回填回去。
+> 私有节点实测：机制在跑（153 次 recall），但**真正有效（对靶且有注入）仅 10%**。三个断点都在宿主侧。
+
+### ① 必须传干净的任务意图（否则召回不到）
+宿主钩子调用召回时，**必须**把**用户消息正文**（剥掉企业IM群/私聊前缀、`[heartbeat]` 等信封前缀、不要只传 URL）经 `EVOX_QUERY` 或 `--query` 传入：
+```bash
+node code/evolver-recall.mjs --query "$(用户消息正文)" --agent <宿主名>
+```
+recall 内置清洗会自动剥信封前缀/纯 URL/心跳样板；清洗后为空 ⇒ **不注入**（宁缺毋滥，绝不用无关基因凑数）。
+
+### ② 必须回填效果（否则无法度量、无法发现失效修法）
+任务结束时按实际结果二选一登记：
+```bash
+node code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"   # 采用了 → hits.jsonl
+node code/evolver-recall.mjs --negate <N> --note "<为什么没起作用>"     # 没采用/仍踩坑 → pending_injections.jsonl
+```
+每次注入都会自动落 `pending_injections.jsonl`；`--negate` 让「注入→有效」转化率可算，**并能及时发现已失效的修法**。
+
+### ③ 宿主能力对照
+| 能力 | OpenClaw | Hermes | 通用 Agent |
+|---|---|---|---|
+| 任务开始注入（bootstrap / `pre_llm_call`） | 原生钩子 | 原生钩子 | 提示词接入 |
+| 传干净任务意图（`EVOX_QUERY`） | 需在钩子中提取用户正文 | 同 | 同 |
+| 任务结束回填（`--register-hit`/`--negate`） | 需在钩子中回调 | 同 | 人工/提示词 |
+
+> ⚠️ 只做 ① 不做 ②：能召回但**不知道有没有用**；只做 ② 不做 ①：**永远召不回**。两者缺一，经验继承都不成立。
 
 ## 常见错误用法（反模式速查）
 
