@@ -34,6 +34,9 @@ const EVO_REVIEW = path.join(EVO_STORE, 'review.jsonl');
 const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experiments');
 const HITS_FILE = path.join(HITS_DIR, 'hits.jsonl');
 const RECALL_CALLS_FILE = path.join(HITS_DIR, 'recall_calls.jsonl');
+/** 0.15.0 P0-3：注入即登记（pending → 命中/未命中），闭合「召回→注入→效果」漏斗。
+ *  私有节点实测：hits.jsonl 仅 1 条（部署自检），说明"注入后是否真避免"从未被记录。 */
+const PENDING_FILE = path.join(HITS_DIR, 'pending_injections.jsonl');
 
 /**
  * 埋点：记录一次 recall 调用（仅 recall 模式，不含 register-hit）。
@@ -41,6 +44,7 @@ const RECALL_CALLS_FILE = path.join(HITS_DIR, 'recall_calls.jsonl');
  * 动机：旧埋点只有 {ts,mode}，无法回答"哪个宿主注入了几条、是否多为空注入"——
  * 多个智能体宿主共享本实现，需按 agent 分离观测。
  * 向后兼容：未传 --agent 时记为 'unknown'；写失败不影响 recall 主流程。
+ * 0.15.0：新增 taskText（清洗后意图）与 noise（原始 query 清洗后是否变空）两个字段。
  */
 function recordRecallCall(extra = {}) {
 	try {
@@ -49,9 +53,26 @@ function recordRecallCall(extra = {}) {
 			ts: new Date().toISOString(), mode: 'recall', agent: AGENT,
 			targeted: !!extra.targeted, injected: Number.isFinite(extra.injected) ? extra.injected : 0,
 			query: String(extra.query ?? '').slice(0, 200),
+			taskText: String(extra.taskText ?? '').slice(0, 200),
+			noise: !!extra.noise,
 		}) + '\n');
 	} catch { /* 写失败不影响 recall 主流程 */ }
 }
+
+/** 0.15.0 P0-3：把本次注入的 gene_id 落 pending，供 --register-hit / --negate 回填。 */
+function recordPending(picked) {
+	try {
+		fs.mkdirSync(HITS_DIR, { recursive: true });
+		const ts = new Date().toISOString();
+		for (const it of picked) {
+			fs.appendFileSync(PENDING_FILE, JSON.stringify({
+				ts, agent: AGENT, gene_id: it.id, asset_id: it.assetId,
+				category: it.category, taskText: String(TASK_TEXT || '').slice(0, 200),
+			}) + '\n');
+		}
+	} catch { /* 留痕失败不影响召回 */ }
+}
+
 
 const REPAIR_SIGNAL_RE =
 	/error|exception|traceback|failed|invalid|cannot|unable|missing|not found|wrong|instead|avoid|fix|encoding\s*[=:]|errors\s*=|utf-?8|gbk|gb18030|latin-1|\brb\b|except|skip/i;
@@ -180,6 +201,42 @@ const QUERY = (() => {
 	}
 	return q;
 })();
+
+/**
+ * 任务文本清洗（0.15.0 P0-1，治「63% 打分落空」）。
+ *
+ * 私有节点实测：宿主钩子喂进来的原始消息带大量**与任务无关的注入前缀/样板**，
+ * 与基因 signals_match 零交集 ⇒ score<MIN_MATCH_SCORE ⇒ 宁缺毋滥不注入。
+ * 实测噪声样本（recall_calls.jsonl 实拉）：
+ *   「[企业IM 群消息前缀] 看看这是个什么技术」
+ *   「[企业IM 私聊前缀] …」「[OpenClaw heartbeat poll]」
+ *   纯 URL「https://mp.weixin.qq.com/s/olTmQF1rBWI…」
+ *   「What is the weather?」「reply with the single word OK」（无任务意图的探针）
+ *
+ * 这里**只剥壳、不改写语义**：去掉信封前缀/纯 URL/心跳样板，保留用户真实诉求。
+ * 剥完若为空 ⇒ 视为「无任务意图」（交由 selectList 走不注入路径，见 P0-2）。
+ */
+const HOST_PREFIX_RE = /^\s*\[(?:[^\]]{0,80})\]\s*/;
+const PURE_URL_RE = /^\s*(?:https?:\/\/|www\.)\S+\s*$/i;
+const HEARTBEAT_RE = /^\s*\[?\s*(?:openclaw\s+)?(?:heartbeat|heartbeat poll|ping|pong|cron)[^\]]{0,40}\]?\s*$/i;
+const PROBE_RE = /^\s*(?:what is the weather[?]?|reply with the single word ok|ping|pong|ok|test|hello|hi)[.?! ]*$/i;
+
+function sanitizeTaskText(raw) {
+	let t = String(raw || '').trim();
+	if (!t) return '';
+	// 反复剥信封前缀（部分宿主会叠多层，如 "[A][B] 正文"）
+	for (let i = 0; i < 4; i++) {
+		const m = t.match(HOST_PREFIX_RE);
+		if (!m || !m[0].trim()) break;
+		t = t.slice(m[0].length).trim();
+	}
+	if (!t) return '';
+	if (PURE_URL_RE.test(t) || HEARTBEAT_RE.test(t) || PROBE_RE.test(t)) return '';
+	return t.slice(0, 500);
+}
+/** 清洗后的任务意图（空串 = 无可对靶意图）。埋点与打分共用此值。 */
+const TASK_TEXT = sanitizeTaskText(QUERY);
+
 const TOPN = (() => {
 	const i = process.argv.indexOf('--top');
 	const n = i >= 0 ? Number(process.argv[i + 1]) : Number(process.env.EVOX_TOPN ?? 5);
@@ -215,7 +272,23 @@ const MIN_MATCH_SCORE = 2;
 
 function queryTokens(s) {
 	const raw = String(s || '').toLowerCase().match(/[a-z0-9_\-./]{3,}|[\u4e00-\u9fa5]{2,}/g) || [];
-	return new Set(raw.filter((t) => !STOP_WORDS.has(t)));
+	const out = new Set();
+	for (const t of raw) {
+		if (STOP_WORDS.has(t)) continue;
+		// 0.15.0 P0-1b：**CJK 段切二元（bigram）**。
+		// 根因（私有节点实测 63% 打分落空）：原实现把整段中文当**一个** token，
+		// 于是「帮我抓取这个公众号文章」与基因正文「公众号抓取一次成功」永不相交，
+		// signals 里的中文词也命中不了 ⇒ score<2 ⇒ 中文任务几乎永远召回不到修法。
+		// bigram 无需分词器、零依赖，对中文检索是标准做法（召回率显著提升）。
+		if (/[\u4e00-\u9fa5]/.test(t)) {
+			const cs = [...t];
+			if (cs.length === 1) { out.add(t); continue; }
+			for (let i = 0; i + 1 < cs.length; i++) out.add(cs[i] + cs[i + 1]);
+		} else {
+			out.add(t);
+		}
+	}
+	return out;
 }
 
 function scoreGene(item, qTokens, hitInfo) {
@@ -244,7 +317,19 @@ function scoreGene(item, qTokens, hitInfo) {
  * 预埋无害：基因普遍无 anti_patterns 或策略不重叠时，守卫不触发。
  */
 function tokenSet(str) {
-	return new Set(String(str || '').toLowerCase().match(/[a-z0-9_.-]+/g) || []);
+	// 0.15.0：与 queryTokens 同口径——CJK 也走 bigram，避免"召回用 bigram、
+	// 冲突守卫用整段"导致判据不一致（两处口径必须一致）。
+	const out = new Set();
+	for (const t of String(str || '').toLowerCase().match(/[a-z0-9_.-]+|[\u4e00-\u9fa5]{2,}/g) || []) {
+		if (/[\u4e00-\u9fa5]/.test(t)) {
+			const cs = [...t];
+			if (cs.length === 1) { out.add(t); continue; }
+			for (let i = 0; i + 1 < cs.length; i++) out.add(cs[i] + cs[i + 1]);
+		} else {
+			out.add(t);
+		}
+	}
+	return out;
 }
 function geneConflicts(a, b) {
 	const aAnti = new Set((a.antiPatterns || []).map((s) => String(s).toLowerCase()));
@@ -270,7 +355,9 @@ function resolveConflicts(items, scored) {
 
 /** 对靶 + top-N 选取；并落一份「本次选中」sidecar，供 --register-hit 正确解析编号 */
 function selectList(all) {
-	const qTokens = queryTokens(QUERY);
+	// 0.15.0：用**清洗后**的任务意图打分（治 私有节点实测 63% 打分落空）。
+	// 注：QUERY 原值仍用于埋点留痕/诊断，TASK_TEXT 才是"用户真实诉求"。
+	const qTokens = queryTokens(TASK_TEXT);
 	const hitInfo = aggregateHits();
 	let picked;
 	if (qTokens.size > 0) {
@@ -282,13 +369,16 @@ function selectList(all) {
 		const scored = new Map(scoredArr.map((x) => [x.it.id, x.s]));
 		picked = resolveConflicts(scoredArr.map((x) => x.it), scored);
 	} else {
-		// 无查询：按入库顺序取「最近」的 N 条（追加式台账，靠后=更新）
-		picked = all.slice(-TOPN);
+		// 0.15.0 P0-2：**无任务意图 → 一律不注入**（不再"取最近 N 条"）。
+		// 依据：私有节点实测该回落路径产生 30 次"与任务无关的注入"，而本项目实验已证
+		// 只注入不对靶内容比不注入**更差**（+36pp）——无任务文本时本就不该灌库。
+		picked = [];
 	}
 	try {
 		fs.mkdirSync(HITS_DIR, { recursive: true });
-		fs.writeFileSync(SELECTION_FILE, JSON.stringify({ ts: new Date().toISOString(), query: QUERY, ids: picked.map((p) => p.id) }));
+		fs.writeFileSync(SELECTION_FILE, JSON.stringify({ ts: new Date().toISOString(), query: QUERY, taskText: TASK_TEXT, ids: picked.map((p) => p.id) }));
 	} catch { /* 留痕失败不影响召回 */ }
+	// targeted 现在等价于"有任务意图"（即使未命中基因，语义上仍是对靶查询）
 	return { picked, total: all.length, targeted: qTokens.size > 0 };
 }
 
@@ -323,12 +413,21 @@ function recall() {
 	const approved = approvedAssetIds();
 	const full = recallList();
 	const { picked, total, targeted } = selectList(full);
-	recordRecallCall({ targeted, injected: picked.length, query: QUERY });
+	recordRecallCall({ targeted, injected: picked.length, query: QUERY, taskText: TASK_TEXT, noise: !TASK_TEXT });
+	recordPending(picked);
 	console.log(
 		`[pi-evox] 基因总数=${all.length} | 已审核=${approved.size} | 守卫通过=${full.length} | ` +
-		`${targeted ? '对靶' : '未对靶'}选中=${picked.length}/${total}${targeted ? '' : ` (top${TOPN})`}`,
+		`${targeted ? '对靶' : '无任务意图'}选中=${picked.length}/${total}` +
+		(targeted ? '' : '（0.15.0：查无任务意图 → 不注入）'),
 	);
 	if (picked.length === 0) {
+		if (!TASK_TEXT) {
+			// 0.15.0：区分「无任务意图」与「有意图但无对靶项」——前者是宿主没喂干净 query。
+			console.log('未拿到任务意图（query 清洗后为空）→ 不注入。');
+			console.log('  → 修正：宿主钩子请传**用户消息正文**到 EVOX_QUERY（勿带企业IM/心跳等信封前缀、勿只传 URL）。');
+			console.log('  本项目原则：查无任务意图时宁可不注入，也不用无关基因凑数（实测不对靶注入净开销为正）。');
+			return;
+		}
 		if (targeted) {
 			console.log('本任务与经验库无对靶项 → 不注入（宁缺毋滥，避免不对靶注入的净开销）。');
 			return;
@@ -342,12 +441,37 @@ function recall() {
 		console.log('  之后本命令即可召回。完整说明见 SKILL.md 流程 B。');
 		return;
 	}
-	console.log('以下为已验证修法，与本任务相关时优先采用；任务结束时若实际采用，请执行：');
-	console.log(`  node ${path.basename(process.argv[1])} --register-hit <N> --note "<任务一句话>"`);
+	console.log('以下为已验证修法，与本任务相关时优先采用；任务结束时请回填效果：');
+	console.log(`  采用了 → node ${path.basename(process.argv[1])} --register-hit <N> --note "<任务一句话>"`);
+	console.log(`  没采用/仍踩坑 → node ${path.basename(process.argv[1])} --negate <N> --note "<为什么没起作用>"`);
+	console.log('  （0.15.0：回填才能量化"注入→有效"转化率；不回的注入不计入效果统计）');
 	console.log('');
 	picked.forEach((it, i) => {
 		console.log(`[#${i + 1}|${it.id}] [${it.category}] ${it.text}`);
 	});
+}
+
+/** 0.15.0 P0-3：--negate 回填「注入了但没起作用」——与 --register-hit 对称，闭合漏斗。 */
+function registerNegated(n, note) {
+	let list = null;
+	try {
+		const sel = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
+		if (sel && Array.isArray(sel.ids) && sel.ids.length) {
+			const byId = new Map(recallList().map((x) => [x.id, x]));
+			list = sel.ids.map((id) => byId.get(id)).filter(Boolean);
+		}
+	} catch { /* 无留痕 → 退化为全量列表 */ }
+	if (!list) list = recallList();
+	const item = list[n - 1];
+	if (!item) fail(`回填失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '用 recall 输出顶部的编号' });
+	fs.mkdirSync(HITS_DIR, { recursive: true });
+	fs.appendFileSync(PENDING_FILE, JSON.stringify({
+		ts: new Date().toISOString(), agent: AGENT, gene_id: item.id, asset_id: item.assetId,
+		category: item.category, outcome: 'negated', note: String(note).slice(0, 300),
+		taskText: String(TASK_TEXT || '').slice(0, 200),
+	}) + '\n');
+	console.log(`[pi-evox] 已回填未采用 #${n} (${item.id}) → ${PENDING_FILE}`);
+	console.log('  → 该条会进入"注入→有效"转化率的分母，用于识别**该修法是否已失效**。');
 }
 
 const argv = process.argv.slice(2);
@@ -358,6 +482,13 @@ if (argv[0] === '--register-hit') {
 	}
 	const ni = argv.indexOf('--note');
 	registerHit(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+} else if (argv[0] === '--negate') {
+	const n = parseInt(argv[1], 10);
+	if (!Number.isInteger(n) || n < 1) {
+		fail('用法: evolver-recall.mjs --negate <N> --note "<为什么没起作用>"');
+	}
+	const ni = argv.indexOf('--note');
+	registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
 } else {
 	recall();
 }
