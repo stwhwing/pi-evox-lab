@@ -18,6 +18,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { proposeFromError } from './engine/light/distill.mjs';
+
+// 0.16.0 Q3-1：注入守卫。静态导入（同目录，无网络）；外层 try 保证**模块缺失也不能让召回崩掉**
+// ——宁可降级为「不加这道守卫」，也绝不能因守卫失败导致宿主 bootstrap 失败。
+let injectionScan = null;
+try {
+  ({ injectionScan } = await import(new URL('./injection_scan.mjs', import.meta.url).href));
+} catch {
+  injectionScan = null;
+}
 
 // ── 统一错误输出（0.14.7，回应 skillhub errorHandling 4.3「缺统一错误码 / 中英文混杂 / 生硬退出」）──
 // 退出码约定：0=成功；1=运行期失败；2=用法错误（缺参数 / 用法错误）。统一前缀 [pi-evox]，
@@ -155,6 +166,10 @@ function recallList() {
 		const text = st.join(' ').replace(/\s+/g, ' ').trim();
 		if (!REPAIR_SIGNAL_RE.test(text)) continue; // 修法守卫：宁缺毋滥
 		if (NARRATION_RE.test(String(st[0] ?? '').trim())) continue; // 叙述守卫：旁白开场 → 不可执行，跳过
+		// 0.16.0 Q3-1 注入守卫（第三道）：恶意基因即便已入库（共享导入/误审），
+		// 也**绝不允许注入到 system prompt**——这是纵深防御的最后一道。
+		// 前两道管「质量」（有没有真修法 / 是不是旁白），这道管「恶意」（是不是提示词注入）。
+		if (injectionScan && !injectionScan(g).ok) continue;
 		out.push({
 			id: g.id,
 			assetId: aid || '',
@@ -174,13 +189,27 @@ function recallList() {
 //   · 有 --query / EVOX_QUERY：按「signals_match 命中 + 与查询词的 token 交集」打分，
 //     **只保留 score>0**（不对靶就不注入——避免不对靶注入的净开销），按分排序取前 N。
 //   · 无 query：退化为按入库顺序（追加式 → 靠后更新）取前 N，仅做**数量封顶**，不再任意截断。
+/**
+ * `--error`：拿**刚弹出的报错原文**直接问「这个错我踩过吗」（0.16.0 T3 触发点）。
+ *
+ * 为什么这是最自然的触发点：报错是**唯一一个用户/智能体 100% 会注意到、且立刻需要答案**的时刻，
+ * 不需要它"记得"先来查——错误本身就来提醒了。价值也最直观：本来要盲目重试，现在先拿到修法。
+ *
+ * 实现：复用 distill 的 proposeFromError 抽错误家族 → 拼成信号串 → 走同一套打分，口径与沉淀一致。
+ */
+const ERROR_TEXT = (() => {
+	const i = process.argv.indexOf('--error');
+	const e = i >= 0 ? (process.argv[i + 1] ?? '') : (process.env.EVOX_ERROR ?? '');
+	return String(e || '');
+})();
+
 const QUERY = (() => {
 	const argv = process.argv.slice(2);
 	// 位置参数护栏（0.14.8）：query 必须用 --query "<文本>" 或 EVOX_QUERY。
 	// 旧版把裸位置参数（如 `evolver-recall.mjs "处理 GBK 报错"`）静默忽略，回落成
 	// 「按入库顺序注入尾部 N 条」——看似有结果实则与当前任务无关，非开发者极难察觉。
 	// 现把首个裸位置参数提升为 query 并提示规范写法，消除该静默 footgun。
-	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note'];
+	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error'];
 	const consumed = new Set();
 	for (const f of VALUED) {
 		const i = argv.indexOf(f);
@@ -198,6 +227,14 @@ const QUERY = (() => {
 		} else {
 			console.error(`[pi-evox] ⚠ 位置参数「${head}」已被忽略（当前 query 由 --query / EVOX_QUERY 提供）`);
 		}
+	}
+	// T3：给了 --error 就把错误家族信号并入查询，让召回能命中「同类报错的修法」
+	if (ERROR_TEXT) {
+		try {
+			const fam = proposeFromError(ERROR_TEXT, { tool: '', context: '' });
+			const sig = (fam && Array.isArray(fam.signals) ? fam.signals : []).join(' ');
+			if (sig) q = (q ? q + ' ' : '') + sig + ' ' + ERROR_TEXT.slice(0, 200);
+		} catch { /* 抽取失败不影响召回 */ }
 	}
 	return q;
 })();
