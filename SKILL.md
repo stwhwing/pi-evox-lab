@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.15.0
+version: 0.16.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -238,34 +238,167 @@ node code/light-cli.mjs gene import <自建池文件> --tier official   # 自建
 - **幂等合并**：拉取按 `asset_id`(sha256) 去重，重复拉取不产生重复。
 - 池目录默认 `~/.evomap/pool`（`EVO_POOL_DIR` 覆盖）。池可放自有 Git 仓（版本化 + 天然审计 + 权限即鉴权）。
 
+## 什么时候提醒：五个触发点（0.16.0 的核心设计）
+
+> 「装了技能但没人调用」是这个项目最根本的失效模式——**连作者都会忘**（实测：相关基因能召回排 #1，
+> 却因为动手前没跑召回而重复踩坑）。所以不能指望"用户记得"，必须把召回**绑死在具体动作节点上**。
+> 以下五个触发点，按宿主能力能接几个接几个；**T3 价值最直观**（报错的那一刻不需要提醒，错误本身就是提醒）。
+
+| # | 触发点 | 时机 | 命令 | 没接会怎样 |
+|---|---|---|---|---|
+| **T1** | 任务开始 | 拿到非平凡任务、**规划之前** | `recall --query "<任务>"` | 预防失效：该避的坑照踩 |
+| **T2** | 行动前 | 即将执行写文件/跑命令/调接口 | 同上（query=将做的事） | 贴身预防（可选，T1 覆盖大半） |
+| **T3** | **遇到报错** | 工具返回错误、**准备重试之前** | `recall --error "<报错原文>"` | **最可惜**：明明库里就有修法，却盲目重试 |
+| **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
+| **T5** | 任务结束 | 收尾 | `--register-hit` / `--negate` | 无法度量，失效修法发现不了 |
+
+**T3 是本版新增**：报错是唯一一个"100% 会被注意到且立刻需要答案"的时刻——不需要谁提醒，**错误本身就是提醒**。
+它复用沉淀侧的错误家族抽取（`proposeFromError`），把报错原文直接变成查询：
+
+```bash
+node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc4"
+# → 立刻拿到「用 encoding='gbk' 打开」这类已验证修法，而不是盲目重试
+```
+
+### 按宿主选接入方式
+
+| 宿主形态 | 接入方式 | 覆盖触发点 |
+|---|---|---|
+| OpenClaw / Hermes（有钩子） | `install-hooks`（演练 → `--yes`） | T1（+T5 需在钩子里补回填） |
+| **有 AGENTS.md / CLAUDE.md / 系统提示的任何 Agent** | `light-cli snippet` 输出规程 → **粘贴进去** | **T1–T5 全覆盖** |
+| 两者都有 | 钩子管自动、规程管兜底 | 最稳 |
+
+> 设计依据：钩子解决"**自动**"，但大多数用户不会配；规程解决"**通用**"，但依赖 Agent 遵从度。
+> 两条腿都给，用户按宿主能力选。实测某节点 39 条基因里 15 条待审、有效召回仅 10%——
+> 单靠任何一条腿都不够。
+
+## 让经验真正生效：四个静默失败与对策（0.16.0）
+
+> 这套系统最常见的失败**不是报错，而是静默失效**——你以为存了、以为在跑，其实什么都没发生。
+> 实测数据：某节点 39 条基因里 **15 条待审**（永不注入）；153 次召回里**真正有效仅 10%**。
+
+| 静默失败 | 症状 | 对策（本版提供） |
+|---|---|---|
+| **① 从未召回** | 沉淀了很多，却从没被用过 | `info` 会显示「召回次数 0」并给命令；`install-hooks` 帮你接上宿主 |
+| **② 沉淀未审核** | 基因入库却被隔离，**永不注入** | **默认自动通过**（自己的库自己负责）；`info` 也会列出待审并给 approve 命令 |
+| **③ 宿主没接** | 装了但 agent 从不会自动召回 | `install-hooks`（演练 → 你确认后才写入） |
+| **④ 冷启动没手感** | 库里没几条，召回也不命中 | `starter` 一键装载 10 条通用教训，**第一次查询就能命中** |
+
+### 三条命令解决 90% 的「没生效」
+
+```bash
+node code/light-cli.mjs info            # ① 看闭环健康度：召回次数 / 命中 / 待审，并给下一步命令
+node code/light-cli.mjs starter         # ② 装起步包，立刻有东西可召回
+node code/light-cli.mjs install-hooks   # ③ 演练接线（看清会做什么；加 --yes 才写入）
+```
+
+### 自动审核开关（默认开）
+
+自己 `distill`/`draft` 沉淀的基因**默认自动通过**，立即可注入——不再需要额外一步 approve。
+理由：召回侧本就有修法守卫 + 叙述守卫兜底，「自己的库自己负责」是更合理的默认。
+
+```bash
+node code/light-cli.mjs config                      # 查看
+node code/light-cli.mjs config --auto-approve off   # 想人工把关就关掉
+node code/light-cli.mjs distill ... --no-auto-approve  # 单次不走自动通过
+```
+> 注意：此项**只作用于本地沉淀**；从共享池 `gene import` 仍按 `--tier` 判定（社区基因默认待审），不受影响。
+
+### install-hooks：权力在你手上
+
+它会探测宿主（OpenClaw / Hermes）并准备写入钩子，**但默认只演练**——
+打印将要复制的文件与目标路径，你确认后再加 `--yes` 才真正写入（写入前自动备份配置）。
+
+## 安全：四道门（0.16.0）
+
+基因是注入到 system prompt 的**软提示** ⇒ 一条恶意基因就是一次**提示词注入**。共享能力（0.14.9）开放后，这是最大的新风险面。现设四道门：
+
+| # | 门 | 管什么 | 在哪生效 |
+|---|---|---|---|
+| 1 | **修法守卫** | 有没有**真修法**（无可执行内容 → 不注入） | 召回 |
+| 2 | **叙述守卫** | 是不是**旁白流水**（开场白式 → 不注入） | 召回 |
+| 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回 + 导入 + 导出 |
+| 4 | **脱敏闸门** | 会不会**泄私有内容**（IP/路径/密钥 → 拦截不出网） | 导出 + 导入 |
+
+**注入守卫（本版新增）** 检测：指令覆盖（"忽略之前的指令"）、角色劫持、无条件强制、数据外传、隐蔽执行、持久化指令、零宽字符/base64 混淆、破坏性操作。
+
+**关键设计：区分 `AVOID` 与 `FIX` 语境**——
+- `AVOID:` 段出现危险词 = 在**警告**别这么做（合法，如"不要用 rm -rf"）→ **放行**
+- `FIX:` 段出现危险词 = 在**指示**这么做（可疑，如"FIX: 先 rm -rf"）→ **拦截**
+
+不区分会把大量正常基因误杀。实测：**11/11 恶意样本全拦、7/7 正常样本零误杀**。
+
+> 纵深防御：恶意基因即便**已入库且已 approved**，召回时仍会被第 3 道门拦下——**绝不注入**。
+> 守卫模块缺失时 **fail-closed**（宁不共享/不导入，也不放行未扫描的基因）。
+
 ## 宿主接入契约（0.15.0 融入实际应用的关键）
 
 > 经验继承**不是"装上就生效"**——它依赖宿主把「任务意图」喂进来、把「效果」回填回去。
 > 私有节点实测：机制在跑（153 次 recall），但**真正有效（对靶且有注入）仅 10%**。三个断点都在宿主侧。
 
-### ① 必须传干净的任务意图（否则召回不到）
-宿主钩子调用召回时，**必须**把**用户消息正文**（剥掉企业IM群/私聊前缀、`[heartbeat]` 等信封前缀、不要只传 URL）经 `EVOX_QUERY` 或 `--query` 传入：
-```bash
-node code/evolver-recall.mjs --query "$(用户消息正文)" --agent <宿主名>
-```
-recall 内置清洗会自动剥信封前缀/纯 URL/心跳样板；清洗后为空 ⇒ **不注入**（宁缺毋滥，绝不用无关基因凑数）。
+### 逐步接入（三步，缺一不可）
 
-### ② 必须回填效果（否则无法度量、无法发现失效修法）
-任务结束时按实际结果二选一登记：
-```bash
-node code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"   # 采用了 → hits.jsonl
-node code/evolver-recall.mjs --negate <N> --note "<为什么没起作用>"     # 没采用/仍踩坑 → pending_injections.jsonl
-```
-每次注入都会自动落 `pending_injections.jsonl`；`--negate` 让「注入→有效」转化率可算，**并能及时发现已失效的修法**。
+**第 1 步：任务开始时，把用户的真实诉求传进来**
 
-### ③ 宿主能力对照
-| 能力 | OpenClaw | Hermes | 通用 Agent |
+在宿主的「任务开始」钩子（OpenClaw `agent:bootstrap` / Hermes `pre_llm_call`）里调用召回，并传入**用户消息正文**：
+
+```bash
+# 例：用户说「帮我抓取这个公众号文章」
+node code/evolver-recall.mjs --query "帮我抓取这个公众号文章" --agent openclaw
+```
+
+要传的是**用户真正想做的事**，不是信封包着的那条消息。收到的原始消息常带前缀（如企业IM群/私聊前缀、心跳轮询、只有一个链接），recall 会自动剥掉这些；剥完若没有实质内容就**不注入**（宁缺毋滥，绝不用无关基因凑数）。
+
+输出示例（有命中时）：
+```
+[pi-evox] 基因总数=53 | 已审核=38 | 守卫通过=38 | 对靶选中=1/38
+[#1|gene_manual_438719a5] [repair] AVOID: assume-default-utf8. FIX: 用 encoding='gbk' 打开…
+```
+把 `[#N|...]` 这些行作为**虚拟引导文件**或提示词前缀注入即可；**没命中就什么都不注入**。
+
+**第 2 步：任务结束时，回填这条修法到底有没有用**
+
+```bash
+# 采用了这条修法（编号用第 1 步输出的 #N）
+node code/evolver-recall.mjs --register-hit 1 --note "按 gbk 编码读取，抓取成功"
+
+# 没采用，或采用了仍然踩坑
+node code/evolver-recall.mjs --negate 1 --note "仍超时，networkidle2 不够"
+```
+
+每次注入都会自动记一笔 `pending_injections.jsonl`；回填后「注入→有效」的转化率才算得出来，**失效的修法也能被及时发现**。
+
+**第 3 步：检查闭环是否真的跑起来了**
+
+```bash
+# 看最近召回是否拿到了任务意图（noise=true 表示宿主传的是噪声、没拿到正文）
+tail -5 experiments/recall_calls.jsonl
+# 看命中是否开始积累（>1 条说明闭环闭合）
+wc -l experiments/hits.jsonl
+```
+
+### 可直接复制的钩子模板
+
+上面三步在 `examples/hooks/` 下有**可运行的模板**（取自真实运行中的实现）：
+
+| 文件 | 宿主 | 事件 |
+|---|---|---|
+| `examples/hooks/openclaw-bootstrap-recall.js` | OpenClaw | `agent:bootstrap` |
+| `examples/hooks/hermes-pre-llm-recall.py` | Hermes | `pre_llm_call` |
+| `examples/hooks/README.md` | — | 三步接入 + 常见接入问题排查表 |
+
+改模板顶部三个路径常量即可用（也支持 `EVOX_RECALL_SCRIPT` / `EVOX_HITS_DIR` 环境变量）。
+
+### 常见宿主对照
+
+| 宿主 | 任务开始接入 | 传任务意图 | 结束回填 |
 |---|---|---|---|
-| 任务开始注入（bootstrap / `pre_llm_call`） | 原生钩子 | 原生钩子 | 提示词接入 |
-| 传干净任务意图（`EVOX_QUERY`） | 需在钩子中提取用户正文 | 同 | 同 |
-| 任务结束回填（`--register-hit`/`--negate`） | 需在钩子中回调 | 同 | 人工/提示词 |
+| **OpenClaw** | 原生钩子（`agent:bootstrap`） | 钩子里取用户正文 | 钩子里回调 |
+| **Hermes** | 原生钩子（`pre_llm_call`） | 同 | 同 |
+| **通用 Agent** | 提示词里加一句「先跑召回」 | 手工传 `--query` | 人工执行回填命令 |
 
-> ⚠️ 只做 ① 不做 ②：能召回但**不知道有没有用**；只做 ② 不做 ①：**永远召不回**。两者缺一，经验继承都不成立。
+> ⚠️ 只做第 1 步不做第 2 步：能召回但**不知道有没有用**；只做第 2 步不做第 1 步：**永远召不回**。两者缺一，经验继承都不成立。
+> 另：宿主若长期「有效召回率」偏低，先确认**运行时部署的是不是最新版**——私有节点曾因下游版本落后导致宿主传对了也召不回。
 
 ## 常见错误用法（反模式速查）
 
@@ -329,11 +462,12 @@ node code/evolver-recall.mjs --negate <N> --note "<为什么没起作用>"     #
 ## FAQ（常见问题）
 
 **Q1：召回输出「无可召回修法」是坏了吗？**
-不是。经验库从零开始，首次运行必然为空——价值随使用积累。点亮只需把踩过的坑沉淀成修法：
+不是。经验库从零开始，首次运行必然为空。想**立刻有东西可召回**，装起步包最快：
 ```bash
-node code/light-cli.mjs draft --error "<这次的真实报错>" --context "<你在做什么>"   # 预填草稿，人补 FIX
-node code/light-cli.mjs approve <gene_id>                                          # 审核通过后才可注入
+node code/light-cli.mjs starter      # 装载 10 条通用教训（编码/JSON/权限/文件/语法/类型/网络）
+node code/evolver-recall.mjs --query "读取中文日志报 UnicodeDecodeError"   # 立刻能命中
 ```
+之后沉淀自己的坑（`draft --error ...`）即可；**本版起自己沉淀的基因默认自动通过，无需再 approve**。
 
 **Q2：models.json 里配 `$ENV` 环境变量不生效？**
 pi **0.85.1 起已支持 `$ENV` 插值**（实测确认，上游 issue #9258 已闭环该项）；**0.74.2 及更早版本不支持**，需用 `--api-key "$MY_KEY"` 显式传。
@@ -354,7 +488,30 @@ node code/light-cli.mjs distill --error "<报错>" --strategy "AVOID: ... FIX: .
 只有在用 evolver 集成（`--engine evolver`）时，才需先 `npm install` 让其 CLI 就位。
 
 **Q6：approve 能全自动吗？**
-可以（`--auto-approve` 或部署时授权），默认是人工审核门。自动化后召回/沉淀双向守卫仍兜底，但建议定期 `evolver review --list` 复查。
+**0.16.0 起默认就是自动的**——自己 `distill`/`draft` 沉淀的基因自动通过、立即可注入（召回侧的修法/叙述守卫仍兜底）。
+想改回人工把关：`node code/light-cli.mjs config --auto-approve off`，或单次加 `--no-auto-approve`。
+注意：**从共享池 `gene import` 不受此项影响**，仍按 `--tier` 判定（社区基因默认待审）。
+
+**Q9：我沉淀了很多，但好像从来没被用过？**
+先看闭环健康度——大概率是这两个静默失效之一：
+```bash
+node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
+```
+- **召回次数 0** ⇒ 经验库的价值取决于**召回是否发生**，沉淀不等于生效。要么手工跑一次召回，要么 `install-hooks` 让宿主自动召回。
+- **待审 > 0** ⇒ 这些基因不会注入。本版已默认自动通过；若你关掉了开关，用 `approve <gene_id>` 放行。
+
+**Q10：`install-hooks` 会不会改坏我的宿主配置？**
+不会擅自改。它**默认只演练**：打印将要复制的文件、目标路径、以及需要你手工确认的注册步骤，**不落盘**。
+你确认无误后加 `--yes` 才写入（写入前自动备份）。任何时候都可 `config` 查看、手工删除钩子目录回滚。
+
+**Q12：我的 Agent 既不是 OpenClaw 也不是 Hermes，怎么让它自动用？**
+用规程粘贴：`node code/light-cli.mjs snippet` 会输出一段「五个触发点」操作规程，
+把它粘进你的 AGENTS.md / CLAUDE.md / 系统提示即可。规程定义了 T1 任务开始 / T3 遇到报错 /
+T4 修好坑后 / T5 任务结束四个必做动作与确切命令——这是没有钩子机制的宿主最可靠的接入方式。
+
+**Q11：起步包里的基因是哪来的？安全吗？**
+是策展过的**通用工程教训**（编码/JSON/权限/文件/语法/类型/网络），来源为实际踩坑并人工筛选，
+装载时同样**过脱敏闸门 + 注入扫描**两道门；不收集、不上传任何数据，纯本地文件。
 
 **Q7：国内网络 npm/GitHub 慢？**
 npm 换国内镜像：`npm config set registry https://registry.npmmirror.com`；GitHub 克隆可用镜像代理或直接下载 Release zip。
