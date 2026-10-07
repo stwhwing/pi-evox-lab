@@ -95,13 +95,21 @@ function usage() {
 
 用法：
   node code/light-cli.mjs doctor                                                   # 首次运行自检（Node/目录/权限）
-  node code/light-cli.mjs distill --signals <a,b> --strategy "<可执行修法>" [--summary "<坑>"] [--category repair]
-  node code/light-cli.mjs distill --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>]   # 引导式：自动抽信号
-  node code/light-cli.mjs draft  --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--commit]   # 生成可编辑草稿
+  node code/light-cli.mjs distill --signals <a,b> --strategy "<可执行修法>" [--summary "<坑>"] [--category repair] [--shareable]
+  node code/light-cli.mjs distill --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--shareable]   # 引导式：自动抽信号
+  node code/light-cli.mjs draft  --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--shareable] [--commit]   # 生成可编辑草稿
   node code/light-cli.mjs approve <gene_id>
   node code/light-cli.mjs quarantine <gene_id> [--reason "<原因>"]
+  node code/light-cli.mjs gene export [--out <file>]          # 导出「已 --shareable 且过脱敏闸门」的基因
+  node code/light-cli.mjs gene submit --pool <自有共享池目录>   # 过闸写入自建池（幂等）
+  node code/light-cli.mjs gene import <池文件> [--tier official]  # 拉取合并；official=自建策展池自动通过，community(默认)=待审
   node code/light-cli.mjs list
   node code/light-cli.mjs info
+
+共享基因库：distill/draft 加 --shareable 标记该基因「可共享」（默认不共享=不外发）。
+  任何基因导出/入池前必过脱敏闸门（私有IP/绝对路径/密钥/内网服务命中即拦截，不出网）。
+  import 默认 community 一律待审；仅对你自己控制的池显式 --tier official 才自动通过。
+  池目录默认 ~/.evomap/pool（EVO_POOL_DIR 覆盖）。
 
 库路径：${STORE_DIR}（可用 EVO_STORE_DIR 覆盖）`);
 }
@@ -170,6 +178,7 @@ switch (cmd) {
       summary: flag('summary') || (proposed ? proposed.summary : undefined),
       antiPatterns: proposed ? proposed.antiPatterns : [],
       source: proposed ? 'light-manual-guided' : 'light-manual',
+      shareable: rest.includes('--shareable'),
     });
     if (!gene) { console.log(raw); break; }
     // 只在真正写入时登记 quarantined（等待审核）
@@ -204,6 +213,7 @@ switch (cmd) {
       const { gene, raw } = distill.distillManual({
         category: 'repair', signals: proposed.signals, strategy,
         summary: proposed.summary, antiPatterns: proposed.antiPatterns, source: 'light-manual-guided',
+        shareable: rest.includes('--shareable'),
       });
       if (!gene) { console.log(raw); break; }
       const written = appendGene(gene);
@@ -251,6 +261,12 @@ switch (cmd) {
     console.log(`基因总数    : ${genes.length}`);
     console.log(`台账记录    : ${review.length}`);
     console.log(`已审核(可注入): ${approved.size}`);
+    break;
+  }
+  case 'gene': {
+    // 共享基因库（0.14.9）：export / submit / import，全部经脱敏闸门
+    const { runGene } = await import('./gene_share.mjs');
+    process.exit(runGene(rest));
     break;
   }
   default:
