@@ -231,3 +231,50 @@ export function distillManual({ category = 'repair', signals = [], strategy, sum
   };
   return { gene, raw: `[pi-evox] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined${gene.shareable ? ' [shareable]' : ''}` };
 }
+
+
+/**
+ * 从错误文本抽取「错误家族 + 信号 + 预填 AVOID 模板」（0.16.0 提到共享模块）。
+ * 原先只定义在 light-cli 里，召回侧拿不到；现在 light-cli（沉淀）与
+ * evolver-recall（`--error` 报错即召回）共用同一套抽取逻辑，保证口径一致。
+ */
+const ANTI_TAGS = {
+  'encoding-error': 'assume-default-utf8',
+  'permission-denied': 'write-without-restore-perm',
+  'file-not-found': 'assume-path-exists',
+  'invalid-json': 'strict-parse-no-fallback',
+  'network-error': 'call-without-timeout-retry',
+  'syntax-error': 'run-without-syntax-check',
+  'type-or-value-error': 'assume-value-type',
+  'assertion-failed': 'trust-unverified-output',
+  unknown: 'repeat-failed-approach',
+};
+const ANTI_TOKENS = {
+  // 仅"能用无歧义单 token 表达被禁止主张"的家族才有值；其余刻意留空。
+  // 'utf-8'：对方若主张"直接用 utf-8 读（默认编码）"，即与本基因的"按真实编码读取"冲突。
+  // 注意不要放 'json.loads' 这类**双方都会出现**的 token（合规方也写它 → 误删）。
+  'encoding-error': ['utf-8'],
+};
+
+export function proposeFromError(error, { tool = '', context = '' } = {}) {
+  const text = String(error || '');
+  const families = new Set();
+  for (const [re, name] of SIGNAL_RULES) if (re.test(text)) families.add(name);
+  const signals = [...new Set([...(tool ? [tool] : []), ...families])];
+  const fam = signals.find((s) => AVOID_TEMPLATES[s]) ?? 'unknown';
+  const object = (text.match(/([\w.-]+\.(?:py|json|jsonl|txt|md|cfg|ini|yaml|yml|toml|sh|js|ts))/) || [])[1] || '';
+  const objStr = object ? ` (${object})` : '';
+  const avoid = `AVOID: ${AVOID_TEMPLATES[fam]}${objStr}.`;
+  const strategy = `${avoid} FIX: <在此填写可执行修法，例如 use encoding='gbk' / 先 chmod u+w 再写 / 先 ls 确认路径>`;
+  const head = text.replace(/\s+/g, ' ').trim().slice(0, 80);
+  const antiTag = ANTI_TAGS[fam] || ANTI_TAGS.unknown;
+  const summary = `${fam} 失败${context ? `（${context}）` : ''} [AVOID ${antiTag}]: ${head}`;
+  return {
+    signals: signals.length ? signals : ['manual'],
+    strategy,
+    summary,
+    antiTag,
+    antiPatterns: [...(ANTI_TOKENS[fam] || [])],
+    family: fam,
+  };
+}
