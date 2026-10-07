@@ -18,6 +18,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // EVO_SKILL_CODE 仅作为「模块被单独放到别处」时的覆盖（例：私有节点试点暂存目录）。
 const SKILL_CODE = process.env.EVO_SKILL_CODE || __dirname;
 const store = await import(pathToFileURL(path.join(SKILL_CODE, 'engine/light/store.mjs')).href);
+// 0.16.0 Q3-1：恶意基因注入扫描（与脱敏闸门并列的两道安全门）。
+// 注：必须在 SKILL_CODE 之后导入（否则 TDZ ReferenceError——2026-10-08 实测踩到）。
+let injectionScan = null;
+try {
+  ({ injectionScan } = await import(pathToFileURL(path.join(SKILL_CODE, 'injection_scan.mjs')).href));
+} catch { injectionScan = null; }
 
 const POOL_DIR = process.env.EVO_POOL_DIR || path.join(os.homedir(), '.evomap', 'pool');
 
@@ -92,11 +98,26 @@ export function redactionGate(gene) {
   return { ok: violations.length === 0, violations };
 }
 
+/**
+ * 合流闸门：脱敏（防私有内容外泄）+ 注入扫描（防恶意基因）。
+ * 两道门方向相反但都要过：出（export/submit）查「别把我的私货带出去 / 别带恶意内容」；
+ * 入（import）查「别把别人的恶意基因放进来」。
+ */
+function safetyGate(gene) {
+  const red = redactionGate(gene);
+  // 注入扫描模块不可用 ⇒ **fail-closed**：宁可不共享/不导入，也不放行未经扫描的基因
+  if (typeof injectionScan !== 'function') return { ok: false, violations: [{ rule: 'injection-scan-unavailable', why: '注入扫描不可用（fail-closed）', field: '-', snippet: '-', gate: 'injection' }] };
+  const inj = injectionScan(gene);
+  const violations = [...red.violations.map((v) => ({ ...v, gate: 'redaction' })),
+                      ...inj.findings.map((f) => ({ rule: f.rule, why: '疑似提示词注入', field: f.where, snippet: f.snippet, gate: 'injection' }))];
+  return { ok: violations.length === 0, violations };
+}
+
 const exportable = (genes) => {
   const out = [], blocked = [];
   for (const g of genes) {
     if (g?.shareable !== true) continue;
-    const gate = redactionGate(g);
+    const gate = safetyGate(g);
     if (gate.ok) out.push(g); else blocked.push({ gene: g, violations: gate.violations });
   }
   return { out, blocked };
@@ -148,7 +169,8 @@ function cmdImport(args) {
   const state = tier === 'official' ? 'approved' : 'quarantined';
   let added = 0, skipped = 0, blocked = 0;
   for (const g of readJsonl(file)) {
-    if (!redactionGate(g).ok) { blocked++; continue; }          // 纵深防御：入库前再过闸
+    // 纵深防御：入库前两道门都过（脱敏 + 注入扫描）
+    if (!safetyGate(g).ok) { blocked++; continue; }
     if (g?.shareable !== true) { skipped++; continue; }
     if (store.appendGene(g)) { store.appendReview({ assetId: g.asset_id, state, reason: `imported from ${tier} pool` }); added++; }
     else skipped++;
