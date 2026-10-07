@@ -203,7 +203,7 @@ export function distillFromTranscript(transcriptPath, opts = {}) {
 }
 
 /** manual 蒸馏（LLM 精修路径使用）：直接给 strategy/summary 入库 */
-export function distillManual({ category = 'repair', signals = [], strategy, summary, antiPatterns = [], source = 'light-manual' }) {
+export function distillManual({ category = 'repair', signals = [], strategy, summary, antiPatterns = [], source = 'light-manual', shareable = false }) {
   // 占位符守卫：引导草稿未补全 FIX 时拒绝落库（避免产出低质量基因）。
   if (/<在此填写|<\s*在此/.test(String(strategy || ''))) {
     return { gene: null, raw: '[pi-evox] 拒绝：strategy 仍是占位符，请补全 FIX（具体参数/命令/编码）后再提交' };
@@ -223,9 +223,11 @@ export function distillManual({ category = 'repair', signals = [], strategy, sum
     validation: [],
     summary: summary ?? `Manually distilled: ${sig.join(', ')}`,
     generation_meta: { source },
+    // 共享基因库（0.14.9）：显式 opt-in 才可导出/入池；默认 false（不外发）。
+    shareable: shareable === true,
     claims: [{ predicate: 'output_contract', kind: 'behavioral' }],
     scope: { signals: sig.map((s) => `capability:${s}`) },
     asset_id: `sha256:${digest}`,
   };
-  return { gene, raw: `[pi-evox] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined` };
+  return { gene, raw: `[pi-evox] drafted UNPROVEN gene ${gene.id} (${gene.asset_id.slice(0, 14)}…) — quarantined${gene.shareable ? ' [shareable]' : ''}` };
 }
