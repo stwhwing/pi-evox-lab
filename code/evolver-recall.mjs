@@ -20,6 +20,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { proposeFromError } from './engine/light/distill.mjs';
+import { REPAIR_SIGNAL_RE, NARRATION_RE, RETRY_LOG_RE } from './engine/light/guards.mjs';
 
 // 0.16.0 Q3-1：注入守卫。静态导入（同目录，无网络）；外层 try 保证**模块缺失也不能让召回崩掉**
 // ——宁可降级为「不加这道守卫」，也绝不能因守卫失败导致宿主 bootstrap 失败。
@@ -42,7 +43,9 @@ function fail(msg, { hint, code = 2 } = {}) {
 const EVO_STORE = process.env.EVO_STORE_DIR || path.join(os.homedir(), '.evomap', 'assets');
 const EVO_GENES = path.join(EVO_STORE, 'genes.jsonl');
 const EVO_REVIEW = path.join(EVO_STORE, 'review.jsonl');
-const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experiments');
+// 0.17.0：默认落点 = **技能根/experiments**（脱离 cwd——此前在别的目录跑会让埋点散落、info 误报「从未召回」；
+// 既有部署（显式配置的钩子）传 EVOX_HITS_DIR，不受影响）
+const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
 const HITS_FILE = path.join(HITS_DIR, 'hits.jsonl');
 const RECALL_CALLS_FILE = path.join(HITS_DIR, 'recall_calls.jsonl');
 /** 0.15.0 P0-3：注入即登记（pending → 命中/未命中），闭合「召回→注入→效果」漏斗。
@@ -85,22 +88,9 @@ function recordPending(picked) {
 }
 
 
-const REPAIR_SIGNAL_RE =
-	/error|exception|traceback|failed|invalid|cannot|unable|missing|not found|wrong|instead|avoid|fix|encoding\s*[=:]|errors\s*=|utf-?8|gbk|gb18030|latin-1|\brb\b|except|skip/i;
+// REPAIR_SIGNAL_RE / NARRATION_RE 已抽到 engine/light/guards.mjs 共享（0.17.0，沉淀与召回同口径）
 
-/**
- * 叙述检测（2026-09-17 新增，P0 自动召回的必要配套）。
- *
- * 背景：auto-distill 的 strategy 摘录常是「会话旁白 / 推理流水」而非可执行修法
- * （实测样例："Now I understand the context… let me…"，且句中被截断）。
- * 这类文本因为含 gbk/error/encoding 等词，能通过 REPAIR_SIGNAL_RE，但对下游没有
- * 执行价值；在 P0 之下它会被**每个会话稳定注入**，把噪声放大成常态。
- *
- * 规则：只检查**首段**——旁白开场必然出现在 strategy[0] 开头；不检查全文，
- * 以免误伤正文里正常出现的 "done/first" 等词。命中即跳过（宁缺毋滥）。
- */
-const NARRATION_RE =
-	/^\s*(now i (understand|see|have|know|remember|need|can)|let me\b|i'?(ll|ve|m)\b|i will\b|here'?s\b|done[.!\u2026]|confirmed[:.]|the output matches|to summarize|summarize\b|first,? i\b|next,? i\b|alright\b|okay\b)/i;
+/* 叙述检测（NARRATION_RE）已抽到 engine/light/guards.mjs 共享——0.17.0，沉淀与召回同口径 */
 
 function readJsonl(p) {
 	const out = [];
@@ -166,6 +156,7 @@ function recallList() {
 		const text = st.join(' ').replace(/\s+/g, ' ').trim();
 		if (!REPAIR_SIGNAL_RE.test(text)) continue; // 修法守卫：宁缺毋滥
 		if (NARRATION_RE.test(String(st[0] ?? '').trim())) continue; // 叙述守卫：旁白开场 → 不可执行，跳过
+		if (RETRY_LOG_RE.test(text)) continue; // 0.17.0 重试日志守卫：与沉淀质检同口径——「重试后成功」的复述不是修法（纵深：拦已入库的历史噪音）
 		// 0.16.0 Q3-1 注入守卫（第三道）：恶意基因即便已入库（共享导入/误审），
 		// 也**绝不允许注入到 system prompt**——这是纵深防御的最后一道。
 		// 前两道管「质量」（有没有真修法 / 是不是旁白），这道管「恶意」（是不是提示词注入）。
