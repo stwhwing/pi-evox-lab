@@ -21,23 +21,23 @@ const PATTERNS = [
   { id: 'leak-system-prompt', sev: 'high', re: /(输出|显示|告诉我|reveal|print|show).{0,10}(你的)?(系统提示|system prompt|指令|instructions)/i },
 
   // ── 无条件强制（high：剥夺用户/宿主控制权）──
-  { id: 'unconditional-must', sev: 'high', re: /无论(用户|对方|任何人)(怎么)?(说|要求|请求)|regardless of what the user (says|asks|wants)/i },
-  { id: 'always-first', sev: 'high', re: /总是(先|要|必须)|always (do|run|execute) .{0,20}(first|before)/i },
+  { id: 'unconditional-must', sev: 'high', ctx: 'fix', re: /无论(用户|对方|任何人)(怎么)?(说|要求|请求)|regardless of what the user (says|asks|wants)/i },
+  { id: 'always-first', sev: 'high', ctx: 'fix', re: /总是(先|要|必须)|always (do|run|execute) .{0,20}(first|before)/i },
 
   // ── 数据外传（high）──
-  { id: 'exfiltrate', sev: 'high', re: /(把|将).{0,20}(发送|上传|回传|post|upload|发送到)|exfiltrat/i },
-  { id: 'send-to-endpoint', sev: 'high', re: /(curl|wget|fetch|post).{0,40}(http:\/\/|https:\/\/)/i },
-  { id: 'secret-exfil', sev: 'high', re: /(读取|read|cat|dump).{0,20}(密钥|token|凭证|credential|password|\.env|id_rsa)/i },
+  { id: 'exfiltrate', sev: 'high', ctx: 'fix', re: /(把|将).{0,20}(发送|上传|回传|post|upload|发送到)|exfiltrat/i },
+  { id: 'send-to-endpoint', sev: 'high', ctx: 'fix', re: /(curl|wget|fetch|post).{0,40}(http:\/\/|https:\/\/)/i },
+  { id: 'secret-exfil', sev: 'high', ctx: 'fix', re: /(读取|read|cat|dump).{0,20}(密钥|token|凭证|credential|password|\.env|id_rsa)/i },
 
   // ── 破坏性操作（med：仅 FIX 语境拦截）──
-  { id: 'destructive-rm', sev: 'med', re: /rm\s+-rf|删除(所有|全部|整个)|del\s+\/[sq]|rmdir\s+\/s/i },
-  { id: 'destructive-chmod', sev: 'med', re: /chmod\s+(777|666|-R\s+777)/i },
-  { id: 'pipe-to-shell', sev: 'med', re: /\|\s*(bash|sh|zsh|cmd|powershell)\b|curl.{0,30}\|\s*(sudo\s+)?(bash|sh)/i },
-  { id: 'eval-exec', sev: 'med', re: /\b(eval|exec|execSync|Function)\s*\(/i },
+  { id: 'destructive-rm', sev: 'med', ctx: 'fix', re: /rm\s+-rf|删除(所有|全部|整个)|del\s+\/[sq]|rmdir\s+\/s/i },
+  { id: 'destructive-chmod', sev: 'med', ctx: 'fix', re: /chmod\s+(777|666|-R\s+777)/i },
+  { id: 'pipe-to-shell', sev: 'med', ctx: 'fix', re: /\|\s*(bash|sh|zsh|cmd|powershell)\b|curl.{0,30}\|\s*(sudo\s+)?(bash|sh)/i },
+  { id: 'eval-exec', sev: 'med', ctx: 'fix', re: /\b(eval|exec|execSync|Function)\s*\(/i },
 
   // ── 隐蔽 / 反检测（high）──
-  { id: 'stealth', sev: 'high', re: /不要(告诉|告知|让).{0,10}(用户|对方)|(don'?t|do not) tell (the )?user|silently|隐蔽地|静默(执行|上传)/i },
-  { id: 'persist-rule', sev: 'high', re: /(记住|保存)(这条|这个)(规则|指令)|(以后|每次)(都|都要)(先|执行|做)/i },
+  { id: 'stealth', sev: 'high', ctx: 'fix', re: /不要(告诉|告知|让).{0,10}(用户|对方)|(don'?t|do not) tell (the )?user|silently|隐蔽地|静默(执行|上传)/i },
+  { id: 'persist-rule', sev: 'high', ctx: 'fix', re: /(记住|保存)(这条|这个)(规则|指令)|(以后|每次)(都|都要)(先|执行|做)/i },
 
   // ── 混淆（high）──
   { id: 'zero-width', sev: 'high', re: /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/ },
@@ -82,8 +82,10 @@ export function injectionScan(gene) {
     for (const p of PATTERNS) {
       const m = p.re.exec(text);
       if (!m) continue;
-      // med 级只在「指示去做」语境拦截；AVOID 段的警告不拦（避免误杀正常基因）
-      if (p.sev === 'med' && !isFix) continue;
+      // 0.17.0：**动作类模式（ctx:'fix'，含全部 med 与高危外传/破坏类）只在「指示去做」语境拦截**——
+      // AVOID 段出现同款词是**警告**（如「不要把整棵目录上传」），拦截它就是误杀（0.16.0 实测 de1359b8）。
+      // 语境无关（ctx:'any'）的仅剩：指令覆盖/角色劫持/伪造标记/泄漏提示/零宽/base64——这些连警告形态都极少合法。
+      if (p.ctx === 'fix' && !isFix) continue;
       findings.push({ rule: p.id, sev: p.sev, where, snippet: m[0].slice(0, 40) });
     }
   }
