@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.16.0
+version: 0.17.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -240,6 +240,8 @@ node code/light-cli.mjs gene import <自建池文件> --tier official   # 自建
 
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
 
+> **EN**: Recall must be bound to concrete action nodes, never left to memory. Five trigger points: T1 task start (recall --query), T2 before actions, T3 on error (NEW: recall --error "<raw error>" - the error itself is the reminder), T4 after fixing a pit (deposit immediately), T5 task end (register-hit/negate). Two integration paths: install-hooks for automation, install-snippet to paste the procedure into any agent instruction file (AGENTS.md/CLAUDE.md).
+
 > 「装了技能但没人调用」是这个项目最根本的失效模式——**连作者都会忘**（实测：相关基因能召回排 #1，
 > 却因为动手前没跑召回而重复踩坑）。所以不能指望"用户记得"，必须把召回**绑死在具体动作节点上**。
 > 以下五个触发点，按宿主能力能接几个接几个；**T3 价值最直观**（报错的那一刻不需要提醒，错误本身就是提醒）。
@@ -273,6 +275,8 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 > 单靠任何一条腿都不够。
 
 ## 让经验真正生效：四个静默失败与对策（0.16.0）
+
+> **EN**: The most common failure is SILENT: genes deposited but never recalled, or deposited but never approved (never injected). Counters: info shows loop health (recall count / hits / pending), own deposits are auto-approved by default (switchable), install-hooks auto-wires hosts (dry-run by default), starter loads 10 curated genes so the first query hits.
 
 > 这套系统最常见的失败**不是报错，而是静默失效**——你以为存了、以为在跑，其实什么都没发生。
 > 实测数据：某节点 39 条基因里 **15 条待审**（永不注入）；153 次召回里**真正有效仅 10%**。
@@ -309,7 +313,43 @@ node code/light-cli.mjs distill ... --no-auto-approve  # 单次不走自动通�
 它会探测宿主（OpenClaw / Hermes）并准备写入钩子，**但默认只演练**——
 打印将要复制的文件与目标路径，你确认后再加 `--yes` 才真正写入（写入前自动备份配置）。
 
+## 沉淀质检与非交互隔离（0.17.0——堵 autoApprove 的洞）
+
+> **EN**: 0.16.0 proven gap: under autoApprove, retry-log noise and unfilled-FIX placeholder genes were deposited and injected directly (all three recall guards pass). Fix: quality gate moved to DEPOSITION time. depositionGate rejects (fail-closed): unfilled placeholder, retry-log repetition, narration openings, missing repair-signal words. Non-interactive deposits (no TTY: scripts/cron/pipes) default to quarantined unless --auto-approve is explicit. Recall adds a 4th guard (retry-log) so already-stored noise is no longer injected either.
+
+> 0.16.0 实测实锤：autoApprove 下，retry-log 噪音基因与**忘填 FIX 的占位符基因**会沉淀即注入
+> （三道召回守卫全放行）。修复思路：**把关逻辑前移到沉淀时**，auto-approve 的安全性 = 沉淀质检。
+
+### 沉淀质检 depositionGate（fail-closed，拒绝入库）
+`distill` / `draft --commit` 时逐条检查，不合法**直接拒绝**（不落盘）：
+| 拒绝条件 | 理由 | 下一步 |
+|---|---|---|
+| FIX 是未填占位符 `<在此填写可执行修法>` | 注入后毫无价值 | 在 draft 里补上真实修法再提交 |
+| `retry with corrected args`（重试日志复述） | "重试然后好了"不是修法 | 写 AVOID(为何错)+FIX(怎么做) |
+| 旁白开场（Now I understand…） | 推理流水不可执行 | 同上 |
+| 缺修法信号词 | 不像在描述坑与修法 | 同上 |
+
+### 非交互沉淀默认隔离
+| 沉淀方式 | 默认行为 |
+|---|---|
+| **交互式**（人在终端敲命令） | 自动通过（0.16.0 便利保持） |
+| **非交互**（脚本/cron/宿主自动管道，无 TTY） | **默认隔离**——显式 `--auto-approve` 才通过 |
+| `--no-auto-approve` / `config --auto-approve off` | 始终人工审 |
+
+> 设计：自动管道（如宿主把每次重试都记录成基因）是私有节点那 15 条噪音的起源；非交互默认隔离 + 沉淀质检，
+> 让「自动沉淀的垃圾」进不了可注入池。召回侧同步加第四道守卫（retry-log），**历史已入库的噪音也不再被注入**。
+
+### install-snippet：自动沉淀的绑定点
+「agent 不提醒就不沉淀」的根因是 T4（修好坑后）没有出现在它的上下文里。把规程写进**项目指令文件**即可：
+```bash
+node code/light-cli.mjs install-snippet --file <项目>/AGENTS.md        # 演练
+node code/light-cli.mjs install-snippet --file <项目>/AGENTS.md --yes  # 写入（幂等，可重复执行更新）
+```
+写入后该项目的 agent **每个会话**都会看到 T1–T5（含 T4 修坑即沉淀）。AGENTS.md / CLAUDE.md 均可。
+
 ## 安全：四道门（0.16.0）
+
+> **EN**: Genes are soft prompts injected into the system prompt - one malicious gene is one prompt injection. Four gates: repair-signal guard (quality), narration guard (quality), injection guard (malice; scans instruction-override / role-hijack / exfiltration / stealth / persistence / zero-width & base64 obfuscation), redaction gate (privacy). The injection guard distinguishes AVOID (warning, allowed) from FIX (instruction, blocked) contexts - 11/11 malicious samples caught, 7/7 legitimate samples zero false-kill. Fail-closed if the guard module is missing.
 
 基因是注入到 system prompt 的**软提示** ⇒ 一条恶意基因就是一次**提示词注入**。共享能力（0.14.9）开放后，这是最大的新风险面。现设四道门：
 
@@ -332,6 +372,8 @@ node code/light-cli.mjs distill ... --no-auto-approve  # 单次不走自动通�
 > 守卫模块缺失时 **fail-closed**（宁不共享/不导入，也不放行未扫描的基因）。
 
 ## 宿主接入契约（0.15.0 融入实际应用的关键）
+
+> **EN**: Experience inheritance is NOT "install and forget" - it depends on the host feeding in task intent (T1: --query with the user message body) and reporting outcomes (T5: --register-hit / --negate). Full step-by-step wiring with copy-paste commands below; runnable hook templates live in examples/hooks/.
 
 > 经验继承**不是"装上就生效"**——它依赖宿主把「任务意图」喂进来、把「效果」回填回去。
 > 私有节点实测：机制在跑（153 次 recall），但**真正有效（对靶且有注入）仅 10%**。三个断点都在宿主侧。
@@ -493,6 +535,7 @@ node code/light-cli.mjs distill --error "<报错>" --strategy "AVOID: ... FIX: .
 注意：**从共享池 `gene import` 不受此项影响**，仍按 `--tier` 判定（社区基因默认待审）。
 
 **Q9：我沉淀了很多，但好像从来没被用过？**
+> **EN**: Check loop health via `info` - likely one of two silent failures: recall never ran (run it once or install-hooks), or genes await review (approve them; auto-approve is default for your own deposits).
 先看闭环健康度——大概率是这两个静默失效之一：
 ```bash
 node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
@@ -501,15 +544,24 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 - **待审 > 0** ⇒ 这些基因不会注入。本版已默认自动通过；若你关掉了开关，用 `approve <gene_id>` 放行。
 
 **Q10：`install-hooks` 会不会改坏我的宿主配置？**
+> **EN**: It never writes without consent - dry-run by default (prints what it would do), `--yes` applies after your confirmation, with automatic backup. Rollback = delete the hook directory.
 不会擅自改。它**默认只演练**：打印将要复制的文件、目标路径、以及需要你手工确认的注册步骤，**不落盘**。
 你确认无误后加 `--yes` 才写入（写入前自动备份）。任何时候都可 `config` 查看、手工删除钩子目录回滚。
 
+**Q13：为什么我的 agent 修完坑从来不自动沉淀？**
+> **EN**: Because T4 (deposit after fixing) never entered the agent context - skills only influence agents when loaded. Fix: `install-snippet --file <project>/AGENTS.md --yes` writes the five-trigger-point procedure into the project instruction file so every session sees "deposit right after fixing".
+因为 T4（修好坑后沉淀）没出现在它的上下文里——技能只在被加载时影响 agent。解法：
+`node code/light-cli.mjs install-snippet --file <项目>/AGENTS.md --yes` 把五触发点规程写进项目指令文件，
+之后该项目每个会话都会看到「修好坑后立刻沉淀」的绑定动作。这是**写侧的 last mile**（召回侧靠钩子，沉淀侧靠规程）。
+
 **Q12：我的 Agent 既不是 OpenClaw 也不是 Hermes，怎么让它自动用？**
+> **EN**: Use the procedure paste: `light-cli snippet` prints the T1-T5 operating procedure; paste it into your AGENTS.md / CLAUDE.md / system prompt. This is the most reliable integration for hosts without hook mechanisms.
 用规程粘贴：`node code/light-cli.mjs snippet` 会输出一段「五个触发点」操作规程，
 把它粘进你的 AGENTS.md / CLAUDE.md / 系统提示即可。规程定义了 T1 任务开始 / T3 遇到报错 /
 T4 修好坑后 / T5 任务结束四个必做动作与确切命令——这是没有钩子机制的宿主最可靠的接入方式。
 
 **Q11：起步包里的基因是哪来的？安全吗？**
+> **EN**: 10 curated universal engineering lessons (encoding/JSON/permissions/files/syntax/types/network), human-screened, loaded through the same redaction + injection gates. No data collection, purely local.
 是策展过的**通用工程教训**（编码/JSON/权限/文件/语法/类型/网络），来源为实际踩坑并人工筛选，
 装载时同样**过脱敏闸门 + 注入扫描**两道门；不收集、不上传任何数据，纯本地文件。
 
