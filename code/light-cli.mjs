@@ -23,6 +23,7 @@ import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
 import { STORE_DIR, readGenes, readReview, approvedAssetIds } from './engine/light/store.mjs';
 import { SIGNAL_RULES, AVOID_TEMPLATES, proposeFromError } from './engine/light/distill.mjs';
+import { depositionGate } from './engine/light/guards.mjs';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (name, def = undefined) => {
@@ -111,6 +112,32 @@ process.on('unhandledRejection', (err) => {
 });
 
 /**
+ * 操作规程文本（T1–T5）——`snippet` 输出 / `install-snippet` 写入共用的唯一来源。
+ * T4 是自动沉淀的关键绑定：**修好坑后立刻沉淀**（写进项目指令文件后，agent 每个会话可见）。
+ */
+function procedureText() {
+  const skillDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  return [
+    '## 经验库操作规程（pi-evox-loop，五个触发点）',
+    '',
+    `技能目录: ${skillDir}`,
+    '',
+    '1. **任务开始**（拿到非平凡任务时，先于规划执行）：',
+    `   node ${skillDir}/code/evolver-recall.mjs --query "<任务一句话>" --agent <你的名字>`,
+    '2. **遇到报错**（工具返回错误、且你准备重试之前——这一刻价值最直观）：',
+    `   node ${skillDir}/code/evolver-recall.mjs --error "<报错原文>"`,
+    '3. **修好坑后立刻沉淀**（修了一个不显而易见的坑，趁记忆新鲜，这是 T4 自动沉淀的绑定点）：',
+    `   node ${skillDir}/code/light-cli.mjs draft --error "<报错>" --context "<在做什么>" --commit`,
+    '4. **任务结束回填**（用了召回给出的修法就登记，让「注入→有效」可度量）：',
+    `   node ${skillDir}/code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"`,
+    `   node ${skillDir}/code/evolver-recall.mjs --negate <N> --note "<为什么没起作用>"`,
+    '',
+    '原则：没命中就继续干活（零注入是对的，别为命中硬凑）；修法只在确实相关时采用；',
+    '修完坑**必须立刻执行第 3 步**——这四件事做完，同一个坑才真正只踩一次。',
+  ].join('\n');
+}
+
+/**
  * B：闭环健康度（0.16.0）。
  *
  * 动机：这套系统最常见的失败不是「出错」，而是**静默失效**——
@@ -132,10 +159,15 @@ process.on('unhandledRejection', (err) => {
  * 注意：**仅作用于本地 distill/draft**；从共享池 `gene import` 仍按 tier 判定，不受此项影响。
  */
 function autoApproveState(args) {
-  if (Array.isArray(args) && (args.includes('--no-auto-approve') || args.includes('--manual-review'))) return 'quarantined';
+  const explicit = Array.isArray(args) ? args : [];
+  if (explicit.includes('--no-auto-approve') || explicit.includes('--manual-review')) return 'quarantined';
+  // 0.17.0：**非交互沉淀（脚本/cron/宿主自动管道，无 TTY）默认隔离**——实测 autoApprove
+  // 会把 retry-log 噪音直接放进可注入池（隔离库复现：守卫全放行）。自动管道想自动通过
+  // 必须显式传 --auto-approve（有意识的决定）。交互式人工沉淀不受影响，保持 0.16.0 便利。
+  if (!process.stdout.isTTY && !explicit.includes('--auto-approve')) return 'quarantined';
+  if (explicit.includes('--auto-approve')) return 'approved';
   const config = readConfig();
   const def = typeof config.autoApprove === 'boolean' ? config.autoApprove : true; // 默认开
-  if (Array.isArray(args) && args.includes('--auto-approve')) return 'approved';
   if (process.env.EVOX_AUTO_APPROVE === 'off') return 'quarantined';
   if (process.env.EVOX_AUTO_APPROVE === 'on') return 'approved';
   return def ? 'approved' : 'quarantined';
@@ -214,17 +246,31 @@ function writeConfig(patch) {
 }
 
 function loopHealth(genes, approved) {
-  const hitsDir = process.env.EVOX_HITS_DIR || path.join(process.cwd(), 'experiments');
+  // 0.17.0：默认落点改为**技能根/experiments**（脱离 cwd——此前在别的目录跑 info 会误报「从未召回」）
+  const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
   const countLines = (f) => { try { return fs.readFileSync(f, 'utf8').split('\n').filter((l) => l.trim()).length; } catch { return 0; } };
   const recallCalls = countLines(path.join(hitsDir, 'recall_calls.jsonl'));
   const hits = countLines(path.join(hitsDir, 'hits.jsonl'));
-  const pending = genes.filter((g) => g && g.asset_id && !approved.has(g.asset_id)).length;
+  // 0.17.0 三分类（修复：此前把「已审查隔离」也误报成待审并引导 approve——对噪音基因是错误引导）
+  const lww = {};
+  const reviewPath = path.join(STORE_DIR, 'review.jsonl');
+  try {
+    for (const l of fs.readFileSync(reviewPath, 'utf8').split('\n')) {
+      const t = l.trim(); if (!t) continue;
+      try { const r = JSON.parse(t); lww[r.assetId] = r.state; } catch { /* 坏行跳过 */ }
+    }
+  } catch { /* 无台账 */ }
+  const isAppr = (g) => g && g.asset_id && approved.has(g.asset_id);
+  const isQuar = (g) => g && g.asset_id && String(lww[g.asset_id] || '').toLowerCase().includes('quarantin');
+  const undecided = genes.filter((g) => !isAppr(g) && !isQuar(g));
+  const quarantined = genes.filter(isQuar);
 
   const lines = ['── 闭环健康度 ──'];
   lines.push(`  召回次数    : ${recallCalls}${recallCalls === 0 ? '  ← 从未召回，经验不会生效' : ''}`);
   lines.push(`  命中登记    : ${hits}`);
-  lines.push(`  待审基因    : ${pending}${pending > 0 ? '  ← 这些不会注入！' : ''}`);
-  const alive = recallCalls > 0 && pending === 0;
+  lines.push(`  待审(未决定): ${undecided.length}${undecided.length ? '  ← 这些不会注入！' : ''}`);
+  lines.push(`  已隔离      : ${quarantined.length}${quarantined.length ? '（噪音/探针，属正常状态，无需处理）' : ''}`);
+  const alive = recallCalls > 0 && undecided.length === 0;
   lines.push(`  状态        : ${alive ? '闭环运行中' : '未闭合（按下面做一步即可）'}`);
   lines.push('');
 
@@ -233,12 +279,14 @@ function loopHealth(genes, approved) {
     lines.push('    → 立刻试一次：node code/evolver-recall.mjs --query "读取中文日志报 UnicodeDecodeError"');
     lines.push('    → 想让 agent 自动召回：node code/light-cli.mjs install-hooks（先看它会做什么，加 --yes 才写入）');
   }
-  if (pending > 0) {
-    const sample = genes.filter((g) => g && g.asset_id && !approved.has(g.asset_id)).slice(0, 3).map((g) => g.id);
-    lines.push(`  ⚠ 有 ${pending} 条基因待审，待审基因**不会被注入**，等于存了没用。`);
-    lines.push(`    → 审核：node code/light-cli.mjs approve ${sample[0]}`);
-    if (sample.length > 1) lines.push(`    （其余：${sample.slice(1).join(', ')}${pending > 3 ? ' …' : ''}）`);
-    lines.push('    → 或让自己沉淀的基因自动通过：node code/light-cli.mjs config --auto-approve on');
+  if (undecided.length > 0) {
+    const sample = undecided.slice(0, 3).map((g) => g.id);
+    lines.push(`  ⚠ 有 ${undecided.length} 条基因待审（未做任何决定），不会注入。`);
+    lines.push(`    → 逐条看内容后：有可执行修法 → approve ${sample[0]}；是日志复述/测试残留 → quarantine ${sample[0]} --reason "..."`);
+    if (sample.length > 1) lines.push(`    （其余：${sample.slice(1).join(', ')}${undecided.length > 3 ? ' …' : ''}）`);
+  }
+  if (quarantined.length > 0) {
+    lines.push(`  ℹ 已隔离 ${quarantined.length} 条（噪音/测试残留）——这是**正确状态**，不需要处理；误隔离的可 approve 恢复。`);
   }
   return lines.join('\n');
 }
@@ -262,6 +310,7 @@ function usage() {
   node code/light-cli.mjs install-hooks [--host openclaw|hermes] [--yes]  # 演练；加 --yes 才写入
   node code/light-cli.mjs config [--auto-approve on|off]           # 自己沉淀的基因是否自动通过（默认 on）
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
+  node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
 
 共享基因库：distill/draft 加 --shareable 标记该基因「可共享」（默认不共享=不外发）。
   任何基因导出/入池前必过脱敏闸门（私有IP/绝对路径/密钥/内网服务命中即拦截，不出网）。
@@ -291,7 +340,7 @@ function doctor() {
   } catch (e) { storeOk = false; storeDetail = `${STORE_DIR} 不可写：${String(e.message).slice(0, 80)}`; }
   checks.push({ name: '经验库目录可写', ok: storeOk, detail: storeDetail, fix: '检查目录权限（Linux 用 chmod，Windows 检查只读属性 / 杀软拦截）' });
   const hitsEnv = process.env.EVOX_HITS_DIR;
-  checks.push({ name: '命中登记目录可达', ok: true, detail: hitsEnv ? hitsEnv : `默认 ${process.cwd()}/experiments（需当前目录可写）`, fix: '如需固定落点，设 EVOX_HITS_DIR 环境变量指向可写目录' });
+  checks.push({ name: '命中登记目录可达', ok: true, detail: hitsEnv ? hitsEnv : `默认 ${path.dirname(path.dirname(fileURLToPath(import.meta.url)))}/experiments（技能根，脱离 cwd）`, fix: '如需固定落点，设 EVOX_HITS_DIR 环境变量指向可写目录' });
   const failed = checks.filter((c) => !c.ok);
   console.log('light-cli 自检（doctor）结果：');
   for (const c of checks) {
@@ -339,12 +388,20 @@ switch (cmd) {
     });
     if (!gene) { console.log(raw); break; }
     // 只在真正写入时登记 quarantined（等待审核）
+    const dgate = depositionGate((gene.strategy || []).join('\n'));
+    if (!dgate.ok) fail('沉淀质检未通过：' + dgate.reason, { code: 1, hint: 'gate=' + dgate.kind + '；沉淀要写 AVOID(什么坑)+FIX(怎么避开)，不是日志复述' });
     const written = appendGene(gene);
     if (written) {
-      appendReview({ assetId: gene.asset_id, state: autoApproveState(rest), reason: autoApproveState(rest) === 'approved' ? 'auto-approved (own library)' : 'manually distilled — review before use' });
+      const st = autoApproveState(rest);
+      appendReview({ assetId: gene.asset_id, state: st, reason: st === 'approved' ? (process.stdout.isTTY ? 'auto-approved (own library)' : 'auto-approved (explicit --auto-approve)') : (process.stdout.isTTY ? 'manually distilled — review before use' : 'non-interactive deposit — review before use') });
     }
     console.log(raw + (written ? '' : '\n（asset 已存在，跳过重复写入）'));
-    if (written) console.log(`\n下一步审核：node code/light-cli.mjs approve ${gene.id}`);
+    if (written) {
+      const st = autoApproveState(rest);
+      console.log(st === 'approved'
+        ? `\n✓ 已入库并自动通过（立即可注入）：${gene.id}${process.stdout.isTTY ? '' : '（显式 --auto-approve）'}`
+        : `\n已入库【待审/隔离，不会注入】：${gene.id}\n   审核：node code/light-cli.mjs approve ${gene.id}`);
+    }
     break;
   }
   case 'draft': {
@@ -373,10 +430,19 @@ switch (cmd) {
         shareable: rest.includes('--shareable'),
       });
       if (!gene) { console.log(raw); break; }
+      // 0.17.0 沉淀质检：占位符未填 / retry 日志复述 / 旁白开场 → **拒绝入库**（fail-closed），
+      // 把召回侧的守卫前移到生产侧——autoApprove 的安全性由此成立。
+      const gate = depositionGate((gene.strategy || []).join('\n'));
+      if (!gate.ok) fail('沉淀质检未通过：' + gate.reason, { code: 1, hint: 'gate=' + gate.kind + '；修正后重新 distill/draft --commit' });
       const written = appendGene(gene);
       if (written) appendReview({ assetId: gene.asset_id, state: autoApproveState(rest), reason: autoApproveState(rest) === 'approved' ? 'auto-approved (own library)' : 'guided draft — review before use' });
       console.log(`\n${raw}${written ? '' : '\n（asset 已存在，跳过）'}`);
-      if (written) console.log(`下一步审核：node code/light-cli.mjs approve ${gene.id}`);
+      if (written) {
+        const st2 = autoApproveState(rest);
+        console.log(st2 === 'approved'
+          ? `✓ 已入库并自动通过（立即可注入）：${gene.id}${process.stdout.isTTY ? '' : '（显式 --auto-approve）'}`
+          : `已入库【待审/隔离，不会注入】：${gene.id}\n   审核：node code/light-cli.mjs approve ${gene.id}`);
+      }
     } else {
       console.log('\n未加 --commit：补全 strategy 里的 FIX 后，运行上面等价的 distill 命令（或加 --strategy 与 --commit 直接落库为待审草稿）。');
       console.log(`  node code/light-cli.mjs distill --signals "${proposed.signals.join(',')}" --strategy "${strategy}" --summary "${proposed.summary}"`);
@@ -425,27 +491,42 @@ switch (cmd) {
   }
   case 'snippet': {
     // 给**没有钩子机制**的 Agent 用：输出一段可直接粘进 AGENTS.md / CLAUDE.md / 系统提示的操作规程。
-    // 这解决的是「什么时候提醒」里的最后一种宿主：既没有 bootstrap 也没有 pre_tool_use 的纯提示词 Agent。
-    const skillDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-    const block = [
-      '## 经验库操作规程（pi-evox-loop，五个触发点）',
-      '',
-      `技能目录: ${skillDir}`,
-      '',
-      '1. **任务开始**（拿到非平凡任务时，先于规划执行）：',
-      `   node ${skillDir}/code/evolver-recall.mjs --query "<任务一句话>" --agent <你的名字>`,
-      '2. **遇到报错**（工具返回错误、且你准备重试之前——这一刻价值最直观）：',
-      `   node ${skillDir}/code/evolver-recall.mjs --error "<报错原文>"`,
-      '3. **修好坑后**（修了一个不显而易见的坑，立刻沉淀，趁记忆新鲜）：',
-      `   node ${skillDir}/code/light-cli.mjs draft --error "<报错>" --context "<在做什么>" [--commit]`,
-      '4. **任务结束**（用了召回给出的修法就回填，让「注入→有效」可度量）：',
-      `   node ${skillDir}/code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"`,
-      `   node ${skillDir}/code/evolver-recall.mjs --negate <N> --note "<为什么没起作用>"`,
-      '',
-      '原则：没命中就继续干活（零注入是对的，别为命中硬凑）；修法只在确实相关时采用；',
-      '修完必沉淀。这四件事做完，同一个坑才真正只踩一次。',
-    ].join('\n');
-    console.log(block);
+    console.log(procedureText());
+    break;
+  }
+  case 'install-snippet': {
+    // 0.17.0：把操作规程**写进指定项目的 AGENTS.md/CLAUDE.md**——解决「另外两个项目没自动沉淀」：
+    // 技能只在被加载时才影响 agent，而规程一旦粘进项目指令文件，**该项目的每个会话都会看到 T4/T5**。
+    // 与 install-hooks 同纪律：默认演练，--yes 才写入；幂等（按标记更新，不重复追加）。
+    const fi = rest.indexOf('--file');
+    const target = fi >= 0 ? rest[fi + 1] : null;
+    if (!target) fail('用法: light-cli.mjs install-snippet --file <AGENTS.md 或 CLAUDE.md 路径> [--yes]');
+    const yes = rest.includes('--yes');
+    const out = ['── install-snippet ' + (yes ? '（写入模式）' : '（演练模式，未落盘）') + ' ──'];
+    const abs = path.resolve(target);
+    out.push(`  目标文件: ${abs}`);
+    const exists = fs.existsSync(abs);
+    out.push(`  文件存在: ${exists ? '是' : '否（--yes 时会创建）'}`);
+    const cur = exists ? fs.readFileSync(abs, 'utf8') : '';
+    const has = cur.includes('evox-procedure:v1');
+    out.push(`  已含规程: ${has ? '是（将原位更新）' : '否（将追加到文件末尾）'}`);
+    if (yes) {
+      try {
+        const block = procedureText();
+        let next;
+        if (has) {
+          next = cur.replace(/<!-- evox-procedure:v1 -->[\s\S]*?<!-- \/evox-procedure -->/, '<!-- evox-procedure:v1 -->\n' + block + '\n<!-- /evox-procedure -->');
+        } else {
+          next = cur + (cur.endsWith('\n') || !cur ? '' : '\n') + '\n<!-- evox-procedure:v1 -->\n' + block + '\n<!-- /evox-procedure -->\n';
+        }
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, next, 'utf8');
+        out.push('  ✓ 已写入。该项目的 agent 每个会话都会看到此规程（T1–T5）。');
+      } catch (e) { out.push('  ✗ 写入失败: ' + String(e.message || e)); }
+    } else {
+      out.push('  （演练未落盘；确认无误加 --yes）');
+    }
+    console.log(out.join('\n'));
     break;
   }
   case 'install-hooks': {
