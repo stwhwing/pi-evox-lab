@@ -10,8 +10,12 @@ import { appendReview, readGenes, readReview, assetIdOf } from './store.mjs';
 export function approve(idOrAssetId) {
   const assetId = String(idOrAssetId).startsWith('sha256:') ? String(idOrAssetId) : assetIdOf(String(idOrAssetId));
   if (!assetId) return { ok: false, reason: `找不到 gene: ${idOrAssetId}` };
-  const already = readReview().some((r) => r.assetId === assetId && String(r.state || '').includes('approv'));
-  if (already) return { ok: true, assetId, alreadyApproved: true };
+  // 0.18.1：幂等判定改 **LWW**（最后一条状态）——旧 `.some()` 只要历史上有 approved 就跳过，
+  // 会让「曾被批准→后被隔离」的基因永远无法重新批准（0.14.4 LWW 修复清单遗漏的第 4 处，
+  // 2026-10-11 实测：5 条 approve 静默无效假 ✓）。
+  let lastState = null;
+  for (const r of readReview()) { if (r.assetId === assetId) lastState = r.state; }
+  if (lastState && String(lastState).toLowerCase().includes('approv')) return { ok: true, assetId, alreadyApproved: true };
   appendReview({ assetId, state: 'approved', reason: 'approved via light ledger' });
   return { ok: true, assetId, alreadyApproved: false };
 }
