@@ -68,7 +68,7 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
 ├── exp/                         # 陷阱模板与回归用 fixture
 └── docs/
     ├── experiment-report.md     # 完整实测报告（含每一步的失败与排查）
-    ├── adapter-design.md        # 适配器设计草案 + 宿主 Extensions API 预研
+    ├── adapter-design.md        # ⚠️ 历史草案（已被现实实现取代，仅存档勿按此集成）
     ├── other-agents.md          # 其他 Agent 宿主接入指南
     ├── providers.md             # Provider 配置
     └── security-and-license.md  # 安全与许可全文
@@ -137,6 +137,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 | **[Leading-AI-IO/palantir-ontology-strategy](https://github.com/Leading-AI-IO/palantir-ontology-strategy)** | 开源专著：把本体论讲成「名词（对象）与动词（动作）的统合 + 分支与评审的治理」；"从只能看的数据，转向直接驱动业务的数据"与本研究"从记录经验，转向驱动下一轮行为"同源。 |
 | **[ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)** | 多平台智能体行为约束项目。借鉴两点：**工程组织方式**（同一规则面向多宿主做薄适配层，与本项目「一个实现 + 多个薄钩子」同构）与 **`evals/` 盲评评测体系**（多维度 rubric + 多次试验 + 加权）；其**发布门设计教训**（绝对化规则会让门永不可通过）也被用来复查自家守卫是否过严。 |
 | **论文 *From Procedural Skills to Strategy Genes***（arXiv:2604.15097，EvoMap） | 提供「紧凑 Gene 优于冗长 Skill」「失败经验的最佳形态是极度蒸馏后的独立 **AVOID** 警告」两条结论的量化依据（4,590 次受控实验）。本项目独立实测与之同向，据此保留了对**注入内容质量**的高优先关注。 |
+| **[numbat](https://github.com/perplexityai/numbat)**（Perplexity AI，Apache-2.0） | agent 行为审计器（Go 单二进制）——本版 0.18 的 **timeline（四账本取证重建）与 harvest（错误候选→沉淀建议）** 两个命令的方法论直接受其启发：「把账本变成监控录像」「先证明 agent 到底干了什么」。numbat 原生解析 OpenClaw/Claude/Codex 会话日志，可在自有设备上作为 PiEvoX 效果度量的**独立取证后端**（P2 路线）。 |
 | **[FlyLoRA](https://arxiv.org/abs/2510.08396)**（NeurIPS 2025，清华大学；[代码](https://github.com/gfyddha/FlyLoRA)） | 权重空间的隐式秩专家（implicit rank-wise MoE）PEFT —— 与本项目（**提示空间**的推理期经验继承）**不在同一层**，因此不是可直接插入的组件；但有两条原理被**显式迁移**：① **负载均衡偏置** —— 本版 0.14.4 的召回打分加入 `-u·sign(c_i − c̄)`（`c_i` = 该基因历史命中数），缓解"高信号重叠的热门基因长期霸榜"；② **免训练合并不干扰** —— 落到提示层即本版的**注入冲突守卫**（选中集合内 `anti_patterns` 互斥者剔除低分项）。其"正交组件合并互不干扰"的判断，与本项目把负经验正交化为 `anti_patterns` 的做法同构。另：其 **FlyHash 式免参数路由**是我们路线图上 **P2（鲁棒召回）** 的参考方向，**当前尚未实现**（诚实标注）。 |
 | **[Switch Transformer](https://arxiv.org/abs/2101.03961)**（Fedus et al., 2021） | 上述"**负载均衡偏置**"的思想源头之一 —— MoE 负载均衡以每专家计数 `c_i` 与均值的偏离为据。本项目 P1④ 的加性偏置沿用同一形式（温和封顶，规模未到时恒为 0）。 |
 
@@ -148,7 +149,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.17.0（版本轨迹：0.3.0 首发 → 0.17.0） |
+| 当前版本 | 0.18.0（版本轨迹：0.3.0 首发 → 0.18.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -172,6 +173,8 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
 
+- **0.18.0（回填寻址 + 时间线 + 收获版）**：
+  **EN**: register-hit/negate now address genes by **asset_id/gene_id** (`--gene <id>`; positional N kept for compat but unreliable under concurrent sessions - proven drift), `light-cli timeline` merges the four ledgers (recall/inject/feedback/error-candidates) into a Markdown forensic report, `light-cli harvest` turns captured error candidates into copy-paste deposition drafts, doctor detects scattered instrumentation, and docs get the alignment pass (Node>=22 / GPL front-and-center, FAQ centralized, adapter-design deprecated, walkthrough anchors). Pool semantics released: approved-only.
 - **0.17.0（沉淀质检版）**：
   **EN**: Deposition-quality release - closes the 0.16.0 autoApprove gap (retry-log noise and unfilled-placeholder genes were deposited-and-injected; all three recall guards pass). Adds depositionGate (fail-closed reject: placeholder / retry-log / narration / no-signal), non-interactive deposits default to quarantined (explicit --auto-approve overrides), a 4th recall guard against stored noise, three-way loop health (pending vs quarantined vs approved), cwd-independent HITS_DIR, `install-snippet` (write the T1-T5 procedure into project AGENTS.md/CLAUDE.md - the deposit-side last mile), injection scan AVOID-context extension to high-risk action patterns, and state-aware distill messages.堵 0.16.0 autoApprove 的实测洞（retry-log 噪音与未填占位符基因**沉淀即注入**，三道召回守卫全放行——隔离库复现）。① **沉淀质检 depositionGate**（fail-closed）：占位符未填 / retry-log 复述 / 旁白开场 / 缺信号词 → **拒绝入库**并给出修正指引；② **非交互沉淀默认隔离**：无 TTY（脚本/cron/管道）默认 quarantined，显式 `--auto-approve` 才通过——交互式人工沉淀便利不变；③ **召回侧第四道守卫**（retry-log，与沉淀同口径）——历史已入库的噪音也不再注入；④ **loopHealth 三分类**：待审(未决定)/已隔离/已批准分开计数，隔离不再被误报为待审并错误引导 approve；⑤ **HITS_DIR 默认脱离 cwd**（技能根/experiments，修「在别的目录跑 info 误报从未召回」）；⑥ **`install-snippet`**：把五触发点规程写进项目 AGENTS.md/CLAUDE.md（演练→--yes，幂等）——**自动沉淀的绑定点**（T4 进上下文）；⑦ 注入扫描 **AVOID 语境扩展到高危动作类**（修 0.16.0 实测的 exfiltrate 误杀 AVOID 警告）；⑧ distill 提示语随审核状态输出。评测驱动清理：trigger/errorHandling 4.3→4.8（0.16.0 修复生效）。
 - **0.16.0（评测驱动 + 生效性版）**：
