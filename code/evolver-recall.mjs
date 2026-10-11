@@ -200,7 +200,7 @@ const QUERY = (() => {
 	// 旧版把裸位置参数（如 `evolver-recall.mjs "处理 GBK 报错"`）静默忽略，回落成
 	// 「按入库顺序注入尾部 N 条」——看似有结果实则与当前任务无关，非开发者极难察觉。
 	// 现把首个裸位置参数提升为 query 并提示规范写法，消除该静默 footgun。
-	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error'];
+	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error', '--gene'];
 	const consumed = new Set();
 	for (const f of VALUED) {
 		const i = argv.indexOf(f);
@@ -381,6 +381,38 @@ function resolveConflicts(items, scored) {
 	return kept;
 }
 
+/**
+ * 0.18：按 **asset_id 或 gene_id** 解析回填目标——多会话并行下位置编号会漂移
+ * （.evox-last-selection.json 是共享单文件，另一会话的 recall 会覆盖它，2026-10-09 实测错记）。
+ * 解析顺序：①选择快照内匹配 ②全量召回列表匹配 ③基因库直查。
+ */
+function resolveRef(ref) {
+	if (!ref) return null;
+	try {
+		const sel = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
+		if (sel && Array.isArray(sel.ids) && sel.ids.length) {
+			const byId = new Map(recallList().map((x) => [x.id, x]));
+			if (byId.has(ref)) return byId.get(ref);
+			const hit = sel.ids.map((id) => byId.get(id)).filter(Boolean).find((x) => x.assetId === ref || x.id === ref);
+			if (hit) return hit;
+		}
+	} catch { /* 无留痕 → 走全量 */ }
+	const all = recallList();
+	const hit2 = all.find((x) => x.assetId === ref || x.id === ref);
+	if (hit2) return hit2;
+	try {
+		const storeDir = process.env.EVO_STORE_DIR || path.join(os.homedir(), '.evomap', 'assets');
+		for (const line of fs.readFileSync(path.join(storeDir, 'genes.jsonl'), 'utf8').split('\n')) {
+			const t = line.trim(); if (!t) continue;
+			let g; try { g = JSON.parse(t); } catch { continue; }
+			if (g && (g.asset_id === ref || g.id === ref)) {
+				return { id: g.id, assetId: g.asset_id, category: g.category || 'repair', text: (g.summary || '') + ' ' + (g.strategy || []).join(' ') };
+			}
+		}
+	} catch { /* 库不可读 */ }
+	return null;
+}
+
 /** 对靶 + top-N 选取；并落一份「本次选中」sidecar，供 --register-hit 正确解析编号 */
 function selectList(all) {
 	// 0.15.0：用**清洗后**的任务意图打分（治 私有节点实测 63% 打分落空）。
@@ -410,19 +442,25 @@ function selectList(all) {
 	return { picked, total: all.length, targeted: qTokens.size > 0 };
 }
 
-function registerHit(n, note) {
-	// 优先按「上次召回真正展示过的选中集」解析编号（对靶后编号 ≠ 全量顺序）
-	let list = null;
-	try {
-		const sel = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
-		if (sel && Array.isArray(sel.ids) && sel.ids.length) {
-			const byId = new Map(recallList().map((x) => [x.id, x]));
-			list = sel.ids.map((id) => byId.get(id)).filter(Boolean);
-		}
-	} catch { /* 无留痕 → 退化为全量列表 */ }
-	if (!list) list = recallList();
-	const item = list[n - 1];
-	if (!item) fail(`登记失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '用 recall 输出顶部的编号，或重新运行 recall 查看最新编号' });
+function registerHit(n, note, geneRef) {
+	// 0.18：--gene <asset_id|gene_id> 寻址优先（并发安全）；位置 N 为兼容路径
+	let item;
+	if (geneRef) {
+		item = resolveRef(geneRef);
+		if (!item) fail(`登记失败：基因「${geneRef}」未找到（检查 asset_id/gene_id 拼写，或先跑 recall 确认）`, { code: 1 });
+	} else {
+		let list = null;
+		try {
+			const sel = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
+			if (sel && Array.isArray(sel.ids) && sel.ids.length) {
+				const byId = new Map(recallList().map((x) => [x.id, x]));
+				list = sel.ids.map((id) => byId.get(id)).filter(Boolean);
+			}
+		} catch { /* 无留痕 → 退化为全量列表 */ }
+		if (!list) list = recallList();
+		item = list[n - 1];
+		if (!item) fail(`登记失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '多会话并发环境建议改用 --gene <asset_id>（位置编号可能漂移）' });
+	}
 	fs.mkdirSync(HITS_DIR, { recursive: true });
 	const rec = {
 		ts: new Date().toISOString(),
@@ -432,7 +470,7 @@ function registerHit(n, note) {
 		note: String(note).slice(0, 300),
 	};
 	fs.appendFileSync(HITS_FILE, JSON.stringify(rec) + '\n');
-	console.log(`[pi-evox] 命中已登记 #${n} (${item.id}) → ${HITS_FILE}`);
+	console.log(`[pi-evox] 命中已登记 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${HITS_FILE}`);
 	console.log(`[pi-evox] 当前命中总数: ${readJsonl(HITS_FILE).length}`);
 }
 
@@ -470,9 +508,10 @@ function recall() {
 		return;
 	}
 	console.log('以下为已验证修法，与本任务相关时优先采用；任务结束时请回填效果：');
-	console.log(`  采用了 → node ${path.basename(process.argv[1])} --register-hit <N> --note "<任务一句话>"`);
-	console.log(`  没采用/仍踩坑 → node ${path.basename(process.argv[1])} --negate <N> --note "<为什么没起作用>"`);
-	console.log('  （0.15.0：回填才能量化"注入→有效"转化率；不回的注入不计入效果统计）');
+	console.log(`  采用了 → node ${path.basename(process.argv[1])} --register-hit --gene <asset_id或gene_id> --note "<任务一句话>"（0.18 起推荐：按 id 寻址，多会话并发不漂移）`);
+	console.log(`  没采用/仍踩坑 → node ${path.basename(process.argv[1])} --negate --gene <asset_id或gene_id> --note "<为什么没起作用>"`);
+	console.log('  （位置写法 --register-hit <N> 仍兼容，但多会话并行时 N 可能漂移——见 0.18 变更说明）');
+	console.log('  （回填才能量化"注入→有效"转化率；不回的注入不计入效果统计）');
 	console.log('');
 	picked.forEach((it, i) => {
 		console.log(`[#${i + 1}|${it.id}] [${it.category}] ${it.text}`);
@@ -480,43 +519,58 @@ function recall() {
 }
 
 /** 0.15.0 P0-3：--negate 回填「注入了但没起作用」——与 --register-hit 对称，闭合漏斗。 */
-function registerNegated(n, note) {
-	let list = null;
-	try {
-		const sel = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
-		if (sel && Array.isArray(sel.ids) && sel.ids.length) {
-			const byId = new Map(recallList().map((x) => [x.id, x]));
-			list = sel.ids.map((id) => byId.get(id)).filter(Boolean);
-		}
-	} catch { /* 无留痕 → 退化为全量列表 */ }
-	if (!list) list = recallList();
-	const item = list[n - 1];
-	if (!item) fail(`回填失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '用 recall 输出顶部的编号' });
+function registerNegated(n, note, geneRef) {
+	let item;
+	if (geneRef) {
+		item = resolveRef(geneRef);
+		if (!item) fail(`回填失败：基因「${geneRef}」未找到`, { code: 1 });
+	} else {
+		let list = null;
+		try {
+			const sel = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
+			if (sel && Array.isArray(sel.ids) && sel.ids.length) {
+				const byId = new Map(recallList().map((x) => [x.id, x]));
+				list = sel.ids.map((id) => byId.get(id)).filter(Boolean);
+			}
+		} catch { /* 无留痕 → 退化为全量列表 */ }
+		if (!list) list = recallList();
+		item = list[n - 1];
+		if (!item) fail(`回填失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '多会话并发环境建议改用 --gene <asset_id>' });
+	}
 	fs.mkdirSync(HITS_DIR, { recursive: true });
 	fs.appendFileSync(PENDING_FILE, JSON.stringify({
 		ts: new Date().toISOString(), agent: AGENT, gene_id: item.id, asset_id: item.assetId,
 		category: item.category, outcome: 'negated', note: String(note).slice(0, 300),
 		taskText: String(TASK_TEXT || '').slice(0, 200),
 	}) + '\n');
-	console.log(`[pi-evox] 已回填未采用 #${n} (${item.id}) → ${PENDING_FILE}`);
+	console.log(`[pi-evox] 已回填未采用 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${PENDING_FILE}`);
 	console.log('  → 该条会进入"注入→有效"转化率的分母，用于识别**该修法是否已失效**。');
 }
 
 const argv = process.argv.slice(2);
+const gi = argv.indexOf('--gene');
 if (argv[0] === '--register-hit') {
-	const n = parseInt(argv[1], 10);
-	if (!Number.isInteger(n) || n < 1) {
-		fail('用法: evolver-recall.mjs --register-hit <N> --note "<任务一句话>"');
-	}
 	const ni = argv.indexOf('--note');
-	registerHit(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+	if (gi >= 0) {
+		registerHit(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1]);
+	} else {
+		const n = parseInt(argv[1], 10);
+		if (!Number.isInteger(n) || n < 1) {
+			fail('用法: evolver-recall.mjs --register-hit [--gene <asset_id|gene_id>] --note "<任务一句话>"（0.18 推荐按 --gene 寻址）');
+		}
+		registerHit(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+	}
 } else if (argv[0] === '--negate') {
-	const n = parseInt(argv[1], 10);
-	if (!Number.isInteger(n) || n < 1) {
-		fail('用法: evolver-recall.mjs --negate <N> --note "<为什么没起作用>"');
-	}
 	const ni = argv.indexOf('--note');
-	registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+	if (gi >= 0) {
+		registerNegated(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1]);
+	} else {
+		const n = parseInt(argv[1], 10);
+		if (!Number.isInteger(n) || n < 1) {
+			fail('用法: evolver-recall.mjs --negate [--gene <asset_id|gene_id>] --note "<为什么没起作用>"');
+		}
+		registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+	}
 } else {
 	recall();
 }
