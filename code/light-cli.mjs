@@ -291,6 +291,8 @@ function loopHealth(genes, approved) {
   return lines.join('\n');
 }
 
+const argOf = (a, name) => { const i = a.indexOf(name); return i >= 0 ? a[i + 1] : undefined; };
+
 function usage() {
   console.log(`light-cli — 内置经验库运维命令（零依赖）
 
@@ -309,6 +311,8 @@ function usage() {
   node code/light-cli.mjs starter                                  # 一键装载起步基因包（10 条通用教训）
   node code/light-cli.mjs install-hooks [--host openclaw|hermes] [--yes]  # 演练；加 --yes 才写入
   node code/light-cli.mjs config [--auto-approve on|off]           # 自己沉淀的基因是否自动通过（默认 on）
+  node code/light-cli.mjs timeline [--last 50]                     # 四账本时间线（召回/注入/回填/工具错误）——0.18，方法致谢 numbat
+  node code/light-cli.mjs harvest [--last 10]                      # error_candidates → 沉淀建议清单（Layer2 消费端）
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
 
@@ -341,6 +345,17 @@ function doctor() {
   checks.push({ name: '经验库目录可写', ok: storeOk, detail: storeDetail, fix: '检查目录权限（Linux 用 chmod，Windows 检查只读属性 / 杀软拦截）' });
   const hitsEnv = process.env.EVOX_HITS_DIR;
   checks.push({ name: '命中登记目录可达', ok: true, detail: hitsEnv ? hitsEnv : `默认 ${path.dirname(path.dirname(fileURLToPath(import.meta.url)))}/experiments（技能根，脱离 cwd）`, fix: '如需固定落点，设 EVOX_HITS_DIR 环境变量指向可写目录' });
+  // 0.18：埋点散落检测——其他目录的 experiments/ 里有 evox 埋点时提示迁移（GameRemake 会话实测散落）
+  try {
+    const cwdExp = path.join(process.cwd(), 'experiments');
+    const skillExp = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    if (path.resolve(cwdExp) !== path.resolve(skillExp) && fs.existsSync(cwdExp)) {
+      const strays = ['recall_calls.jsonl', 'pending_injections.jsonl', 'hits.jsonl', 'error_candidates.jsonl'].filter((f) => fs.existsSync(path.join(cwdExp, f)));
+      if (strays.length) {
+        checks.push({ name: '埋点散落', ok: false, detail: `发现 ${cwdExp} 含 ${strays.length} 个埋点文件（时间线/统计读的是技能根目录，散落部分不可见）`, fix: `迁移: mv ${cwdExp}/{${strays.join(',')}} ${skillExp}/ 或统一设 EVOX_HITS_DIR` });
+      }
+    }
+  } catch { /* 探测失败不影响 doctor */ }
   const failed = checks.filter((c) => !c.ok);
   console.log('light-cli 自检（doctor）结果：');
   for (const c of checks) {
@@ -463,6 +478,62 @@ switch (cmd) {
     const r = ledger.quarantine(id, flag('reason', 'manually quarantined'));
     console.log(r.ok ? `✓ 已隔离：${r.assetId}` : `✗ ${r.reason}`);
     process.exit(r.ok ? 0 : 1);
+    break;
+  }
+  case 'timeline': {
+    // 0.18：四账本按时间合并 → 单任务时间线 Markdown。
+    // 方法论致谢：灵感来自 Perplexity 开源的 numbat（endpoint 行为审计器的 timeline 取证重建，
+    // github.com/perplexityai/numbat，Apache-2.0）——「把账本变成监控录像」；实现为本机账本自有格式。
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const lastN = parseInt(argOf(rest, '--last') || '50', 10) || 50;
+    const files = [
+      ['召回', path.join(hitsDir, 'recall_calls.jsonl')],
+      ['注入', path.join(hitsDir, 'pending_injections.jsonl')],
+      ['回填', path.join(hitsDir, 'hits.jsonl')],
+      ['工具错误', path.join(hitsDir, 'error_candidates.jsonl')],
+    ];
+    const events = [];
+    for (const [kind, f] of files) {
+      try {
+        for (const l of fs.readFileSync(f, 'utf8').split('\n')) {
+          const t = l.trim(); if (!t) continue;
+          let r; try { r = JSON.parse(t); } catch { continue; }
+          const ts = r.ts || r.at || '';
+          if (!ts) continue;
+          const gid = r.gene_id || (r.assetId ? (readGenes().find((x) => x.asset_id === r.assetId) || {}).id || r.assetId : '') || '';
+          const detail = r.note || r.query || r.snippet || r.error || r.reason || '';
+          events.push({ ts, kind, gid: String(gid).slice(0, 28), detail: String(detail).slice(0, 90) });
+        }
+      } catch { /* 缺文件跳过 */ }
+    }
+    events.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+    const shown = events.slice(-lastN);
+    console.log(`## 经验库时间线（最近 ${shown.length}/${events.length} 条，来源: ${hitsDir}）`);
+    console.log('');
+    console.log('| 时间 | 类型 | 基因 | 详情 |');
+    console.log('|---|---|---|---|');
+    for (const e of shown) console.log(`| ${e.ts} | ${e.kind} | ${e.gid || '-'} | ${e.detail || '-'} |`);
+    if (!shown.length) console.log('（无事件——先跑一次 recall 产生埋点）');
+    break;
+  }
+  case 'harvest': {
+    // 0.18：error_candidates → 沉淀建议清单（半自动沉淀的消费端；Layer 2 hook 负责捕获，本命令负责盘点）。
+    // 每条候选给出可直接复制的 draft 命令（FIX 由人补全后走 depositionGate 正常入库）。
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const f = path.join(hitsDir, 'error_candidates.jsonl');
+    let rows = [];
+    try {
+      rows = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    } catch { /* 无候选 */ }
+    rows = rows.filter((r) => r.kind !== 'beat');
+    console.log(`[gene-share] 沉淀候选 ${rows.length} 条（来源 ${f}）`);
+    if (!rows.length) { console.log('  无候选——Layer 2 hook 捕获的工具错误会出现在这里。'); break; }
+    rows.slice(-parseInt(argOf(rest, '--last') || '10', 10) || 10).forEach((r, i) => {
+      const fam = proposeFromError(r.snippet || '', {});
+      console.log(`${i + 1}. [${r.ts || '?'}] ${r.tool || '?'} | 家族: ${fam.family} | ${String(r.snippet || '').slice(0, 80)}`);
+      console.log(`   → node code/light-cli.mjs draft --error ${JSON.stringify(String(r.snippet || '').slice(0, 120))} --tool ${JSON.stringify(r.tool || '')} --context "来自 error_candidates" --commit`);
+    });
+    console.log('  原则：候选只是线索；FIX 必须由你补全成可执行修法（占位符会被 depositionGate 拒绝）。');
     break;
   }
   case 'doctor': {
