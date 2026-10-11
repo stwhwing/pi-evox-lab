@@ -114,13 +114,26 @@ function safetyGate(gene) {
 }
 
 const exportable = (genes) => {
-  const out = [], blocked = [];
+  // 池语义（2026-10-10 用户拍板）：**本地库=工作区（待审都在这里）；池=已审核通过的共享集合**。
+  // submit 只导出 shareable 且 **LWW 审核态=approved** 的基因；待审/未决定留在本地库（计数报告，
+  // 提示先 approve 再推池）。旧版只过滤 shareable → 待审基因可进池、导入侧被 official 自动通过，审核门跨机失效。
+  const lww = {};
+  try { for (const r of store.readReview()) lww[r.assetId] = r.state; } catch { /* 台账缺失按未决定 */ }
+  const stateOf = (g) => {
+    const s = String(lww[g.asset_id] || '').toLowerCase();
+    if (s.includes('approv')) return 'approved';
+    if (s.includes('quarantin')) return 'quarantined';
+    return 'undecided';
+  };
+  const out = [], blocked = [], pending = [];
   for (const g of genes) {
     if (g?.shareable !== true) continue;
+    const st = stateOf(g);
+    if (st !== 'approved') { pending.push({ id: g.id, state: st }); continue; }
     const gate = safetyGate(g);
     if (gate.ok) out.push(g); else blocked.push({ gene: g, violations: gate.violations });
   }
-  return { out, blocked };
+  return { out, blocked, pending };
 };
 const readJsonl = (p) => { try { return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const writeJsonl = (f, rows) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''), 'utf8'); };
@@ -133,10 +146,10 @@ function reportBlocked(blocked) {
 
 function cmdExport(args) {
   const genes = store.readGenes();
-  const { out, blocked } = exportable(genes);
+  const { out, blocked, pending } = exportable(genes);
   const dest = argOf(args, '--out') || path.join(POOL_DIR, 'export.jsonl');
   if (out.length) writeJsonl(dest, out);
-  console.log(`[gene-share] 库内基因 ${genes.length}｜可导出(shareable 且过闸) ${out.length}｜被闸门拦截 ${blocked.length}`);
+  console.log(`[gene-share] 库内基因 ${genes.length}｜可导出(shareable+已审核+过闸) ${out.length}｜被闸门拦截 ${blocked.length}｜待审未导出 ${pending.length}`);
   reportBlocked(blocked);
   if (out.length) console.log(`[gene-share] 已导出 → ${dest}`);
   return blocked.length ? 2 : 0;
@@ -144,7 +157,7 @@ function cmdExport(args) {
 
 function cmdSubmit(args) {
   const pool = argOf(args, '--pool') || POOL_DIR;
-  const { out, blocked } = exportable(store.readGenes());
+  const { out, blocked, pending } = exportable(store.readGenes());
   const dest = path.join(pool, 'genes.jsonl');
   const existing = readJsonl(dest);
   const have = new Set(existing.map((g) => g.asset_id));
@@ -155,8 +168,9 @@ function cmdSubmit(args) {
     have.add(g.asset_id); added++;
   }
   writeJsonl(dest, existing);
-  console.log(`[gene-share] 入池 ${added} 条（幂等：已存在 ${out.length - added} 跳过）→ ${dest}`);
+  console.log(`[gene-share] 入池 ${added} 条（池中原有 ${existing.length} 条）→ ${dest}`);
   console.log(`[gene-share] 被闸门拦截 ${blocked.length}（未入池，未出网）`);
+  if (pending.length) console.log(`[gene-share] 待审未推池 ${pending.length} 条（池=已审核集合；先 approve 再推）: ${pending.slice(0, 5).map((p) => p.id + '(' + p.state + ')').join(', ')}${pending.length > 5 ? ' …' : ''}`);
   reportBlocked(blocked);
   return blocked.length ? 2 : 0;
 }
