@@ -27,6 +27,7 @@ const HITS_DIR = process.env.EVOX_HITS_DIR || '<技能目录>/experiments';
 const CACHE_FILE = path.join(__dirname, '.evox-last-task.json');
 // ────────────────────────────────────────────────────────────────────────
 
+const FOOTER = String.fromCharCode(10) + '[修好坑后立刻沉淀: light-cli draft --error <报错> --context <在做什么> --commit | 用了修法: evolver-recall --register-hit --gene <id> --note ...]' + String.fromCharCode(10);
 const FILE_NAME = 'EVOX_INHERITED_FIXES.md';
 const FILE_PATH = FILE_NAME;
 const MAX_TOTAL = 3000;
@@ -102,7 +103,7 @@ function collectContent(query) {
   if (fixes.length === 0) return null;
   let body = fixes.join('\n');
   if (body.length > MAX_TOTAL) body = body.slice(0, MAX_TOTAL) + '\n…';
-  return HEADER + body + '\n';
+  return HEADER + body + FOOTER;
 }
 
 const handler = async (event) => {
