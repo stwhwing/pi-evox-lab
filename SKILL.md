@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.17.0
+version: 0.18.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -16,6 +16,8 @@ homepage: https://github.com/stwhwing/pi-evox-lab
 
 ## 30 秒上手（Quick-Start）
 
+> ⚠️ **前置要求：Node ≥ 22**（`node -v` 检查；旧版不支持，需先升级）。可选集成 `@evomap/evolver` 为 **GPL-3.0-or-later**——仅在你主动安装并使用 `--engine evolver` 时涉及，默认 light 后端为 MIT、零依赖零外发。
+>
 > 本 Skill 只做三件事：**A 任务开始召回**已验证修法、**B 修复失败后背沉淀**、**C（可选）受控实验量化收益**。日常只用 A/B，C 是研究开关（默认全关，请勿用于生产）。
 
 ```bash
@@ -79,7 +81,7 @@ node code/evolver-recall.mjs
 - 与本任务相关时优先采用；结束时实际采用了某条，登记命中（命中率盘点的数据源）：
 
 ```bash
-node code/evolver-recall.mjs --register-hit <N> --note "<任务一句话>"
+node code/evolver-recall.mjs --register-hit --gene <asset_id或gene_id> --note "<任务一句话>"
 ```
 
 - 无关的经验不要硬套；未采用的条目不必登记。
@@ -238,6 +240,33 @@ node code/light-cli.mjs gene import <自建池文件> --tier official   # 自建
 - **幂等合并**：拉取按 `asset_id`(sha256) 去重，重复拉取不产生重复。
 - 池目录默认 `~/.evomap/pool`（`EVO_POOL_DIR` 覆盖）。池可放自有 Git 仓（版本化 + 天然审计 + 权限即鉴权）。
 
+## 回填寻址与时间线（0.18）
+
+> 方法论致谢：timeline/harvest 的「取证重建」思路来自 **Perplexity 开源的 numbat**（agent 行为审计器，
+> github.com/perplexityai/numbat，Apache-2.0）——「把账本变成监控录像」；实现为本机账本自有格式。
+
+### register-hit/negate 改按 id 寻址（并发安全）
+多会话并行写同一库时，位置编号会漂移（选择快照 `.evox-last-selection.json` 是共享单文件，会被其他会话的 recall 覆盖——实测错记）。0.18 起：
+
+```bash
+# 推荐：按 asset_id 或 gene_id 寻址（recall 输出的 [#1|gene_manual_xxx] 里就是 id）
+node code/evolver-recall.mjs --register-hit --gene gene_manual_xxx --note "<任务一句话>"
+node code/evolver-recall.mjs --negate --gene <asset_id> --note "<为什么没起作用>"
+```
+位置写法 `--register-hit <N>` 仍兼容，但并发环境不可靠。
+
+### `light-cli timeline`：四账本时间线
+```bash
+node code/light-cli.mjs timeline [--last 50]
+```
+把 召回/注入/回填/工具错误 四个账本按时间合并成 Markdown 表——一眼看出"先踩哪个坑→召回了哪条→是否回填"。失效修法的典型信号：**注入 之后 N 步仍出现同类报错**。
+
+### `light-cli harvest`：错误候选 → 沉淀建议
+```bash
+node code/light-cli.mjs harvest [--last 10]
+```
+盘点 PostToolUse hook 捕获的 `error_candidates.jsonl`，每条给出可直接复制的 `draft` 命令。候选只是线索：**FIX 必须由你补全成可执行修法**（占位符会被 depositionGate 拒绝）。
+
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
 
 > **EN**: Recall must be bound to concrete action nodes, never left to memory. Five trigger points: T1 task start (recall --query), T2 before actions, T3 on error (NEW: recall --error "<raw error>" - the error itself is the reminder), T4 after fixing a pit (deposit immediately), T5 task end (register-hit/negate). Two integration paths: install-hooks for automation, install-snippet to paste the procedure into any agent instruction file (AGENTS.md/CLAUDE.md).
@@ -252,7 +281,7 @@ node code/light-cli.mjs gene import <自建池文件> --tier official   # 自建
 | **T2** | 行动前 | 即将执行写文件/跑命令/调接口 | 同上（query=将做的事） | 贴身预防（可选，T1 覆盖大半） |
 | **T3** | **遇到报错** | 工具返回错误、**准备重试之前** | `recall --error "<报错原文>"` | **最可惜**：明明库里就有修法，却盲目重试 |
 | **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
-| **T5** | 任务结束 | 收尾 | `--register-hit` / `--negate` | 无法度量，失效修法发现不了 |
+| **T5** | 任务结束 | 收尾 | `--register-hit --gene <id>` / `--negate --gene <id>` | 无法度量，失效修法发现不了 |
 
 **T3 是本版新增**：报错是唯一一个"100% 会被注意到且立刻需要答案"的时刻——不需要谁提醒，**错误本身就是提醒**。
 它复用沉淀侧的错误家族抽取（`proposeFromError`），把报错原文直接变成查询：
@@ -370,6 +399,7 @@ node code/light-cli.mjs install-snippet --file <项目>/AGENTS.md --yes  # 写�
 
 > 纵深防御：恶意基因即便**已入库且已 approved**，召回时仍会被第 3 道门拦下——**绝不注入**。
 > 守卫模块缺失时 **fail-closed**（宁不共享/不导入，也不放行未扫描的基因）。
+> **降级策略明细**：injection_scan 模块缺失/损坏时——① `gene export/submit/import` **拒绝执行**（fail-closed）；② 召回侧**跳过注入门但其余三道守卫（修法/叙述/重试日志）照常生效**，并在候选统计中标注该次未过注入门。召回选择跳过而非阻断，是因为召回是只读动作、阻断会中断任务；导出/导入是写动作，必须 fail-closed。
 
 ## 宿主接入契约（0.15.0 融入实际应用的关键）
 
@@ -547,6 +577,9 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 > **EN**: It never writes without consent - dry-run by default (prints what it would do), `--yes` applies after your confirmation, with automatic backup. Rollback = delete the hook directory.
 不会擅自改。它**默认只演练**：打印将要复制的文件、目标路径、以及需要你手工确认的注册步骤，**不落盘**。
 你确认无误后加 `--yes` 才写入（写入前自动备份）。任何时候都可 `config` 查看、手工删除钩子目录回滚。
+
+**Q14：多会话并行时 register-hit 为什么会错记？**
+0.17.0 及以前用位置编号（#N），而「本次召回选中集」是共享单文件，会被其他会话的 recall 覆盖 → 编号漂移（实测 63→65）。**0.18 起用 `--gene <asset_id|gene_id>` 按 id 寻址**，并发安全；位置写法仍兼容但不可靠。同类问题：`light-cli timeline` 可核对每条注入与回填的实际基因。
 
 **Q13：为什么我的 agent 修完坑从来不自动沉淀？**
 > **EN**: Because T4 (deposit after fixing) never entered the agent context - skills only influence agents when loaded. Fix: `install-snippet --file <project>/AGENTS.md --yes` writes the five-trigger-point procedure into the project instruction file so every session sees "deposit right after fixing".
