@@ -313,6 +313,7 @@ function usage() {
   node code/light-cli.mjs config [--auto-approve on|off]           # 自己沉淀的基因是否自动通过（默认 on）
   node code/light-cli.mjs timeline [--last 50]                     # 四账本时间线（召回/注入/回填/工具错误）——0.18，方法致谢 numbat
   node code/light-cli.mjs harvest [--last 10]                      # error_candidates → 沉淀建议清单（Layer2 消费端）
+  node code/light-cli.mjs harvest --done|--dismiss <N>             # 已处理/驳回某条候选（移入 .done.jsonl 留痕）——0.19
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
 
@@ -518,22 +519,42 @@ switch (cmd) {
   }
   case 'harvest': {
     // 0.18：error_candidates → 沉淀建议清单（半自动沉淀的消费端；Layer 2 hook 负责捕获，本命令负责盘点）。
-    // 每条候选给出可直接复制的 draft 命令（FIX 由人补全后走 depositionGate 正常入库）。
+    // 0.19：--done/--dismiss <N> 把第 N 条移入 error_candidates.done.jsonl（保留审计痕迹），
+    //   未处理列表只减不增——否则候选只累积不消费（41 条实证），nudge 也永远提醒。
     const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
     const f = path.join(hitsDir, 'error_candidates.jsonl');
+    const doneF = path.join(hitsDir, 'error_candidates.done.jsonl');
     let rows = [];
     try {
       rows = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     } catch { /* 无候选 */ }
     rows = rows.filter((r) => r.kind !== 'beat');
+    const doneIdx = rest.indexOf('--done') >= 0 ? rest.indexOf('--done') : rest.indexOf('--dismiss');
+    if (doneIdx >= 0) {
+      const isDismiss = rest[doneIdx] === '--dismiss';
+      const num = parseInt(rest[doneIdx + 1], 10);
+      const shown = rows.slice(-(parseInt(argOf(rest, '--last') || '10', 10) || 10));
+      const target = shown[num - 1];
+      if (!target) fail(`harvest ${isDismiss ? '--dismiss' : '--done'} 编号 #${num} 不存在（当前未处理 ${rows.length} 条，--last 窗口 ${shown.length} 条）`, { code: 1 });
+      const { withLock } = await import('./engine/light/store.mjs');
+      withLock(hitsDir, () => {
+        fs.mkdirSync(hitsDir, { recursive: true });
+        fs.appendFileSync(doneF, JSON.stringify({ ...target, done_at: new Date().toISOString(), done_action: isDismiss ? 'dismissed' : 'harvested' }) + '\n');
+        fs.writeFileSync(f, rows.filter((r) => r !== target).map((r) => JSON.stringify(r)).join('\n') + (rows.length > 1 ? '\n' : ''));
+      });
+      console.log(`[gene-share] #${num} 已${isDismiss ? '驳回（不留基因）' : '标记已收获'} → ${doneF}；未处理剩 ${rows.length - 1} 条`);
+      break;
+    }
     console.log(`[gene-share] 沉淀候选 ${rows.length} 条（来源 ${f}）`);
     if (!rows.length) { console.log('  无候选——Layer 2 hook 捕获的工具错误会出现在这里。'); break; }
-    rows.slice(-parseInt(argOf(rest, '--last') || '10', 10) || 10).forEach((r, i) => {
+    const shown = rows.slice(-(parseInt(argOf(rest, '--last') || '10', 10) || 10));
+    shown.forEach((r, i) => {
       const fam = proposeFromError(r.snippet || '', {});
       console.log(`${i + 1}. [${r.ts || '?'}] ${r.tool || '?'} | 家族: ${fam.family} | ${String(r.snippet || '').slice(0, 80)}`);
       console.log(`   → node code/light-cli.mjs draft --error ${JSON.stringify(String(r.snippet || '').slice(0, 120))} --tool ${JSON.stringify(r.tool || '')} --context "来自 error_candidates" --commit`);
     });
     console.log('  原则：候选只是线索；FIX 必须由你补全成可执行修法（占位符会被 depositionGate 拒绝）。');
+    console.log(`  处理完毕：harvest --done <N>（已沉淀）或 harvest --dismiss <N>（无价值驳回，留痕）`);
     break;
   }
   case 'doctor': {
