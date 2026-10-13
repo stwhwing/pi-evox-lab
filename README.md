@@ -149,7 +149,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.18.1（版本轨迹：0.3.0 首发 → 0.18.1） |
+| 当前版本 | 0.19.0（版本轨迹：0.3.0 首发 → 0.19.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -173,6 +173,8 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
 
+- **0.19.0（稳定与取证版）**：
+  **EN**: Stability + forensics release. ① **Concurrency lock** (O_EXCL `.evox.lock`, stale-break, timeout fail-open) on all four ledger writes (genes/review/hits/pending) and pool staging - after the 7th proven race (shareable flags reverted mid-window); concurrent dedup test 2×50→1 row. ② **harvest --done/--dismiss <N>** moves processed candidates to `error_candidates.done.jsonl` (audit trail kept) so the candidate list only shrinks. ③ **numbat forensic PoC on the private node** (Perplexity's agent auditor, native OpenClaw log parsing) - runbook + findings in `docs/forensics-numbat.md`; timeline cross-checking of injected genes is the next evidence source beyond self-reported register-hit.
 - **0.18.1（0.18.0 补丁：池语义 + 审核幂等）**：
   **EN**: Two fixes that missed the 0.18.0 artifact (built from a stale base): ① **approved-only pool semantics** — `submit` exports shareable AND review-approved genes; pending ones stay in the local workbench with an explicit report (the pool is a curated approved-only collection); ② **ledger approve idempotency now LWW** — the old `.some()` check let "previously approved -> later quarantined" genes become permanently un-re-approvable (silent no-op, proven with 5 genes). Also: submit/export counter messages fixed.
 - **0.18.0（回填寻址 + 时间线 + 收获版）**：
