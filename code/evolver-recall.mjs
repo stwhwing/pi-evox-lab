@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { withLock } from './engine/light/store.mjs';
 import { proposeFromError } from './engine/light/distill.mjs';
 import { REPAIR_SIGNAL_RE, NARRATION_RE, RETRY_LOG_RE } from './engine/light/guards.mjs';
 
@@ -62,28 +63,32 @@ const PENDING_FILE = path.join(HITS_DIR, 'pending_injections.jsonl');
  */
 function recordRecallCall(extra = {}) {
 	try {
-		fs.mkdirSync(HITS_DIR, { recursive: true });
-		fs.appendFileSync(RECALL_CALLS_FILE, JSON.stringify({
-			ts: new Date().toISOString(), mode: 'recall', agent: AGENT,
-			targeted: !!extra.targeted, injected: Number.isFinite(extra.injected) ? extra.injected : 0,
-			query: String(extra.query ?? '').slice(0, 200),
-			taskText: String(extra.taskText ?? '').slice(0, 200),
-			noise: !!extra.noise,
-		}) + '\n');
+		withLock(HITS_DIR, () => {
+			fs.mkdirSync(HITS_DIR, { recursive: true });
+			fs.appendFileSync(RECALL_CALLS_FILE, JSON.stringify({
+				ts: new Date().toISOString(), mode: 'recall', agent: AGENT,
+				targeted: !!extra.targeted, injected: Number.isFinite(extra.injected) ? extra.injected : 0,
+				query: String(extra.query ?? '').slice(0, 200),
+				taskText: String(extra.taskText ?? '').slice(0, 200),
+				noise: !!extra.noise,
+			}) + '\n');
+		});
 	} catch { /* 写失败不影响 recall 主流程 */ }
 }
 
 /** 0.15.0 P0-3：把本次注入的 gene_id 落 pending，供 --register-hit / --negate 回填。 */
 function recordPending(picked) {
 	try {
-		fs.mkdirSync(HITS_DIR, { recursive: true });
 		const ts = new Date().toISOString();
-		for (const it of picked) {
-			fs.appendFileSync(PENDING_FILE, JSON.stringify({
-				ts, agent: AGENT, gene_id: it.id, asset_id: it.assetId,
-				category: it.category, taskText: String(TASK_TEXT || '').slice(0, 200),
-			}) + '\n');
-		}
+		withLock(HITS_DIR, () => {
+			fs.mkdirSync(HITS_DIR, { recursive: true });
+			for (const it of picked) {
+				fs.appendFileSync(PENDING_FILE, JSON.stringify({
+					ts, agent: AGENT, gene_id: it.id, asset_id: it.assetId,
+					category: it.category, taskText: String(TASK_TEXT || '').slice(0, 200),
+				}) + '\n');
+			}
+		});
 	} catch { /* 留痕失败不影响召回 */ }
 }
 
@@ -469,7 +474,7 @@ function registerHit(n, note, geneRef) {
 		category: item.category,
 		note: String(note).slice(0, 300),
 	};
-	fs.appendFileSync(HITS_FILE, JSON.stringify(rec) + '\n');
+	withLock(HITS_DIR, () => { fs.appendFileSync(HITS_FILE, JSON.stringify(rec) + '\n'); });
 	console.log(`[pi-evox] 命中已登记 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${HITS_FILE}`);
 	console.log(`[pi-evox] 当前命中总数: ${readJsonl(HITS_FILE).length}`);
 }
@@ -537,12 +542,14 @@ function registerNegated(n, note, geneRef) {
 		item = list[n - 1];
 		if (!item) fail(`回填失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '多会话并发环境建议改用 --gene <asset_id>' });
 	}
-	fs.mkdirSync(HITS_DIR, { recursive: true });
-	fs.appendFileSync(PENDING_FILE, JSON.stringify({
-		ts: new Date().toISOString(), agent: AGENT, gene_id: item.id, asset_id: item.assetId,
-		category: item.category, outcome: 'negated', note: String(note).slice(0, 300),
-		taskText: String(TASK_TEXT || '').slice(0, 200),
-	}) + '\n');
+	withLock(HITS_DIR, () => {
+		fs.mkdirSync(HITS_DIR, { recursive: true });
+		fs.appendFileSync(PENDING_FILE, JSON.stringify({
+			ts: new Date().toISOString(), agent: AGENT, gene_id: item.id, asset_id: item.assetId,
+			category: item.category, outcome: 'negated', note: String(note).slice(0, 300),
+			taskText: String(TASK_TEXT || '').slice(0, 200),
+		}) + '\n');
+	});
 	console.log(`[pi-evox] 已回填未采用 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${PENDING_FILE}`);
 	console.log('  → 该条会进入"注入→有效"转化率的分母，用于识别**该修法是否已失效**。');
 }
