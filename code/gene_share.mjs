@@ -137,6 +137,23 @@ const exportable = (genes) => {
 };
 const readJsonl = (p) => { try { return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const writeJsonl = (f, rows) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''), 'utf8'); };
+// 池文件写入持锁（与 store.mjs 同一 O_EXCL 协议，见 store.withLock）
+const acquirePoolLock = (dir) => {
+  const lp = path.join(dir, '.evox.lock');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const start = Date.now();
+  for (;;) {
+    try { const fd = fs.openSync(lp, 'wx'); fs.closeSync(fd); return lp; }
+    catch (e) {
+      if (e && e.code !== 'EEXIST') return null;
+      try { const st = fs.statSync(lp); if (Date.now() - st.mtimeMs > 15000) { fs.unlinkSync(lp); continue; } } catch { continue; }
+      if (Date.now() - start > 5000) return null;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+};
+const withPoolLock = (dir, fn) => { const lp = acquirePoolLock(dir); try { return fn(); } finally { if (lp) { try { fs.unlinkSync(lp); } catch {} } } };
+
 const argOf = (a, n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const positional = (a) => a.filter((x, i) => !x.startsWith('--') && !(i > 0 && a[i - 1].startsWith('--')));
 
@@ -148,7 +165,7 @@ function cmdExport(args) {
   const genes = store.readGenes();
   const { out, blocked, pending } = exportable(genes);
   const dest = argOf(args, '--out') || path.join(POOL_DIR, 'export.jsonl');
-  if (out.length) writeJsonl(dest, out);
+  if (out.length) withPoolLock(path.dirname(dest), () => writeJsonl(dest, out));
   console.log(`[gene-share] 库内基因 ${genes.length}｜可导出(shareable+已审核+过闸) ${out.length}｜被闸门拦截 ${blocked.length}｜待审未导出 ${pending.length}`);
   reportBlocked(blocked);
   if (out.length) console.log(`[gene-share] 已导出 → ${dest}`);
@@ -167,7 +184,7 @@ function cmdSubmit(args) {
     existing.push({ ...g, provenance: { source: 'local', tier: 'official', exported_at: new Date().toISOString(), ...(g.provenance || {}) } });
     have.add(g.asset_id); added++;
   }
-  writeJsonl(dest, existing);
+  withPoolLock(pool, () => writeJsonl(dest, existing));
   console.log(`[gene-share] 入池 ${added} 条（池中原有 ${existing.length} 条）→ ${dest}`);
   console.log(`[gene-share] 被闸门拦截 ${blocked.length}（未入池，未出网）`);
   if (pending.length) console.log(`[gene-share] 待审未推池 ${pending.length} 条（池=已审核集合；先 approve 再推）: ${pending.slice(0, 5).map((p) => p.id + '(' + p.state + ')').join(', ')}${pending.length > 5 ? ' …' : ''}`);
