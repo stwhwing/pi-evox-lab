@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法沉淀入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.18.1
+version: 0.19.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -263,9 +263,17 @@ node code/light-cli.mjs timeline [--last 50]
 
 ### `light-cli harvest`：错误候选 → 沉淀建议
 ```bash
-node code/light-cli.mjs harvest [--last 10]
+node code/light-cli.mjs harvest [--last 10]                    # 盘点未处理候选（附可复制的 draft 命令）
+node code/light-cli.mjs harvest --done <N>                     # 已沉淀：移入 error_candidates.done.jsonl（留痕）
+node code/light-cli.mjs harvest --dismiss <N>                  # 无价值驳回：同样留痕，不产基因
 ```
-盘点 PostToolUse hook 捕获的 `error_candidates.jsonl`，每条给出可直接复制的 `draft` 命令。候选只是线索：**FIX 必须由你补全成可执行修法**（占位符会被 depositionGate 拒绝）。
+候选只是线索：**FIX 必须由你补全成可执行修法**（占位符会被 depositionGate 拒绝）。处理过的候选移入 `.done.jsonl`——未处理列表只减不增，nudge 提醒也只在真正有新候选时出现。
+
+### 并发写锁（0.19）
+多会话/多进程并行写同一基因库时，`append` 之间的「读-改-写」窗口会被并发回滚（实测 shareable 标记毫秒级丢失、approve 假 ✓）。0.19 起所有台账写入（genes/review/hits/pending）与池 staging 均持 **O_EXCL 文件锁**（`.evox.lock`）：15s stale 自动破除（持锁进程崩溃不死锁）、5s 超时 **fail-open**（锁是优化不是门，绝不让写入因锁失败）。Python 侧 hook 用同一协议。
+
+### 独立取证（0.19 PoC：numbat）
+在自有设备上用 [numbat](https://github.com/perplexityai/numbat)（Perplexity，Apache-2.0，**方法论致谢**）对 agent 会话做取证重建——原生解析 OpenClaw/Claude/Codex 日志。PoC 运行手册与实测结论见 `docs/forensics-numbat.md`：目标是用**时间线对靶核对**「注入的基因是否真的体现在 agent 后续命令里」，补强 register-hit 的自报单源。
 
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
 
