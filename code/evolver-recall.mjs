@@ -5,7 +5,7 @@
  * 任务开始时调用（无参数）：
  *   输出已审核（approved）且通过修法守卫的编号经验列表，供智能体读入上下文。
  * 任务结束调用（登记命中）：
- *   node evolver-recall.mjs --register-hit <N> --note "<任务一句话>"
+ *   node evolver-recall.mjs --register-hit --gene <asset_id或gene_id> --note "<任务一句话>"
  *   （N = 召回输出中的编号；内部解析为 gene_id 落 experiments/hits.jsonl）
  *
  * 设计纪律：
