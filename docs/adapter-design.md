@@ -1,6 +1,8 @@
-> ⚠️ **废弃存档（2026-10-10）**：本文档为早期设计草案，其中的宿主集成方式已被 `examples/hooks/`（OpenClaw/Hermes 可直接复制的钩子模板）与 `light-cli install-hooks` 取代，仅作历史存档保留——请勿按本文档集成。现行路径见 SKILL.md「按宿主选接入方式」。
+> ⚠️ **废弃存档（2026-10-10）**：本文档为早期设计草案，其中的宿主集成方式已被 `examples/hooks/`（OpenClaw/Hermes 可直接复制的钩子模板）与 `light-cli install-hooks` 取代，仅作历史存档保留——请勿按本文档集成。现行路径见 [`docs/advanced.md`](docs/advanced.md)「宿主接入契约」。
 
 # 路线 B · pi_session_adapter 设计草案
+
+> **EN**: DEPRECATED design draft (2026-10-10) - kept for archival only; do NOT integrate per this document. Current paths: `examples/hooks/` templates + `install-hooks`; see `docs/advanced.md`.
 
 > ⚠️ **历史注记（2026-09-10 补）**：本文是 **预研阶段（2026-09-05）的设计草案**，其中的边界声明（如"不写 Pi Extension""全程 offline"）描述的是当时的范围。**后续路线 A 已实现扩展桥**（`code/evolver-bridge.ts`，随本包装分发）并引入可选外发（`--llm-refine`，默认禁用、需显式配置）。**现状以 README.md / SKILL.md 为准**，本文仅作设计演进记录。
 
