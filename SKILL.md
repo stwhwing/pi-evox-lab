@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.20.2
+version: 0.20.3
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -142,7 +142,9 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | 旁白开场（Now I understand…） | 推理流水不可执行 | 同上 |
 | 缺修法信号词 | 不像在描述坑与修法 | 同上 |
 
-> 非交互沉淀（无 TTY 的脚本/管道）**默认隔离**（待审），显式 `--auto-approve` 才通过；细节与 install-snippet 自动沉淀绑定点见 `docs/advanced.md`。
+> **审核取证（0.20.3）**：`approve` 之前先跑 `node code/light-cli.mjs evidence <gene_id>`——在本地四台账（工具错误/召回/注入/回填）里查该基因声称的失败与修法有没有对应事件。核对一致再批；**结论被后续事件推翻的保持隔离并留痕**（实例：一条"CNAME 放仓库根即持久化"的基因被同批两条实证基因推翻，隔离时注明 superseded）。无本地证据的（共享池导入/其他机器/起步包来源）按内容与来源审，approve 时注明来源。
+
+> **EN**: Review-with-evidence (0.20.3): before `approve`, run `evidence <gene_id>` to check the four local ledgers for events matching the gene's claimed failure/fix. Approve only when consistent; genes whose conclusions were overturned by later events stay quarantined with an audit note. Genes without local evidence (pool imports / other machines / starter pack) are reviewed on content and source, noted at approval.
 
 ## 安全：四道门（0.16.0）
 
