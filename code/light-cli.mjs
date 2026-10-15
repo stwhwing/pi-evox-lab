@@ -517,6 +517,44 @@ switch (cmd) {
     if (!shown.length) console.log('（无事件——先跑一次 recall 产生埋点）');
     break;
   }
+  case 'evidence': {
+    // 0.20.3：审核取证（用户提议 2026-10-15）——approve 之前先查本地台账里有没有该基因
+    // 对应的真实事件。设计为「证据优先」而非绝对门：共享池导入 / 其他机器 / 起步包来源的
+    // 基因没有本地证据，退回内容审并在 approve 时注明。
+    const id = positional[0];
+    if (!id) fail('evidence 需传入 <gene_id>', { hint: 'node code/light-cli.mjs evidence <gene_id>' });
+    const genes = readGenes();
+    const g = genes.find((x) => x.id === id || x.asset_id === id);
+    if (!g) fail(`找不到基因: ${id}`, { code: 1, hint: '先 list 查看可用 gene_id' });
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const STOP = new Set(['unknown', '失败', 'error', 'null', 'true', 'false', 'undefined', 'pending', 'approved', 'quarantined']);
+    const sigFromSummary = String(g.summary || '').split(/[\s，。、（）()\[\]:：|]+/).filter((w) => w.length >= 4 && !STOP.has(w)).slice(0, 8);
+    const signals = [...new Set([...(g.signals_match || []).filter((x) => !STOP.has(String(x))), ...sigFromSummary])].slice(0, 12);
+    console.log(`[gene-share] 审核取证：${g.id}`);
+    console.log(`  信号词: ${signals.join(', ') || '(无)'}`);
+    let found = 0;
+    const files = [['工具错误', 'error_candidates.jsonl'], ['召回', 'recall_calls.jsonl'], ['注入', 'pending_injections.jsonl'], ['回填', 'hits.jsonl']];
+    for (const [kind, f] of files) {
+      try {
+        for (const l of fs.readFileSync(path.join(hitsDir, f), 'utf8').split('\n')) {
+          const t = l.trim(); if (!t) continue;
+          let r; try { r = JSON.parse(t); } catch { continue; }
+          const text = JSON.stringify(r);
+          const direct = (f === 'pending_injections.jsonl' || f === 'hits.jsonl') && text.includes(g.id);
+          if (direct || signals.some((sg) => text.includes(sg))) {
+            found++;
+            const ts = r.ts || r.at || '?';
+            const detail = String(r.snippet || r.query || r.note || r.gene_id || '').slice(0, 90);
+            const tag = direct || kind === '工具错误' ? '' : '（上下文，弱证据）';
+            console.log(`  [${kind}] ${ts} | ${detail}${tag}`);
+          }
+        }
+      } catch { /* 缺文件跳过 */ }
+    }
+    if (!found) console.log('  （无本地台账证据——可能来自共享池/其他机器/起步包：按内容与来源审核，approve 时注明来源）');
+    else console.log(`  → 共 ${found} 条相关事件。核对基因声称的失败/修法与上述事件一致后再 approve；不一致（如结论被后续事件推翻）应保持隔离并留痕。`);
+    break;
+  }
   case 'harvest': {
     // 0.18：error_candidates → 沉淀建议清单（半自动沉淀的消费端；Layer 2 hook 负责捕获，本命令负责盘点）。
     // 0.19：--done/--dismiss <N> 把第 N 条移入 error_candidates.done.jsonl（保留审计痕迹），
