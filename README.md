@@ -74,7 +74,7 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
     └── security-and-license.md  # 安全与许可全文
 ```
 
-> **运维与度量**：本仓库在 `code/` 下附带 3 个零依赖运维脚本（`metrics_collect.mjs` / `distill_sessions.mjs` / `evox-weekly.sh`）与周常 cron 接线，用于观测「经验继承」是否真正生效。详见 [`SKILL.md` 的「运维与度量」小节](SKILL.md#运维与度量ops)。
+> **运维与度量**：本仓库在 `code/` 下附带 3 个零依赖运维脚本（`metrics_collect.mjs` / `distill_sessions.mjs` / `evox-weekly.sh`）与周常 cron 接线，用于观测「经验继承」是否真正生效。详见 [`docs/advanced.md` 的「运维与度量」小节](docs/advanced.md#运维与度量ops)。
 
 ## 快速开始
 
@@ -101,7 +101,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 ## FAQ
 
-常见问题（空库、`$ENV` 插值、`--fresh` 恢复、国内镜像、Node 版本）见 [SKILL.md 的 FAQ 节](SKILL.md)。
+常见问题（空库、`$ENV` 插值、`--fresh` 恢复、国内镜像、Node 版本）见 [`docs/faq.md`](docs/faq.md)（SKILL.md 另有高频速览）。
 ## 引用与文档
 
 - 其他 Agent 宿主接入指南：[docs/other-agents.md](docs/other-agents.md)（Claude Code / IDE / 自建智能体的注入模式）
@@ -149,7 +149,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.19.1（版本轨迹：0.3.0 首发 → 0.19.1） |
+| 当前版本 | 0.20.2（版本轨迹：0.3.0 首发 → 0.20.2） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -169,10 +169,20 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 **0.14.5 / 0.14.6 / 0.14.7 / 0.14.8 本版要点**：
 - **0.14.5**：拉升 progressive / antiPatternFaq / boundary 等分项的评测分。
+  **EN**: Evaluation-score lift pass (progressive / antiPatternFaq / boundary).
 - **0.14.6（内容/UX 版）**：新增 `light-cli doctor` 首次运行自检 + SKILL.md「3 步就绪」；坏行警告补「如何修正」；实验 preflight（Node≥22 / pi≥0.85.1）；新增「何时该沉淀」决策框。
+  **EN**: Content/UX release: `light-cli doctor` first-run self-check + SKILL.md 3-step onboarding; bad-line warnings with how-to-fix; experiment preflight (Node>=22 / pi>=0.85.1); deposition decision box.
 - **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
+  **EN**: Quality release: unified error output (`[pi-evox]` prefix + fix hints + consistent exit codes 0/1/2); bad-line content preview; configurable subprocess timeout (`EVOX_CLI_TIMEOUT_MS`); trap generator Python>=3.8 check; GBK end-to-end walkthrough.
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
+  **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.20.2（双语完整版）**：
+  **EN**: Bilingual-completeness release per the publish skill's clause (ALL docs / FAQ / changelog history, not just summaries): ① SKILL.md every rewritten section now carries an EN block (1 -> 10; still 236 lines); ② `docs/faq.md` 14 items each with an EN brief; ③ `docs/common-mistakes.md` 14 items each with an EN brief; ④ EN blocks restored in `docs/advanced.md` for the moved sections (4 recovered); ⑤ EN intros for research / config-errors / forensics / flow-C walkthrough / other-agents / providers / security / adapter-design / experiment-report / GBK+JSON walkthroughs; ⑥ **README changelog: all 15 history entries now carry an EN line** (7 added).
+- **0.20.1（0.20.0 补丁：三轮审查修复）**：
+  **EN**: Post-release three-round review (self-review / cross-reference / live re-run) of the 0.20.0 split found and fixed 6 issues the shallow check missed: ① **snippet text still used the pre-0.18 positional `--register-hit <N>`** (code fix - install-snippet users were getting the concurrency-drift form); ②-⑥ five broken cross-references after the split (README ops anchor + FAQ link, adapter-design, forensics-numbat, walkthrough-json). install-snippet idempotency re-verified (2 writes -> 1 copy).
+- **0.20.0（文档分层版）**：
+  **EN**: Documentation layering release responding to three rounds of evaluator feedback: ① **SKILL.md split 636 → 227 lines** - daily usage (flows A/B + trigger points + security gates + anti-pattern quick list) stays in the main file; 0.18-0.19 features (addressing/timeline/harvest/concurrency lock/pool/host integration/ops) moved to `docs/advanced.md`; research content (flow C + trap discipline) to `docs/research.md`; ② **`docs/common-mistakes.md`** - 14-item common-mistakes catalog with mechanism explanations (all [A] verified); ③ **AVOID/FIX template applicability boundaries** in the deposition section; ④ **bilingual trigger-word table + gene-conflict trigger rules**; ⑤ **`docs/config-errors.md`** - common configuration errors; ⑥ **`docs/faq.md`** - full 14-item FAQ; ⑦ **`examples/walkthrough-process-c.md`** - flow C end-to-end.
 - **0.19.1（0.19.0 补丁：双语补齐 + 上游检查入档）**：
   **EN**: Bilingual completion for the three 0.19 SKILL.md sections (concurrency lock / harvest triage / numbat forensics - EN summaries added after the 0.19.0 release skipped the skill's own bilingual step); upstream dependency check recorded (evolver 2.0.42, unchanged since 0.17.0 evaluation - deferred conclusion stands).
 - **0.19.0（稳定与取证版）**：
@@ -186,9 +196,12 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.16.0（评测驱动 + 生效性版）**：
   **EN**: Evaluation-driven + effectiveness release - loop health in `info`, auto-approve for own deposits (default on, switchable), `install-hooks` (dry-run default), `starter` pack (10 curated genes, first-query hit), five trigger points with new `--error` recall, malicious-gene injection scan, copy-paste hook templates, and targeted fixes for the two low-scored dimensions (trigger/errorHandling both 4.3 -> 4.8).**新增让经验真正生效的四项**（针对「沉淀了却不召回」这个最根本的产品风险）：① **`info` 闭环健康度**——显示召回次数/命中/待审，并把「从未召回」「有基因待审」两类**静默失效**变成可见诊断 + 可执行命令；② **自己沉淀的基因默认自动通过**（`config --auto-approve off` 可改回人工把关；仅作用于本地沉淀，共享池 import 仍按 tier 判定）；③ **`install-hooks`**——探测 OpenClaw/Hermes 并准备钩子，**默认只演练不落盘**，加 `--yes` 才写入且写入前自动备份，权力完全在用户手上；④ **`starter`**——一键装载 10 条策展的通用起步基因（编码/JSON/权限/文件/语法/类型/网络），让新用户**第一次查询就能命中**，解决冷启动。**新增安全能力**：`injection_scan.mjs` 恶意基因注入扫描（区分 AVOID/FIX 语境，实测 11/11 恶意全拦、7/7 正常零误杀；三处生效：召回/导入/导出）。**新增** `examples/hooks/` 可直接复制的钩子模板（OpenClaw + Hermes + 接入 README）。另按评测补强低分项。
 - **0.16.0（评测驱动优化版）**：依据 skillhub 对 0.15.0 的评测定向补强低分项（多数维度已达 4.8，两个低分：**trigger 4.3 / errorHandling 4.3**）。① **trigger**：宿主接入契约从「表格」改为**分步逐步说明 + 可直接复制的真实命令与输出示例**，并简化共享基因库三步流程（先给最小可用路径）。② **errorHandling**：统一错误提示语言——本 CLI 自身消息已是中文，但 Node/系统抛出的错误是英文，现于顶层捕获并映射为**中文原因 + 可执行修正**（保留英文原文于末行备查），确保**任何失败都有一句中文说明**，而非只丢英文堆栈。
+  **EN**: Trigger-point release: five trigger points bound to concrete action nodes; own deposits auto-approve; four silent-failure counters; starter pack (10 curated genes); four security gates with AVOID/FIX context distinction (11/11 malicious caught, 7/7 legit zero false-kill).
 - **0.15.0（最后一公里修复版）**：依据私有节点埋点实测（153 次 recall 调用、**真正有效仅 10%**）定位并修复「基因已入库却仍犯错」的四个断点——① **任务文本清洗**：剥掉宿主注入前缀（企业IM群/私聊前缀、心跳样板）、纯 URL、心跳探针，只留用户真实诉求（实测 63% 的召回因 query 噪声落空）；② **CJK bigram 分词**：原实现把整段中文当**一个 token**，导致中文任务与中文基因永不相交、signals 里的中文词也命中不了——这是「已入库却召回不到」的直接死因，现改二元切分（零依赖、无需分词器），冲突守卫 `tokenSet` 同步同口径；③ **无任务意图一律不注入**：删掉「取最近 N 条」回落（原路径在私有节点产生 30 次与任务无关的注入，而本项目实验已证不对靶注入净开销为正 +36pp）；④ **注入即登记 + `--negate` 回填**：每次注入落 `pending_injections.jsonl`，任务结束按实际结果登记命中/未采用，使「注入→有效」转化率可算、失效修法可及时发现。新增 SKILL.md「宿主接入契约」章节（喂干净意图 + 回填效果，缺一则经验继承不成立）。
+  **EN**: Host integration contract: hosts must feed task intent (T1 --query with the user message body) and report outcomes (T5 --register-hit/--negate); runnable hook templates in examples/hooks/.
 
 - **0.14.9（共享基因库版）**：新增跨实例/跨用户基因共享——`distill/draft --shareable` 标记可共享（默认不外发）→ `gene submit` 过**脱敏闸门**写入自建共享池（幂等）→ 其他实例 `gene import` 拉取合并。**闸门 fail-closed**：基因离开本机前扫全部文本字段，命中私有IP/绝对本地路径/密钥即拦截不出网；项目私有词由使用者本地 `redline.local.json` 补充（不随包发布）。**审核门控不被绕过**：导入默认 community→待审，仅对自建策展池显式 `--tier official` 才自动通过（tier 由操作者指定的池决定，不信基因自称）。新增 `code/gene_share.mjs`；底座路径改为按模块自身位置解析（跨平台）。
+  **EN**: Shared gene pool (opt-in `--shareable` + `gene submit/import`, redaction gate fail-closed, idempotent merge by asset_id).
 
 ### 关于第三方静态 / 动态扫描结果的说明（中立声明）
 
