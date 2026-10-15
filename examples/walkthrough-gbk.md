@@ -1,5 +1,7 @@
 # 完整示例走查：GBK 文件解码失败 → 经验继承生效
 
+> **EN**: End-to-end walkthrough: GBK decoding failure -> recall -> fix -> hit registration. Commands run from the repo root; see SKILL.md for install and first-run steps.
+
 > 本文件给出「从零到经验继承生效」的**一端到底**对照，弥补 `task-*.txt` 仅作单行陷阱样例的不足。
 > 命令均在仓库根目录执行；未安装依赖先见 SKILL.md 的「安装」与「首次运行 3 步就绪」。
 
