@@ -1,4 +1,6 @@
-# Provider 配置示例（含国内可用端点）
+# Provider 配置
+
+> **EN**: LLM provider configuration for flow C: any OpenAI-compatible endpoint; `$ENV` interpolation needs pi >= 0.85.1; domestic endpoints listed (DeepSeek/Bailian/SiliconFlow/Zhipu).示例（含国内可用端点）
 
 > SKILL.md 保留精简指引；本页为完整示例。
 
