@@ -1,6 +1,9 @@
 # 独立取证 PoC：numbat × PiEvoX（2026-10-13）
 
-> 目标（见 SKILL.md「独立取证」节）：用第三方审计器对 agent 会话做**只读取证重建**，
+> **EN**: Read-only forensic PoC with [numbat](https://github.com/perplexityai/numbat) (Perplexity, Apache-2.0, methodology credit). `agents` discovers Claude Code/OpenClaw/Pi/Hermes; `scan` reads artifacts with 0 findings baseline; `timeline --agent openclaw` reconstructs historical sessions with file:line evidence per event. Coverage limit: live sessions live in SQLite/WAL (deferred upstream). Next step: cross-check injected genes against the reconstructed timeline as an independent evidence source.
+
+
+> 目标（见 [`docs/advanced.md`](docs/advanced.md)「独立取证」节）：用第三方审计器对 agent 会话做**只读取证重建**，
 > 为「注入的基因是否真的体现在 agent 后续命令里」提供 register-hit（self-report）之外的**独立证据源**。
 > 方法论致谢：[numbat](https://github.com/perplexityai/numbat)（Perplexity AI，Apache-2.0）。
 
