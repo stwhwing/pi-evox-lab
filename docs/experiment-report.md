@@ -1,5 +1,8 @@
 # Evolver 安装与单轮离线蒸馏 · 实测报告
 
+> **EN**: Full 22-section experiment report quantifying inheritance gains (GBK trap N=5: decode errors 11->4, token -55.3%; illegal-JSON trap N=3: JSONDecodeError 14->3, token -53.0%; paired control baseline ~-22% repeat-execution effect -> gene net contribution ~-30pp).
+
+
 > 日期：2026-09-05 ｜ 执行环境：Windows 11 + 受管 Node v22.22.2（沙箱隔离目录 `evolver-lab/`，未污染全局）
 > 证据分级：[A]=亲测/亲读官方源 ｜ [A-KB]=本地知识库 ｜ [C]=推断待核查
 > 全程 offline（未配置 A2A_HUB_URL / A2A_NODE_ID，未注册 EvoMap 节点）
