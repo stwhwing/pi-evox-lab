@@ -101,7 +101,7 @@ node code/light-cli.mjs approve <上一步打印的 gene_id>
 python traps/make_json_trap.py     # 造一个「非法 JSON」失败环境（需 Python ≥ 3.8）
 ```
 
-再配合 `examples/task-numeric.txt` 等样例，可搭出完整的流程 C 受控实验（见 SKILL.md 流程 C）。
+再配合 `examples/task-numeric.txt` 等样例，可搭出完整的流程 C 受控实验（见 [`docs/research.md`](docs/research.md) 与 [`examples/walkthrough-process-c.md`](walkthrough-process-c.md)）。
 
 ---
 
