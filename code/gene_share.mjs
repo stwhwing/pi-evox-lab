@@ -154,6 +154,8 @@ const acquirePoolLock = (dir) => {
 };
 const withPoolLock = (dir, fn) => { const lp = acquirePoolLock(dir); try { return fn(); } finally { if (lp) { try { fs.unlinkSync(lp); } catch {} } } };
 
+import { verifyGene } from './engine/light/identity.mjs';
+
 const argOf = (a, n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const positional = (a) => a.filter((x, i) => !x.startsWith('--') && !(i > 0 && a[i - 1].startsWith('--')));
 
@@ -203,7 +205,13 @@ function cmdImport(args) {
     // 纵深防御：入库前两道门都过（脱敏 + 注入扫描）
     if (!safetyGate(g).ok) { blocked++; continue; }
     if (g?.shareable !== true) { skipped++; continue; }
-    if (store.appendGene(g)) { store.appendReview({ assetId: g.asset_id, state, reason: `imported from ${tier} pool` }); added++; }
+    // 0.21 provenance：入池导入验签——内容被篡改（sig 与内容不匹配）拒绝入库；无签名/无法验证按 legacy 接受
+    const v = verifyGene(g);
+    if (v.status === 'tampered') { console.log(`  [BLOCKED] ${g.id} — 验签失败：${v.why}（拒绝导入）`); blocked++; continue; }
+    if (store.appendGene(g)) {
+      const reason = `imported from ${tier} pool` + (v.status === 'verified' ? '（签名有效）' : v.status === 'unsigned' ? '（无签名 legacy）' : `（${v.status}）`);
+      store.appendReview({ assetId: g.asset_id, state, reason }); added++;
+    }
     else skipped++;
   }
   console.log(`[gene-share] 导入(tier=${tier}→${state})：新增 ${added}｜跳过 ${skipped}｜闸门拦截 ${blocked}`);
