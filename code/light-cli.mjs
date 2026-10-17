@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
 import { STORE_DIR, readGenes, readReview, approvedAssetIds } from './engine/light/store.mjs';
+import { signGene, verifyGene, loadIdentity, privateKeyPath } from './engine/light/identity.mjs';
 import { SIGNAL_RULES, AVOID_TEMPLATES, proposeFromError } from './engine/light/distill.mjs';
 import { depositionGate } from './engine/light/guards.mjs';
 
@@ -406,6 +407,7 @@ switch (cmd) {
     // 只在真正写入时登记 quarantined（等待审核）
     const dgate = depositionGate((gene.strategy || []).join('\n'));
     if (!dgate.ok) fail('沉淀质检未通过：' + dgate.reason, { code: 1, hint: 'gate=' + dgate.kind + '；沉淀要写 AVOID(什么坑)+FIX(怎么避开)，不是日志复述' });
+    signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
     const written = appendGene(gene);
     if (written) {
       const st = autoApproveState(rest);
@@ -450,6 +452,7 @@ switch (cmd) {
       // 把召回侧的守卫前移到生产侧——autoApprove 的安全性由此成立。
       const gate = depositionGate((gene.strategy || []).join('\n'));
       if (!gate.ok) fail('沉淀质检未通过：' + gate.reason, { code: 1, hint: 'gate=' + gate.kind + '；修正后重新 distill/draft --commit' });
+      signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
       const written = appendGene(gene);
       if (written) appendReview({ assetId: gene.asset_id, state: autoApproveState(rest), reason: autoApproveState(rest) === 'approved' ? 'auto-approved (own library)' : 'guided draft — review before use' });
       console.log(`\n${raw}${written ? '' : '\n（asset 已存在，跳过）'}`);
@@ -515,6 +518,25 @@ switch (cmd) {
     console.log('|---|---|---|---|');
     for (const e of shown) console.log(`| ${e.ts} | ${e.kind} | ${e.gid || '-'} | ${e.detail || '-'} |`);
     if (!shown.length) console.log('（无事件——先跑一次 recall 产生埋点）');
+    break;
+  }
+  case 'identity': {
+    // 0.21：本机签名身份（Ed25519 keypair，~/.evomap/identity/，私钥 0600 不出本机）
+    const id = loadIdentity();
+    console.log(`[gene-share] 本机身份 keyid=${id.keyId}`);
+    console.log(`  私钥: ${privateKeyPath()}（0600，绝不出本机）`);
+    console.log(`  公钥: 随基因 {pubkey} 字段出入池，供他机验签`);
+    break;
+  }
+  case 'verify': {
+    // 0.21：验签（本地库基因；入池导入时的验签在 gene import 内自动执行）
+    const id = positional[0];
+    if (!id) fail('verify 需传入 <gene_id>', { hint: 'node code/light-cli.mjs verify <gene_id>' });
+    const g = readGenes().find((x) => x.id === id || x.asset_id === id);
+    if (!g) fail(`找不到基因: ${id}`, { code: 1 });
+    const v = verifyGene(g);
+    console.log(`[gene-share] ${g.id}: ${v.status} — ${v.why}`);
+    if (!v.ok) process.exitCode = 1;
     break;
   }
   case 'evidence': {
