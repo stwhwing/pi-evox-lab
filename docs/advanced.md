@@ -35,6 +35,20 @@ node code/light-cli.mjs harvest --dismiss <N>                  # 无价值驳回
 ### 独立取证（0.19 PoC：numbat）
 在自有设备上用 [numbat](https://github.com/perplexityai/numbat)（Perplexity，Apache-2.0，**方法论致谢**）对 agent 会话做取证重建——原生解析 OpenClaw/Claude/Codex 日志。PoC 运行手册与实测结论见 `docs/forensics-numbat.md`：目标是用**时间线对靶核对**「注入的基因是否真的体现在 agent 后续命令里」，补强 register-hit 的自报单源。
 
+
+## 安全：四道门（明细，自 SKILL.md 下沉）
+
+> **EN**: Four gates detail (moved from SKILL.md for progressive disclosure). The injection guard distinguishes `AVOID:` (warning - allowed) from `FIX:` (instruction - blocked) contexts; measured 11/11 malicious samples caught, 7/7 legitimate zero false-kill. Fail-closed if the guard module is missing: export/import refuse to run; recall skips the injection gate but the other three still apply (read-only must not block, writes must be closed).
+
+| # | 门 | 管什么 | 在哪生效 |
+|---|---|---|---|
+| 1 | **修法守卫** | 有没有**真修法**（无可执行内容 → 不注入） | 召回 |
+| 2 | **叙述守卫** | 是不是**旁白流水**（开场白式 → 不注入） | 召回 |
+| 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回 + 导入 + 导出 |
+| 4 | **脱敏闸门** | 会不会**泄私有内容**（IP/路径/密钥 → 拦截不出网） | 导出 + 导入 |
+
+**关键设计：区分 `AVOID` 与 `FIX` 语境**——`AVOID:` 段出现危险词 = 在警告别这么做（合法，放行）；`FIX:` 段出现危险词 = 在指示这么做（可疑，拦截）。
+
 ## 共享基因库（跨实例 / 跨用户，0.14.9 新增）
 
 > **EN**: Shared pool (opt-in): mark genes `--shareable` at deposit time, `gene submit --pool <dir>` exports shareable AND approved genes only (pool = approved-only curated collection), `gene import` on other instances (idempotent by asset_id). Tier is decided by the operator-specified pool, never by the gene's self-claimed tier (anti-spoofing). Redaction gate is fail-closed before anything leaves the machine.
@@ -176,6 +190,20 @@ wc -l experiments/hits.jsonl             # >1 条说明闭环闭合
 | 任意支持 system prompt 或钩子的宿主 | 薄适配层 | 只需调用 `evolver-recall.mjs` |
 
 > **诚实边界**：各宿主会话存储格式不一——结构化标志最可靠；只靠文本标记时召回率随宿主而异。bootstrap 类钩子可能**早于**当轮用户消息落库，此时该轮退化为「无查询 → top-N 封顶」。
+
+
+## 基因签名与 provenance（明细，0.21）
+
+> **EN**: Provenance detail: Ed25519 keypair per machine (`~/.evomap/identity/`, private key mode 0600). Signing domain = asset_id + canonical JSON (signature fields excluded). Deposit signs automatically; `gene submit` carries the signature; `gene import` verifies with the embedded pubkey: tampered -> BLOCKED, unsigned/legacy -> accepted with note, unverifiable -> accepted with warning. Trust model = keyid traceability, not a central CA.
+
+```
+light-cli identity            # 查看本机 keyid 与密钥路径
+light-cli verify <gene_id>    # 验签本地库基因（exit 1 = 验签失败）
+```
+
+## IO 重试与截止（0.21，stability）
+
+> **EN**: `retryIo` (store.mjs): bounded retries on TRANSIENT errors only (EBUSY/EPERM/EACCES/ETIMEDOUT - Windows file-in-use / AV-scan typical), max 3 attempts with 50/100ms backoff, hard deadline 3s, then the error propagates. Non-transient errors (ENOENT/EISDIR) never retried. Retry is an optimization, not a gate - it must never block the caller indefinitely (consistent with the fail-open philosophy).
 
 ## 已知边界
 
