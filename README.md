@@ -149,7 +149,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.20.3（版本轨迹：0.3.0 首发 → 0.20.3） |
+| 当前版本 | 0.21.0（版本轨迹：0.3.0 首发 → 0.21.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -177,6 +177,8 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.21.0（签名与稳定版）**：
+  **EN**: Provenance + stability release: ① **Ed25519 gene signing chain** (1.0 criterion) - deposits auto-signed with the machine identity (`~/.evomap/identity/`, private key 0600); pool imports verify signatures (tampered content REJECTED; unsigned legacy accepted); `identity` / `verify` commands. ② **Bounded IO retry with hard deadline** (stability feedback, two rounds) - transient errors only (EBUSY/EPERM/EACCES/ETIMEDOUT), max 3 attempts, 3s deadline, fail-open boundary preserved. ③ **SKILL.md 238 → 224 lines** (progressive feedback): four-gate details moved to advanced, acknowledgements trimmed, new-user reading path added, research.md marked "most users never need to open".
 - **0.20.3（审核取证版）**：
   **EN**: Review-with-evidence release (user proposal 2026-10-15): new `light-cli evidence <gene_id>` searches the four local ledgers (tool errors / recalls / injections / back-fills) for events matching the gene's claimed failure and fix - approve only after consistency check; overturned conclusions stay quarantined with an audit note; genes without local evidence (pool/other-machine/starter) are reviewed on content with the source noted. Designed as evidence-FIRST, not an absolute gate.
 - **0.20.2（双语完整版）**：
