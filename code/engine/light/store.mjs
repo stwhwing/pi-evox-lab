@@ -22,7 +22,7 @@ export const REVIEW_PATH = path.join(STORE_DIR, 'review.jsonl');
 export function readJsonl(p) {
   const out = [];
   let raw = '';
-  try { raw = fs.readFileSync(p, 'utf8'); } catch { return out; }
+  try { raw = retryIo(() => fs.readFileSync(p, 'utf8'), 'readJsonl'); } catch { return out; }
   for (const line of raw.split('\n')) {
     const s = line.trim();
     if (!s) continue;
@@ -36,6 +36,33 @@ export const readReview = () => readJsonl(REVIEW_PATH);
 
 function ensureDir() {
   try { fs.mkdirSync(STORE_DIR, { recursive: true }); } catch { /* 已存在 */ }
+}
+
+/**
+ * 0.21 稳定性：瞬态 IO 错误重试 + 硬截止（stability 评测 0.19.1/0.20.3 两轮点名
+ * 「未见显式重试逻辑和超时控制」）。
+ * 边界纪律（与 fail-open 哲学一致）：
+ *   - 只重试**瞬态**错误（EBUSY/EPERM/EACCES/ETIMEDOUT——Windows 上文件被占用/杀软扫描的典型表现）；
+ *   - 总截止 RETRY_DEADLINE_MS（默认 3s）内有限次重试（RETRY_MAX 次），**到点即放行**：
+ *     重试是优化不是门——绝不让 IO 因重试机制无限期阻塞调用方；
+ *   - 非瞬态错误（ENOENT/EISDIR 等）立即交还原逻辑，不重试。
+ */
+const RETRY_MAX = 3;
+const RETRY_DEADLINE_MS = 3000;
+const TRANSIENT = new Set(['EBUSY', 'EPERM', 'EACCES', 'ETIMEDOUT']);
+
+export function retryIo(fn, label = 'io') {
+  const start = Date.now();
+  let lastErr = null;
+  for (let attempt = 1; ; attempt++) {
+    try { return fn(); } catch (e) {
+      lastErr = e;
+      const code = e && e.code;
+      const outOfTime = Date.now() - start >= RETRY_DEADLINE_MS;
+      if (!TRANSIENT.has(code) || outOfTime || attempt >= RETRY_MAX) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * attempt); // 50/100ms 退避
+    }
+  }
 }
 
 /**
@@ -91,7 +118,7 @@ export function appendGene(gene) {
   return withLock(STORE_DIR, () => {
     const exists = readGenes().some((g) => g.asset_id && g.asset_id === gene.asset_id);
     if (exists) return false;
-    fs.appendFileSync(GENES_PATH, JSON.stringify(gene) + '\n');
+    retryIo(() => fs.appendFileSync(GENES_PATH, JSON.stringify(gene) + '\n'), 'appendGene');
     return true;
   });
 }
@@ -101,7 +128,7 @@ export function appendReview(rec) {
   ensureDir();
   return withLock(STORE_DIR, () => {
     const entry = { assetId: rec.assetId, state: rec.state, reason: rec.reason ?? '', at: new Date().toISOString() };
-    fs.appendFileSync(REVIEW_PATH, JSON.stringify(entry) + '\n');
+    retryIo(() => fs.appendFileSync(REVIEW_PATH, JSON.stringify(entry) + '\n'), 'appendReview');
     return entry;
   });
 }
