@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.20.3
+version: 0.21.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -14,7 +14,10 @@ homepage: https://github.com/stwhwing/pi-evox-lab
 
 > 让 Agent 的每个坑只踩一次：失败经验自动入库（守卫过滤），同类任务自动召回已验证修法。
 >
-> **文档地图（0.20 分层）**：本文件 = 日常用法（流程 A/B + 触发点 + 安全门）；`docs/advanced.md` = 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维；`docs/research.md` = 流程 C 受控实验 + 陷阱设计纪律；`docs/common-mistakes.md` = 常见错误用法完整清单；`docs/config-errors.md` = 常见配置错误；`docs/faq.md` = 完整 FAQ。
+> **文档地图（0.21 分层）**：
+> - **新用户只需读三节**：30 秒上手 → 流程 A → 流程 B（约 60 行）；其余按需查。
+> - 本文件其余部分 = 触发点/安全摘要/反模式速查/导航；`docs/advanced.md` = 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细；`docs/common-mistakes.md` = 常见错误用法完整清单；`docs/config-errors.md` = 常见配置错误；`docs/faq.md` = 完整 FAQ。
+> - `docs/research.md` = 流程 C 受控实验 + 陷阱设计纪律——**研究专用，绝大多数用户无需打开**。
 
 ## 30 秒上手（Quick-Start）
 
@@ -53,16 +56,11 @@ git clone https://github.com/stwhwing/pi-evox-lab.git && cd pi-evox-lab
 npm install            # @evomap/evolver（可选集成）+ @earendil-works/pi-coding-agent（仅实验模式 C 需要）
 ```
 
-- **默认后端 = 内置 light（0.12.0 起）**：零 npm 依赖即可运行召回/沉淀全流程（纯 Node 内置模块，MIT）；
-- **evolver 为可选集成**：已安装时可用 `--engine evolver` 启用（`--engine auto` 为旧行为：检测到即用）；
-- 两后端**共享同一资产库格式**（schema 1.13.0），产物可互操作、无需迁移；
-- **流程 C（受控实验）**：需要 Pi CLI 与一个 OpenAI 兼容 LLM key（provider 配置见 `docs/providers.md`）。
+- **默认后端 = 内置 light**（零 npm 依赖，纯 Node，MIT）；**evolver 为可选集成**（`--engine evolver`）。两后端共享同一资产库格式（schema 1.13.0），产物互操作。
 
-## Provider 配置（精简指引）
+## Provider 配置（仅流程 C 需要）
 
-> **EN**: Any OpenAI-compatible endpoint works; `$ENV` interpolation in models.json requires pi >= 0.85.1 (older: pass `--api-key` explicitly). Full examples + domestic endpoints (DeepSeek/Bailian/SiliconFlow/Zhipu): `docs/providers.md`.
-- 支持任意 OpenAI 兼容端点；`$ENV` 插值需 **pi ≥ 0.85.1**（旧版用 `--api-key` 显式传）；
-- 完整 models.json 示例、国内端点（DeepSeek/百炼/硅基流动/智谱）：[`docs/providers.md`](docs/providers.md)。
+> **EN**: Flow C only - any OpenAI-compatible endpoint; `$ENV` interpolation needs pi >= 0.85.1. Examples + domestic endpoints (DeepSeek/Bailian/SiliconFlow/Zhipu): [`docs/providers.md`](docs/providers.md).
 
 ## 流程 A：任务开始 — 召回经验（任何非平凡任务）
 
@@ -146,9 +144,16 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 > **EN**: Review-with-evidence (0.20.3): before `approve`, run `evidence <gene_id>` to check the four local ledgers for events matching the gene's claimed failure/fix. Approve only when consistent; genes whose conclusions were overturned by later events stay quarantined with an audit note. Genes without local evidence (pool imports / other machines / starter pack) are reviewed on content and source, noted at approval.
 
+## 基因签名与 provenance（0.21）
+
+> **EN**: Provenance signing (0.21, one of the last 1.0 criteria): every deposit is signed with this machine's Ed25519 identity (`~/.evomap/identity/`, private key 0600, never leaves the machine); genes carry {sig, keyid, pubkey}. Pool imports verify signatures - tampered content is REJECTED, unsigned/legacy genes pass with a note. `light-cli identity` shows your keyid; `light-cli verify <gene_id>` verifies.
+
+- 沉淀自动签、入池随行、导入验签：**内容被篡改 → 拒绝导入**；无签名的老基因原样接受（legacy）；
+- 私钥不出本机；公钥随基因出入池供他机验签——信任模型是“按 keyid 溯源”，不是中心化 CA。
+
 ## 安全：四道门（0.16.0）
 
-> **EN**: Genes are soft prompts injected into the system prompt - one malicious gene is one prompt injection. Four gates: repair-signal guard, narration guard, injection guard (malice), redaction gate (privacy). The injection guard distinguishes AVOID (warning, allowed) from FIX (instruction, blocked) contexts - 11/11 malicious caught, 7/7 legitimate zero false-kill. Fail-closed if the guard module is missing.
+> **EN**: Genes are soft prompts injected into the system prompt - one malicious gene is one prompt injection. Four gates: repair-signal guard, narration guard, injection guard (malice; AVOID=warning allowed vs FIX=instruction blocked - 11/11 malicious caught, 7/7 legitimate zero false-kill), redaction gate (privacy, fail-closed off-machine). Full details: `docs/advanced.md`.
 
 | # | 门 | 管什么 | 在哪生效 |
 |---|---|---|---|
@@ -157,7 +162,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回 + 导入 + 导出 |
 | 4 | **脱敏闸门** | 会不会**泄私有内容**（IP/路径/密钥 → 拦截不出网） | 导出 + 导入 |
 
-**关键设计：区分 `AVOID` 与 `FIX` 语境**——`AVOID:` 段出现危险词 = 在警告别这么做（合法，放行）；`FIX:` 段出现危险词 = 在指示这么做（可疑，拦截）。实测 **11/11 恶意样本全拦、7/7 正常样本零误杀**。守卫模块缺失时 fail-closed（导出/导入拒绝执行；召回侧跳过注入门但其余三门照常——只读不阻断、写入必须 closed）。
+守卫模块缺失时 fail-closed（导出/导入拒绝执行；召回侧跳过注入门但其余三门照常——只读不阻断、写入必须 closed）。
 
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
 
@@ -206,33 +211,21 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 | 路径 | 作用 | 何时看 |
 |------|------|--------|
-| `SKILL.md`（本文件） | 日常用法：流程 A/B、触发点、安全门、反模式 | 首次使用与日常 |
+| `SKILL.md`（本文件） | 日常用法：流程 A/B、触发点、安全摘要、反模式速查 | 首次使用与日常 |
 | `code/evolver-recall.mjs` | 流程 A：召回 + 命中登记（**唯一召回实现**） | 接智能体 / 排查召回为空 |
-| `code/light-cli.mjs` | 流程 B：沉淀/审核 + timeline/harvest/gene 池 | 沉淀修法、审核基因 |
-| `code/pi_evolve.mjs` | 流程 C：受控闭环实验编排（**研究用，默认关**） | 想量化继承收益 |
-| `code/engine/light/` | 轻量引擎：`distill` / `ledger` / `store` 三件套 | 想理解蒸馏或审核语义 |
-| **`docs/advanced.md`** | 回填寻址/时间线/harvest/并发锁/共享库/宿主接入契约/运维度量 | 接生产环境、排查「没生效」 |
-| **`docs/research.md`** | 流程 C 端到端 + 陷阱设计纪律 | 跑受控实验之前 |
-| **`docs/common-mistakes.md`** | 常见错误用法完整清单（≥10 条 [A] 实证） | 踩坑后对照 |
-| **`docs/config-errors.md`** | 常见配置错误与排查 | 环境/配置出问题 |
-| **`docs/faq.md`** | 完整 FAQ（14 条） | 本文件速览不够时 |
-| `docs/forensics-numbat.md` | numbat 独立取证 PoC 手册 | 想对靶验证基因有效性 |
-| `docs/other-agents.md` / `docs/providers.md` | 多宿主接入 / LLM 配置 | 接非 WorkBuddy 宿主、跑流程 C 前 |
-| `docs/security-and-license.md` | 安全边界 / 数据外发 / 上游许可 | **引入生产前必读** |
-| `docs/experiment-report.md` | 完整 22 节实验报告（收益量化） | 想知道「效果到底多大」 |
-| `examples/walkthrough-*.md` | 端到端走查（GBK / 非法 JSON / **流程 C**） | **第一次照着跑一遍** |
-| `traps/make_*_trap.py` | 6 种陷阱生成器（确定性档×3 + 对照档×3） | 流程 C 造失败环境 |
+| `code/light-cli.mjs` | 流程 B：沉淀/审核/取证 + timeline/harvest/gene 池 | 沉淀修法、审核基因 |
+| `code/pi_evolve.mjs` · `code/engine/light/` | 流程 C 编排器 · 轻量引擎三件套 | 研究用 / 理解引擎 |
+| **`docs/advanced.md`** | 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细 | 接生产环境、排查「没生效」 |
+| **`docs/common-mistakes.md`** · **`docs/config-errors.md`** · **`docs/faq.md`** | 14 条错误用法 · 常见配置错误 · 完整 FAQ | 踩坑后 / 环境出错 / 速览不够时 |
+| `docs/forensics-numbat.md` · `docs/providers.md` · `docs/security-and-license.md` | numbat 取证 PoC · LLM 配置 · 安全与许可 | 对靶验证 / 跑流程 C 前 / 引入生产前 |
+| `examples/walkthrough-*.md` · `traps/make_*_trap.py` | 端到端走查（GBK/JSON/流程 C）· 6 种陷阱生成器 | 第一次照着跑 / 流程 C |
 
 ## 致谢与上游
 
 **上游引擎与宿主**：基于 [pi-coding-agent](https://github.com/earendil-works/pi) 与 [@evomap/evolver](https://github.com/EvoMap/evolver)。实测发现的 4+1 项上游缺口已提交官方 issue（evolver#624-#627、pi#9258），详见 README。
 
-**方法论致谢（按对本项目的影响排序）**：
-
-- **[numbat](https://github.com/perplexityai/numbat)**（Perplexity AI，Apache-2.0）—— agent 行为审计器。本项目的 `timeline`（四账本取证重建）与 `harvest`（错误候选盘点）两个命令的**方法论**直接受其启发：「把账本变成监控录像」「先证明 agent 到底干了什么」；PoC 运行手册见 `docs/forensics-numbat.md`（numbat 原生解析 OpenClaw/Claude/Codex 日志，是效果度量的独立证据源方向）。
-- **[FlyLoRA](https://arxiv.org/abs/2510.08396)**（NeurIPS 2025，清华大学）—— 权重空间 PEFT，与本项目（提示空间继承）不在同一层；显式迁移两条原理：负载均衡偏置（召回打分 `-u·sign(c_i − c̄)`）、免训练合并不干扰（= 注入冲突守卫）。FlyHash 式路由是 P2 参考方向，**尚未实现**。
-- **[Switch Transformer](https://arxiv.org/abs/2101.03961)**（Fedus et al., 2021）—— 负载均衡偏置的思想源头之一。
-- 论文 *From Procedural Skills to Strategy Genes*（arXiv:2604.15097，EvoMap）—— 「紧凑 Gene 优于冗长 Skill」「失败经验的最佳形态是极度蒸馏后的独立 AVOID 警告」两条结论的量化依据（4,590 次受控实验）。
-- **[ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)**（MIT）—— 多宿主薄适配层的工程组织方式参照；其发布门设计教训（绝对化规则让门永不可通过）被用于复查自家守卫是否过严。
+**方法论致谢（完整列表见 README）**：
+- **[numbat](https://github.com/perplexityai/numbat)**（Perplexity AI，Apache-2.0）—— agent 行为审计器。`timeline` 与 `harvest` 的方法论直接受其启发；PoC 手册见 `docs/forensics-numbat.md`。
+- **[FlyLoRA](https://arxiv.org/abs/2510.08396)**（NeurIPS 2025，清华大学）—— 负载均衡偏置与免训练合并不干扰两条原理的显式迁移来源（0.14.4）。
 
 > 以上均为**研读与对照**：本项目与它们均无隶属关系，也不代表其观点；本仓库实现均为原创，默认后端是 MIT 的内置引擎。完整方法论清单（Palantir Ontology 等）见 README 致谢节。
