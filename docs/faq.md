@@ -85,3 +85,7 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 0.17.0 及以前用位置编号（#N），而「本次召回选中集」是共享单文件，会被其他会话的 recall 覆盖 → 编号漂移。**0.18 起用 `--gene <asset_id|gene_id>` 按 id 寻址**，并发安全。
 **EN A14**: Pre-0.18 used positional numbers against a shared single-file selection snapshot (overwritten by other sessions' recall). 0.18+ addresses by `--gene <asset_id|gene_id>` - concurrency-safe.
 
+**Q15：基因签名是什么？我的基因会被别人冒充吗？**
+不会。0.21 起每台机器有 Ed25519 身份（`~/.evomap/identity/`，私钥 0600 不出本机）；沉淀的基因带 {sig, keyid, pubkey}，入池导入时验签——内容被篡改会被拒绝。无签名的老基因原样接受。查看本机身份：`light-cli identity`；验签：`light-cli verify <gene_id>`。
+**EN A15**: Ed25519 per-machine identity; genes carry {sig, keyid, pubkey}; pool imports verify - tampered content is rejected. Legacy unsigned genes pass. `light-cli identity` / `light-cli verify <gene_id>`.
+
