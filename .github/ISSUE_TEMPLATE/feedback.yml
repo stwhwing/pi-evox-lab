@@ -1,0 +1,25 @@
+name: "Feedback / 反馈"
+description: "Bug reports, feature requests, questions / bug、需求、问题"
+title: "[Feedback] <一句话>"
+labels: ["feedback"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: "发生了什么 / 你想说什么"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "版本（light-cli.mjs 无参运行的版本行）"
+      placeholder: "e.g. 0.22.0"
+    validations:
+      required: false
+  - type: textarea
+    id: repro
+    attributes:
+      label: "复现步骤（如适用）"
+      render: bash
+    validations:
+      required: false
