@@ -44,5 +44,12 @@ export function depositionGate(strategyText) {
 	if (!REPAIR_SIGNAL_RE.test(s)) {
 		return { ok: false, kind: 'no-signal', reason: 'strategy 缺少修法信号词（error/fix/avoid/编码 等）——不像在描述一个坑与修法' };
 	}
+	// 0.22（2026-10-18 复审实证）：AVOID-only 半成品能过闸——REPAIR_SIGNAL_RE 含 avoid 单词，
+	// 实测 3 条被截断的 deposit（13/34/62 字符）全是「有坑无修法」形态。有 AVOID 无 FIX 的基因
+	// 注入后对下游毫无价值（正是本项目自己的核心结论），闸门必须fail-closed 拒绝。
+	const hasFix = /\bfix\b|【FIX|修法/i.test(s);
+	if (!hasFix) {
+		return { ok: false, kind: 'no-fix', reason: 'strategy 有坑（AVOID）但没有修法（FIX）——半成品基因注入后毫无价值；请补上具体可执行的修法（参数/命令/编码），如「FIX: 用 encoding=gbk 打开」' };
+	}
 	return { ok: true };
 }
