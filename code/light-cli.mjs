@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
 import { STORE_DIR, readGenes, readReview, approvedAssetIds } from './engine/light/store.mjs';
+const SKILL_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
 import { signGene, verifyGene, loadIdentity, privateKeyPath } from './engine/light/identity.mjs';
 import { SIGNAL_RULES, AVOID_TEMPLATES, proposeFromError } from './engine/light/distill.mjs';
 import { depositionGate } from './engine/light/guards.mjs';
@@ -116,6 +117,46 @@ process.on('unhandledRejection', (err) => {
  * 操作规程文本（T1–T5）——`snippet` 输出 / `install-snippet` 写入共用的唯一来源。
  * T4 是自动沉淀的关键绑定：**修好坑后立刻沉淀**（写进项目指令文件后，agent 每个会话可见）。
  */
+/** 0.22：审核取证报告（evidence 命令 + approve 前自动执行共用）。
+ *  在本地四台账（工具错误/召回/注入/回填）检索基因声称失败/修法的对应事件，
+ *  三级输出：强证据（直接 gene_id/工具错误）> 弱上下文（召回）> 无证据（台账外来源）。 */
+const WARNED = new Set();
+function printEvidence(g) {
+  const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+  const STOP = new Set(['unknown', '失败', 'error', 'null', 'true', 'false', 'undefined', 'pending', 'approved', 'quarantined']);
+  const sigFromSummary = String(g.summary || '').split(/[\s，。、（）()\[\]:：|]+/).filter((w) => w.length >= 4 && !STOP.has(w)).slice(0, 8);
+  const signals = [...new Set([...(g.signals_match || []).filter((x) => !STOP.has(String(x))), ...sigFromSummary])].slice(0, 12);
+  console.log(`[gene-share] 审核取证：${g.id}`);
+  console.log(`  账本来源: ${hitsDir}${hitsDir.includes('publish_clean') || hitsDir.includes('_rel') ? '  ←⚠️ 这是构建/发布目录，不是生产账本！生产环境应指向已安装技能的 experiments/（可用 EVOX_HITS_DIR 指定）' : ''}`);
+  console.log(`  信号词: ${signals.join(', ') || '(无)'}`);
+  let found = 0;
+  const files = [['工具错误', 'error_candidates.jsonl'], ['召回', 'recall_calls.jsonl'], ['注入', 'pending_injections.jsonl'], ['回填', 'hits.jsonl']];
+  for (const [kind, f] of files) {
+    try {
+      if (!fs.existsSync(path.join(hitsDir, f)) && !WARNED.has(f)) { WARNED.add(f); console.log(`  （账本 ${f} 不存在——按空处理）`); }
+      for (const l of fs.readFileSync(path.join(hitsDir, f), 'utf8').split('\n')) {
+        const t = l.trim(); if (!t) continue;
+        let r; try { r = JSON.parse(t); } catch { continue; }
+        const text = JSON.stringify(r);
+        const direct = (f === 'pending_injections.jsonl' || f === 'hits.jsonl') && text.includes(g.id);
+        if (direct || signals.some((sg) => text.includes(sg))) {
+          found++;
+          const ts = r.ts || r.at || '?';
+          const detail = String(r.snippet || r.query || r.note || r.gene_id || '').slice(0, 90);
+          const tag = direct || kind === '工具错误' ? '' : '（上下文，弱证据）';
+          console.log(`  [${kind}] ${ts} | ${detail}${tag}`);
+        }
+      }
+    } catch { /* 缺文件跳过 */ }
+  }
+  if (!found) {
+    const anyLedger = files.some(([, f]) => { try { return fs.statSync(path.join(hitsDir, f)).size > 0; } catch { return false; } });
+    if (!anyLedger) console.log(`  （该目录四账本全空——**取证依据不足**：请确认 EVOX_HITS_DIR 指向生产账本（已安装技能的 experiments/）后重跑 evidence，再决定 approve）`);
+    else console.log('  （无本地台账证据——可能来自共享池/其他机器/起步包：按内容与来源审核，approve 时注明来源）');
+  }
+  else console.log(`  → 共 ${found} 条相关事件。核对基因声称的失败/修法与上述事件一致后再批准；结论被后续事件推翻的应保持隔离并留痕。`);
+}
+
 function procedureText() {
   const skillDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   return [
@@ -315,6 +356,7 @@ function usage() {
   node code/light-cli.mjs timeline [--last 50]                     # 四账本时间线（召回/注入/回填/工具错误）——0.18，方法致谢 numbat
   node code/light-cli.mjs harvest [--last 10]                      # error_candidates → 沉淀建议清单（Layer2 消费端）
   node code/light-cli.mjs harvest --done|--dismiss <N>             # 已处理/驳回某条候选（移入 .done.jsonl 留痕）——0.19
+  node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
 
@@ -471,6 +513,17 @@ switch (cmd) {
   case 'approve': {
     const id = positional[0];
     if (!id) fail('approve 需传入 <gene_id>', { hint: '先运行 node code/light-cli.mjs list 查看可用 gene_id' });
+    // 0.22 触发点绑死：approve 前自动跑 evidence（0.20.3 建了取证机制却没人用——
+    // 用户 2026-10-17 问「有没有 timeline 回溯」才发现审 6 条基因全部没跑）。
+    // 机制必须绑在动作节点上，而不是依赖"记得"（本项目的核心设计哲学）。
+    // --skip-evidence 显式跳过（理由写入台账备注），用于已知无证据的共享池/起步包来源。
+    const skipEvidence = rest.includes('--skip-evidence');
+    const gForEv = readGenes().find((x) => x.id === id || x.asset_id === id);
+    if (gForEv && !skipEvidence) {
+      console.log('[gene-share] 审核取证（approve 前自动执行，0.22）：');
+      printEvidence(gForEv);
+      console.log('');
+    }
     const r = ledger.approve(id);
     console.log(r.ok ? `✓ 已审核通过${r.alreadyApproved ? '（此前已通过）' : ''}：${r.assetId}` : `✗ ${r.reason}`);
     process.exit(r.ok ? 0 : 1);
@@ -520,6 +573,50 @@ switch (cmd) {
     if (!shown.length) console.log('（无事件——先跑一次 recall 产生埋点）');
     break;
   }
+  case 'shareable': {
+    // 0.22：设置 shareable 并【重新签名】——0.21 签名链要求基因 deposit 后不可变，
+    // 但工作流天然会在 approve 后补标 shareable（变更即签名失效，自家闸门会拦）。
+    // 因此：持钥人的授权变更（shareable 标记）必须走本命令重签，而不是直接改文件。
+    const id = positional[0];
+    if (!id) fail('shareable 需传入 <gene_id>', { hint: 'node code/light-cli.mjs shareable <gene_id>' });
+    const { withLock } = await import('./engine/light/store.mjs');
+    const genes = readGenes();
+    const g = genes.find((x) => x.id === id || x.asset_id === id);
+    if (!g) fail(`找不到基因: ${id}`, { code: 1 });
+    withLock(STORE_DIR, () => {
+      g.shareable = true;
+      signGene(g); // 变更后重签（签名域含 shareable）
+      const lines = genes.map((x) => JSON.stringify(x)).join('\n') + '\n';
+      fs.writeFileSync(path.join(STORE_DIR, 'genes.jsonl'), lines);
+    });
+    // 回读验证
+    const back = readGenes().find((x) => x.id === id);
+    const v = verifyGene(back);
+    console.log(`[gene-share] ${id}: shareable=true 已重签 — ${v.status}（${v.why}）`);
+    if (v.status !== 'verified') process.exitCode = 1;
+    break;
+  }
+  case 'feedback': {
+    // 0.22 外部实例版：外部用户反馈入口（本地留痕 + 引导到 GitHub Discussions）。
+    // 隐私纪律：只写用户主动输入的文本；无任何自动遥测；默认不出网。
+    const text = rest.join(' ').trim();
+    if (!text) fail('feedback 需传入反馈文本', { hint: 'node code/light-cli.mjs feedback "<你的反馈>"' });
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const { withLock } = await import('./engine/light/store.mjs');
+    withLock(hitsDir, () => {
+      fs.mkdirSync(hitsDir, { recursive: true });
+      fs.appendFileSync(path.join(hitsDir, 'feedback.jsonl'), JSON.stringify({
+        ts: new Date().toISOString(), version: SKILL_VERSION, agent: 'light-cli',
+        text: String(text).slice(0, 1000),
+      }) + '\n');
+    });
+    console.log('[gene-share] 感谢反馈！已本地留痕（experiments/feedback.jsonl）。');
+    console.log('  想让作者和其他用户看到？欢迎提交到 GitHub Discussions（Q&A / Show and tell）：');
+    console.log('  https://github.com/stwhwing/pi-evox-lab/discussions');
+    console.log('  或用起来后报告你的实例（帮我们达成 1.0 的外部实例判据）：');
+    console.log('  https://github.com/stwhwing/pi-evox-lab/issues/new?template=adoption-report.yml');
+    break;
+  }
   case 'identity': {
     // 0.21：本机签名身份（Ed25519 keypair，~/.evomap/identity/，私钥 0600 不出本机）
     const id = loadIdentity();
@@ -540,41 +637,11 @@ switch (cmd) {
     break;
   }
   case 'evidence': {
-    // 0.20.3：审核取证（用户提议 2026-10-15）——approve 之前先查本地台账里有没有该基因
-    // 对应的真实事件。设计为「证据优先」而非绝对门：共享池导入 / 其他机器 / 起步包来源的
-    // 基因没有本地证据，退回内容审并在 approve 时注明。
     const id = positional[0];
     if (!id) fail('evidence 需传入 <gene_id>', { hint: 'node code/light-cli.mjs evidence <gene_id>' });
-    const genes = readGenes();
-    const g = genes.find((x) => x.id === id || x.asset_id === id);
+    const g = readGenes().find((x) => x.id === id || x.asset_id === id);
     if (!g) fail(`找不到基因: ${id}`, { code: 1, hint: '先 list 查看可用 gene_id' });
-    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
-    const STOP = new Set(['unknown', '失败', 'error', 'null', 'true', 'false', 'undefined', 'pending', 'approved', 'quarantined']);
-    const sigFromSummary = String(g.summary || '').split(/[\s，。、（）()\[\]:：|]+/).filter((w) => w.length >= 4 && !STOP.has(w)).slice(0, 8);
-    const signals = [...new Set([...(g.signals_match || []).filter((x) => !STOP.has(String(x))), ...sigFromSummary])].slice(0, 12);
-    console.log(`[gene-share] 审核取证：${g.id}`);
-    console.log(`  信号词: ${signals.join(', ') || '(无)'}`);
-    let found = 0;
-    const files = [['工具错误', 'error_candidates.jsonl'], ['召回', 'recall_calls.jsonl'], ['注入', 'pending_injections.jsonl'], ['回填', 'hits.jsonl']];
-    for (const [kind, f] of files) {
-      try {
-        for (const l of fs.readFileSync(path.join(hitsDir, f), 'utf8').split('\n')) {
-          const t = l.trim(); if (!t) continue;
-          let r; try { r = JSON.parse(t); } catch { continue; }
-          const text = JSON.stringify(r);
-          const direct = (f === 'pending_injections.jsonl' || f === 'hits.jsonl') && text.includes(g.id);
-          if (direct || signals.some((sg) => text.includes(sg))) {
-            found++;
-            const ts = r.ts || r.at || '?';
-            const detail = String(r.snippet || r.query || r.note || r.gene_id || '').slice(0, 90);
-            const tag = direct || kind === '工具错误' ? '' : '（上下文，弱证据）';
-            console.log(`  [${kind}] ${ts} | ${detail}${tag}`);
-          }
-        }
-      } catch { /* 缺文件跳过 */ }
-    }
-    if (!found) console.log('  （无本地台账证据——可能来自共享池/其他机器/起步包：按内容与来源审核，approve 时注明来源）');
-    else console.log(`  → 共 ${found} 条相关事件。核对基因声称的失败/修法与上述事件一致后再 approve；不一致（如结论被后续事件推翻）应保持隔离并留痕。`);
+    printEvidence(g);
     break;
   }
   case 'harvest': {
