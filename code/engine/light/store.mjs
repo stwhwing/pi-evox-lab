@@ -19,10 +19,17 @@ export const GENES_PATH = path.join(STORE_DIR, 'genes.jsonl');
 export const REVIEW_PATH = path.join(STORE_DIR, 'review.jsonl');
 
 /** 读取 JSONL（坏行静默跳过；文件不存在返回空数组） */
-export function readJsonl(p) {
+const WARNED_MISSING = new Set();
+export function readJsonl(p, { warn = false } = {}) {
   const out = [];
   let raw = '';
-  try { raw = retryIo(() => fs.readFileSync(p, 'utf8'), 'readJsonl'); } catch { return out; }
+  try { raw = retryIo(() => fs.readFileSync(p, 'utf8'), 'readJsonl'); } catch {
+    // 0.22（0.21.0 评测 errorHandling 点名"文件不存在场景静默返回空数组"）：
+    // 区分「空库」与「文件缺失」——CLI 路径（info/timeline/evidence/list）传 warn:true 告警一次；
+    // 热路径（approvedAssetIds 等内部调用）保持静默，避免刷屏。
+    if (warn && !WARNED_MISSING.has(p)) { WARNED_MISSING.add(p); console.warn(`[pi-evox] 提示：账本文件不存在（${p}）——按空处理；首次沉淀/召回后自动创建`); }
+    return out;
+  }
   for (const line of raw.split('\n')) {
     const s = line.trim();
     if (!s) continue;
