@@ -1,0 +1,56 @@
+name: "Adoption report / 实例报告"
+description: "Report that you are running pi-evox-loop (helps reach the 1.0 external-instance criterion) / 报告你在用 pi-evox-loop"
+title: "[Adoption] <你的名字或组织> - <场景一句话>"
+labels: ["adoption"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢真实使用！这一条判据（≥2 外部实例）只靠作者自己的机器完不成。
+        只需要 2 分钟；隐私注意：**只写你愿意公开的信息**，不要贴密钥/内网信息。
+  - type: input
+    id: who
+    attributes:
+      label: "你是谁（名字/组织/handle）"
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: "宿主 / Host"
+      options:
+        - "WorkBuddy"
+        - "OpenClaw"
+        - "Hermes"
+        - "Claude Code"
+        - "自定义 / 提示词接入"
+        - "其他"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: "环境（OS + Node 版本）"
+      placeholder: "e.g. Ubuntu 24.04 + Node 22.11"
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: "使用场景（什么任务、多久一次）"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "pi-evox-loop 版本"
+      placeholder: "e.g. 0.22.0"
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: "最有价值的一条基因（或：还没沉淀，只在召回）"
+      description: "贴 summary 或 gene_id 即可；没有就写「召回阶段」"
+    validations:
+      required: false
