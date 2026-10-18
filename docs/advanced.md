@@ -199,6 +199,7 @@ wc -l experiments/hits.jsonl             # >1 条说明闭环闭合
 ```
 light-cli identity            # 查看本机 keyid 与密钥路径
 light-cli verify <gene_id>    # 验签本地库基因（exit 1 = 验签失败）
+light-cli evidence <gene_id>  # 审核取证（ approve 前自动执行；也可单独跑）
 ```
 
 ## IO 重试与截止（0.21，stability）
