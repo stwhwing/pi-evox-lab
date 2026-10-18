@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.21.0
+version: 0.22.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -16,6 +16,7 @@ homepage: https://github.com/stwhwing/pi-evox-lab
 >
 > **文档地图（0.21 分层）**：
 > - **新用户只需读三节**：30 秒上手 → 流程 A → 流程 B（约 60 行）；其余按需查。
+> - **最佳实践集中入口**：`examples/quickstart.md`（5 分钟闭环）+ `docs/one-pager.md`（全景一页纸）+ `docs/common-mistakes.md`（14 条反模式）——三份覆盖"上手/全景/避坑"。
 > - 本文件其余部分 = 触发点/安全摘要/反模式速查/导航；`docs/advanced.md` = 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细；`docs/common-mistakes.md` = 常见错误用法完整清单；`docs/config-errors.md` = 常见配置错误；`docs/faq.md` = 完整 FAQ。
 > - `docs/research.md` = 流程 C 受控实验 + 陷阱设计纪律——**研究专用，绝大多数用户无需打开**。
 
@@ -74,6 +75,7 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 ```
 
 - 只输出「已审核 **且** 通过修法守卫 **且** 与查询对靶」的编号修法列表（空库有明确提示，属正常）；
+- **参数默认值**：`--top` 默认 5 条（软提示注入有上下文成本，宁少勿多）；经验库无硬性容量上限，但建议单库 <500 条（超过后对靶精度下降，可用共享池分流）；
 - **对靶规则**：按基因 `signals_match` 命中与查询词的交集打分，**低于阈值即整条不注入**（避免不对靶注入反而增加成本）；
 - **多基因冲突时**：`geneConflicts` 守卫已自动剔除 `anti_patterns` 互斥的低分项；仍有多条时取分高者；**无对靶项时宁可不注入**，不用无关基因凑数；
 - 与本任务相关时优先采用；结束时实际采用了某条，登记命中（`--gene <id>` 按 id 寻址，并发安全）：
@@ -139,8 +141,10 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | `retry with corrected args`（重试日志复述） | "重试然后好了"不是修法 | 写 AVOID(为何错)+FIX(怎么做) |
 | 旁白开场（Now I understand…） | 推理流水不可执行 | 同上 |
 | 缺修法信号词 | 不像在描述坑与修法 | 同上 |
+| 有 AVOID 无 FIX（半成品） | 只有坑没有修法，注入后毫无价值（0.22 复审实证：3 条截断 deposit 全是此形态） | 补上可执行修法（参数/命令/编码） |
 
-> **审核取证（0.20.3）**：`approve` 之前先跑 `node code/light-cli.mjs evidence <gene_id>`——在本地四台账（工具错误/召回/注入/回填）里查该基因声称的失败与修法有没有对应事件。核对一致再批；**结论被后续事件推翻的保持隔离并留痕**（实例：一条"CNAME 放仓库根即持久化"的基因被同批两条实证基因推翻，隔离时注明 superseded）。无本地证据的（共享池导入/其他机器/起步包来源）按内容与来源审，approve 时注明来源。
+> **审核取证（0.20.3 建，0.22 绑死）**：`approve` **自动先跑取证**——本地四台账（工具错误/召回/注入/回填）检索该基因声称失败/修法的对应事件，三级输出（强证据/弱上下文/无证据）。核对一致才批；**结论被后续事件推翻的保持隔离并留痕**（实例：一条"CNAME 放仓库根即持久化"的基因被同批两条实证基因推翻，隔离时注明 superseded）。无本地证据的（共享池/其他机器/起步包来源）按内容与来源审。`--skip-evidence` 为已知无证据场景的显式逃生门（不鼓励）。
+> 为什么绑死：0.20.3 建了 `evidence` 命令却依赖"记得跑"——当天审 6 条基因全部没跑（用户问才补跑）。机制必须绑在动作节点上，这是本项目自己的核心哲学（T3：错误本身就是提醒）。
 
 > **EN**: Review-with-evidence (0.20.3): before `approve`, run `evidence <gene_id>` to check the four local ledgers for events matching the gene's claimed failure/fix. Approve only when consistent; genes whose conclusions were overturned by later events stay quarantined with an audit note. Genes without local evidence (pool imports / other machines / starter pack) are reviewed on content and source, noted at approval.
 
