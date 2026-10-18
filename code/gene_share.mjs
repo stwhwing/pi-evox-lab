@@ -103,7 +103,7 @@ export function redactionGate(gene) {
  * 两道门方向相反但都要过：出（export/submit）查「别把我的私货带出去 / 别带恶意内容」；
  * 入（import）查「别把别人的恶意基因放进来」。
  */
-function safetyGate(gene) {
+export function safetyGate(gene) {
   const red = redactionGate(gene);
   // 注入扫描模块不可用 ⇒ **fail-closed**：宁可不共享/不导入，也不放行未经扫描的基因
   if (typeof injectionScan !== 'function') return { ok: false, violations: [{ rule: 'injection-scan-unavailable', why: '注入扫描不可用（fail-closed）', field: '-', snippet: '-', gate: 'injection' }] };
