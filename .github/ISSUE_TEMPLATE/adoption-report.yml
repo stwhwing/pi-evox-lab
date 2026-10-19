@@ -1,5 +1,5 @@
 name: "Adoption report / 实例报告"
-description: "Report that you are running pi-evox-loop (helps reach the 1.0 external-instance criterion) / 报告你在用 pi-evox-loop"
+description: "Share your setup running pi-evox-loop (helps verify it works in the wild) / 分享你在用 pi-evox-loop 的配置"
 title: "[Adoption] <你的名字或组织> - <场景一句话>"
 labels: ["adoption"]
 body:
