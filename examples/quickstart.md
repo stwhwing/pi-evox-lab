@@ -22,6 +22,12 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 # 期望：输出 [#1|...] GBK 修法（而不是全部 10 条）——这就是「对靶」
 ```
 
+## 3b.（可选）拉取官方基因池（策划修法 66+ 条）
+```bash
+node code/light-cli.mjs gene pull --pool https://zyx.pink/pool/genes.jsonl --tier official
+# 只想要某个场景？加 --scene ops-deploy（可用场景见 SKILL.md 部署与分发节）
+```
+
 ## 4.（可选）体验「沉淀」（2 分钟）
 ```bash
 # 把你最近修过的一个坑丢进去（真实报错 + 你当时的做法）
