@@ -10,6 +10,7 @@
  */
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { SCENES } from './engine/light/store.mjs';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -273,8 +274,22 @@ async function cmdPull(args) {
   const src = positional(args)[0] || argOf(args, '--pool');
   if (!src) { console.error('[gene-share] pull 需要池源（本地路径或 git URL），或 --pool <源>'); return 1; }
   const tier = argOf(args, '--tier') || 'community';
-  const file = await resolvePoolSource(String(src));
+  const scene = argOf(args, '--scene');
+  if (scene && !SCENES.includes(scene)) {
+    console.error(`[gene-share] 未知场景: ${scene}（可用: ${SCENES.join(' | ')}）`); return 1;
+  }
+  let file = await resolvePoolSource(String(src));
   if (!file) return 1;
+  if (scene) {
+    // 0.24 场景拉取：只导入该场景基因（category 受控词表过滤）；全量池仍在镜像可再拉
+    const filtered = path.join(path.dirname(file), `genes-${scene}.jsonl`);
+    const poolRows = readJsonl(file);
+    const rows = poolRows.filter((g) => g.category === scene);
+    if (!rows.length) { console.error(`[gene-share] 场景 ${scene} 在池中为空（池共 ${poolRows.length} 条；可用: ${SCENES.join('|')}）`); return 1; }
+    fs.writeFileSync(filtered, rows.map((g) => JSON.stringify(g)).join('\n') + '\n');
+    file = filtered;
+    console.log(`[gene-share] 场景过滤: ${rows.length}/${poolRows.length} 条 → ${scene}`);
+  }
   console.log(`[gene-share] 以 tier=${tier} 导入（签名验证始终执行）`);
   return cmdImport([file, '--tier', tier]);
 }
