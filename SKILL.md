@@ -16,7 +16,7 @@ homepage: https://github.com/stwhwing/pi-evox-lab
 >
 > **文档地图（0.21 分层）**：
 > - **新用户只需读三节**：30 秒上手 → 流程 A → 流程 B（约 60 行）；其余按需查。
-> - **最佳实践集中入口**：`examples/quickstart.md`（5 分钟闭环）+ `docs/one-pager.md`（全景一页纸）+ `docs/common-mistakes.md`（14 条反模式）——三份覆盖"上手/全景/避坑"。
+> - **最佳实践集中入口**：`examples/quickstart.md`（5 分钟闭环）+ `docs/overview.md`（项目概览）+ `docs/common-mistakes.md`（14 条反模式）——三份覆盖"上手/全景/避坑"。
 > - 本文件其余部分 = 触发点/安全摘要/反模式速查/导航；`docs/advanced.md` = 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细；`docs/common-mistakes.md` = 常见错误用法完整清单；`docs/config-errors.md` = 常见配置错误；`docs/faq.md` = 完整 FAQ。
 > - `docs/research.md` = 流程 C 受控实验 + 陷阱设计纪律——**研究专用，绝大多数用户无需打开**。
 
