@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.23.0
+version: 0.24.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -51,13 +51,21 @@ node code/light-cli.mjs draft --error "<原始报错>" --strategy "AVOID: <什�
 
 ## 安装（一次性）
 
-> **EN**: One-time setup. Default backend = built-in light (zero npm deps, pure Node, MIT). evolver is an optional integration (`--engine evolver`). Both backends share the same asset format (schema 1.13.0), fully interoperable. Flow C needs Pi CLI + an OpenAI-compatible LLM key.
-```bash
-git clone https://github.com/stwhwing/pi-evox-lab.git && cd pi-evox-lab
-npm install            # @evomap/evolver（可选集成）+ @earendil-works/pi-coding-agent（仅实验模式 C 需要）
-```
+> **EN**: One-time setup. **A/B flows need ONLY Node >= 22 — zero npm dependencies.** Get the folder by any of three paths below; any location works (a "skill" is just a folder — put it wherever your host expects, e.g. `~/.claude/skills/pi-evox-lab`). Default backend = built-in light (pure Node, MIT). evolver is an optional integration (`--engine evolver`, needs `npm install`). Flow C additionally needs Pi CLI + an OpenAI-compatible LLM key.
 
-- **默认后端 = 内置 light**（零 npm 依赖，纯 Node，MIT）；**evolver 为可选集成**（`--engine evolver`）。两后端共享同一资产库格式（schema 1.13.0），产物互操作。
+**三种获取路径（任选其一）**：
+```bash
+# 路径 1：git clone（推荐）
+git clone https://github.com/stwhwing/pi-evox-lab.git && cd pi-evox-lab
+# 路径 2：受限网络 → Release zip 直下（附 sha256），解压即用
+#   https://github.com/stwhwing/pi-evox-lab/releases （国内可达镜像见 FAQ Q7）
+# 路径 3：市场一键安装 —— skillhub.cn / ClawHub 搜 pi-evox-loop（WorkBuddy/OpenClaw 用户）
+```
+```bash
+node -v                # 前置要求：Node >= 22（唯一硬依赖）
+node code/light-cli.mjs doctor   # 30 秒自检——通过即可用，无需任何安装步骤
+```
+- **A/B 日常流程零 npm 依赖**；以下 `npm install` 仅为可选集成/实验模式 C 准备：
 
 ## Provider 配置（仅流程 C 需要）
 
@@ -161,7 +169,8 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 - **下载**：GitHub Release zip / npm（`npm config set registry https://registry.npmmirror.com`）；网络受限环境用国内镜像 zip（附 sha256 校验，见 FAQ Q7）；
 - **宿主接入**：`light-cli.mjs install <claude-code|cursor|codex|agents-md>`（自动定位配置文件写入规程，`--yes` 落盘）；OpenClaw/Hermes 用 `install-hooks`；
-- **基因池协作**：`gene pull --pool <路径|URL>` 拉取（官方镜像 `--tier official`，任意源默认隔离）；`gene submit --bundle <file>` 产出提交包回传维护者；导入默认隔离+验签；
+- **基因池协作**：`gene pull --pool https://zyx.pink/pool/genes.jsonl --tier official` 从官方镜像拉取全池（签名验证，66+ 条策划基因）；`gene submit --bundle <file>` 产出提交包回传维护者（PR / issue 附件 / 文件交换）；导入默认隔离+验签；池仓库贡献条款见 CONTRIBUTING.md（CC-BY-4.0）；
+- **场景拉取**（0.24）：`gene pull --pool <URL> --scene <场景>` 只拉该场景子集；受控场景词表：`ops-deploy`（部署/服务器）/ `coding-debug`（编码/解析）/ `release-publish`（发布/版本）/ `api-integration`（API/webhook）/ `git-workflow`（git/仓库）/ `agent-runtime`（宿主/钩子/管线）；`gene list --scene <名>` 本地同粒度过滤；
 - **并发语义**：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。
 - **IO 重试语义**：文件读写对瞬态错误（EBUSY/EPERM/EACCES/ETIMEDOUT）自动重试（默认 3 次/截止 3s，`EVOX_IO_RETRY`/`EVOX_IO_DEADLINE_MS` 可调）；非瞬态错误不重试；重试是优化不是门——绝不因重试机制阻塞调用方（fail-open）。
 
