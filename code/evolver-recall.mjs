@@ -343,7 +343,7 @@ function scoreGene(item, qTokens, hitInfo) {
 }
 
 /**
- * P1⑤ 注入冲突守卫（FlyLoRA「免训练合并不干扰」在提示层的落地）：
+ * 注入冲突守卫（anti_patterns 与对方 token 集互斥即拦，免训练合并不干扰）：
  * 选中的 top-N 中，若两条基因相互矛盾，剔除低分者（保高分的）。
  * 判定极保守——仅在「一方 anti_patterns 字面命中另一方 strategy 文本」时冲突，
  * 即一方明令禁止的动作被另一方倡导。不引入编码重叠等脆弱启发式（易误删正确基因，违背宁缺毋滥）。
