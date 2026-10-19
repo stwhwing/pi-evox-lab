@@ -150,7 +150,7 @@ quiet_context: injected_count=1; use silently; do not mention unless asked or ma
 - 最终 `inject session-start`：`injected_count=2`（策略 Gene + AVOID Gene 同时注入）✅
 - **v1 `solidify` 亦已弃用**：Capsule 固化改走 `evolver cycle`（需外部 runner claude/codex/gemini）→ review → publish。离线无 LLM 环境下 Gene 级继承完整可用，Capsule 级固化需接 runner
 
-**admission gate 行为补充**：信号级去重（"candidate signal subset"）与相似度去重（similarity 0.60 即拦）双轨；手工 distill 同信号也会拒绝（fully overlaps）。
+**admission gate 行为补充**：信号级去重（"candidate signal subset"）与相似度去重（similarity 0.60 即拦）两级；手工 distill 同信号也会拒绝（fully overlaps）。
 
 ## 10. 遗留观察项
 
