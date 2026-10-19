@@ -61,13 +61,14 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === '--allow-unreviewed-refine') opts.allowUnreviewedRefine = true;
   else if (a === '--engine') opts.engine = process.argv[++i];
   else if (a === '--strategy-format') opts.strategyFormat = process.argv[++i];
+  else if (a === '--arm') opts.arm = process.argv[++i]; // 0.23 U1: targeted(默认) | full-context（长上下文灌库基线臂）
   else if (a === '--llm-refine') opts.llmRefine = true;
   else positional.push(a);
 }
 const templateDir = positional[0];
 const taskFile = positional[1];
 if (!templateDir || (!taskFile && !opts.taskText)) {
-  console.error('用法: node bin/pi_evolve.mjs <repo模板目录> <任务文本文件> --provider X --model Y --api-key $K [--rounds 2] [--fresh] [--auto-approve]');
+  console.error('用法: node bin/pi_evolve.mjs <repo模板目录> <任务文本文件> --provider X --model Y --api-key $K [--rounds 2] [--fresh] [--auto-approve] [--arm targeted|full-context]');
   process.exit(2);
 }
 const taskText = opts.taskText ?? fs.readFileSync(taskFile, 'utf8').trim();
@@ -333,7 +334,26 @@ for (let r = 1; r <= opts.rounds; r++) {
     // 关键修复：evolver inject 只吐基因的 summary 标签（如 "bash, exception"），
     // 不携带真正可执行的 strategy（例如 "用 encoding='gbk' 读取"）。这里从 genes.jsonl
     // 抽取已审核基因的 strategy 文本，追加进注入块，使下一轮真正继承"修法"而非仅一个标签。
-    const strat = loadApprovedStrategy();
+    let strat;
+    if (opts.arm === 'full-context') {
+      // 0.23 U1：长上下文灌库基线臂——注入**全部**已审核基因的完整 strategy（不做对靶筛选）。
+      // 方法学依据：AMA-Bench 类工作显示长上下文基线必须作为对照臂，否则效果声明不可信。
+      const latest = new Map();
+      try { for (const line of fs.readFileSync(EVO_REVIEW, 'utf8').split('\n')) { const t = line.trim(); if (!t) continue; try { const rr = JSON.parse(t); if (rr && typeof rr.assetId === 'string' && rr.assetId) latest.set(rr.assetId, rr.state); } catch {} } } catch {}
+      const ok = new Set([...latest].filter(([, st]) => String(st).toLowerCase().includes('approv')).map(([aid]) => aid));
+      const all = [];
+      for (const line of fs.readFileSync(EVO_GENES, 'utf8').split('\n')) {
+        const t = line.trim(); if (!t) continue;
+        let g; try { g = JSON.parse(t); } catch { continue; }
+        if (!g.asset_id || !ok.has(g.asset_id)) continue;
+        const st = g.strategy; if (!Array.isArray(st) || !st.length) continue;
+        all.push(`- [${g.category || 'repair'}] ${st.join(' ').slice(0, 1200)}`);
+      }
+      strat = all.join('\n');
+      log(`[inject] R${r} 臂=full-context：灌入全部 ${all.length} 条已审核基因（无对靶筛选）`);
+    } else {
+      strat = loadApprovedStrategy();
+    }
     const full = strat
       ? `${block}\n\n[上一轮已验证的修法（请优先采用，避免重复踩坑）]\n${strat}`
       : block;
