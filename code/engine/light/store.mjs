@@ -42,6 +42,9 @@ export function readJsonl(p, { warn = false } = {}) {
   return out;
 }
 
+// 0.24 场景受控词表（治理/拉取/策展用；召回对靶仍走 signals_match 自由信号）
+export const SCENES = ['ops-deploy', 'coding-debug', 'release-publish', 'api-integration', 'git-workflow', 'agent-runtime'];
+
 export const readGenes = () => readJsonl(GENES_PATH);
 export const readReview = () => readJsonl(REVIEW_PATH);
 
