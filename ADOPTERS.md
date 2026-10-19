@@ -1,9 +1,9 @@
 # Adopters — 外部实例登记
 
-> 1.0 发布判据之一：**≥2 个外部实例**（非作者机器真实在用）。用起来后欢迎登记：
+> 登记簿：非作者机器真实使用本项目的配置与场景。用起来后欢迎登记：
 > [提交 adoption-report issue](https://github.com/stwhwing/pi-evox-lab/issues/new?template=adoption-report.yml) 或 PR 本文件。
 >
-> **EN**: External instances registry (1.0 criterion: >=2 non-author machines genuinely using it). Report via the adoption-report issue template or a PR to this file.
+> **EN**: Registry of real-world setups running this project on non-author machines. Report via the adoption-report issue template or a PR to this file.
 
 ## 已登记实例
 
@@ -14,7 +14,7 @@
 | 3 | （虚位以待） | | | | | |
 | 4 | （虚位以待） | | | | | |
 
-> 作者自己的两台不计入判据——需要**你**的实例。
+> 作者自己的两台仅作参考——欢迎登记**你的**实例。
 
 ## 实例报告应该包含什么
 - 环境（OS/Node 版本/宿主：WorkBuddy、OpenClaw、Claude Code、自定义…）；
