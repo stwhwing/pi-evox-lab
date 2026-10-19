@@ -30,11 +30,15 @@ export function readJsonl(p, { warn = false } = {}) {
     if (warn && !WARNED_MISSING.has(p)) { WARNED_MISSING.add(p); console.warn(`[pi-evox] 提示：账本文件不存在（${p}）——按空处理；首次沉淀/召回后自动创建`); }
     return out;
   }
+  const bad = [];
+  let lineNo = 0;
   for (const line of raw.split('\n')) {
+    lineNo++;
     const s = line.trim();
     if (!s) continue;
-    try { out.push(JSON.parse(s)); } catch { /* 跳过坏行 */ }
+    try { out.push(JSON.parse(s)); } catch { bad.push({ n: lineNo, s: s.slice(0, 80) }); }
   }
+  if (warn && bad.length) console.warn(`[pi-evox] 提示：${p} 有 ${bad.length} 行无法解析（已跳过）：行 ${bad.map((b) => b.n).join(', ')}；首条预览: ${bad[0].s}（0.23：手工编辑后请校验 JSON 格式）`);
   return out;
 }
 
@@ -54,8 +58,8 @@ function ensureDir() {
  *     重试是优化不是门——绝不让 IO 因重试机制无限期阻塞调用方；
  *   - 非瞬态错误（ENOENT/EISDIR 等）立即交还原逻辑，不重试。
  */
-const RETRY_MAX = 3;
-const RETRY_DEADLINE_MS = 3000;
+const RETRY_MAX = Math.max(1, parseInt(process.env.EVOX_IO_RETRY || '3', 10) || 3);
+const RETRY_DEADLINE_MS = Math.max(0, parseInt(process.env.EVOX_IO_DEADLINE_MS || '3000', 10) || 3000);
 const TRANSIENT = new Set(['EBUSY', 'EPERM', 'EACCES', 'ETIMEDOUT']);
 
 export function retryIo(fn, label = 'io') {
