@@ -38,7 +38,7 @@ const positional = rest.filter((a) => !a.startsWith('--'));
 // 从一段错误文本抽信号家族 + 预填 AVOID 模板 + 结构化 anti_patterns，
 // 把"从一次失败直接生成 distill 草稿"的门槛降到最低（人只补 FIX）。
 //
-// ── 方案 A 词汇对齐（2026-09-23，见 _flylora_research/P1⑤_冲突守卫_收紧分析_20260923.md）──
+// ── 词汇对齐（anti_tags → summary / anti_patterns → 互斥 token，见 docs/advanced.md）──
 // 负经验分两种表示，**不可混用**：
 //   · ANTI_TAGS  ：人读 kebab 标签 → 只写进 summary（不参与匹配）
 //   · ANTI_TOKENS：机器可匹配的**单 token 字面量** → 写进 anti_patterns（供 geneConflicts 用）
@@ -155,6 +155,39 @@ function printEvidence(g) {
     else console.log('  （无本地台账证据——可能来自共享池/其他机器/起步包：按内容与来源审核，approve 时注明来源）');
   }
   else console.log(`  → 共 ${found} 条相关事件。核对基因声称的失败/修法与上述事件一致后再批准；结论被后续事件推翻的应保持隔离并留痕。`);
+}
+
+/** 0.23 U2：install-snippet 写入管线（install / install-snippet 两命令共用） */
+function runInstallSnippet(args) {
+  const fi = args.indexOf('--file');
+  const target = fi >= 0 ? args[fi + 1] : null;
+  if (!target) fail('用法: light-cli.mjs install-snippet --file <AGENTS.md 或 CLAUDE.md 路径> [--yes]');
+  const yes = args.includes('--yes');
+  const out = ['── install-snippet ' + (yes ? '（写入模式）' : '（演练模式，未落盘）') + ' ──'];
+  const abs = path.resolve(target);
+  out.push(`  目标文件: ${abs}`);
+  const exists = fs.existsSync(abs);
+  out.push(`  文件存在: ${exists ? '是' : '否（--yes 时会创建）'}`);
+  const cur = exists ? fs.readFileSync(abs, 'utf8') : '';
+  const has = cur.includes('evox-procedure:v1');
+  out.push(`  已含规程: ${has ? '是（将原位更新）' : '否（将追加到文件末尾）'}`);
+  if (yes) {
+    try {
+      const block = procedureText();
+      let next;
+      if (has) {
+        next = cur.replace(/<!-- evox-procedure:v1 -->[\s\S]*?<!-- \/evox-procedure -->/, '<!-- evox-procedure:v1 -->\n' + block + '\n<!-- /evox-procedure -->');
+      } else {
+        next = cur + (cur.endsWith('\n') || !cur ? '' : '\n') + '\n<!-- evox-procedure:v1 -->\n' + block + '\n<!-- /evox-procedure -->\n';
+      }
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, next, 'utf8');
+      out.push('  ✓ 已写入。该项目的 agent 每个会话都会看到此规程（T1–T5）。');
+    } catch (e) { out.push('  ✗ 写入失败: ' + String(e.message || e)); }
+  } else {
+    out.push('  （演练未落盘；确认无误加 --yes）');
+  }
+  console.log(out.join('\n'));
 }
 
 function procedureText() {
@@ -356,7 +389,13 @@ function usage() {
   node code/light-cli.mjs timeline [--last 50]                     # 四账本时间线（召回/注入/回填/工具错误）——0.18，方法致谢 numbat
   node code/light-cli.mjs harvest [--last 10]                      # error_candidates → 沉淀建议清单（Layer2 消费端）
   node code/light-cli.mjs harvest --done|--dismiss <N>             # 已处理/驳回某条候选（移入 .done.jsonl 留痕）——0.19
+  node code/light-cli.mjs install <host> [--yes]                  # 一键宿主接入（claude-code/cursor/codex/agents-md）——0.23
+  node code/light-cli.mjs demo                                     # 90 秒自演示（只读，不改状态）——0.23
+  node code/light-cli.mjs export-evidence [--out <dir>]            # 本地证据自审查包（门禁/签名/台账）——0.23
+  node code/light-cli.mjs stats                                    # 本地使用统计（召回/命中/回填率）——0.23
   node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
+  node code/light-cli.mjs gene pull --pool <路径|URL> [--tier t]   # 拉取基因池（文件/git URL 自动识别）——0.23
+  node code/light-cli.mjs gene submit --bundle <file>              # 产出单文件提交包（发给维护者/提 PR）——0.23
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
 
@@ -406,6 +445,7 @@ function doctor() {
     console.log(`  [${c.ok ? '✓' : '✗'}] ${c.name} —— ${c.detail}`);
     if (!c.ok) console.log(`      → 修正：${c.fix}`);
   }
+  console.log(`  IO 重试: 瞬态错误 ${parseInt(process.env.EVOX_IO_RETRY || '3', 10) || 3} 次 / 截止 ${parseInt(process.env.EVOX_IO_DEADLINE_MS || '3000', 10) || 3000}ms（EVOX_IO_RETRY / EVOX_IO_DEADLINE_MS 可调）`);
   console.log(failed.length ? `\n自检未通过 ${failed.length} 项，请先修正后再用本技能（日常 recall / 沉淀不受影响）。` : `\n✓ 全部就绪，可正常使用 recall / 沉淀。`);
   process.exit(failed.length ? 1 : 0);
 }
@@ -713,39 +753,94 @@ switch (cmd) {
     console.log(procedureText());
     break;
   }
-  case 'install-snippet': {
-    // 0.17.0：把操作规程**写进指定项目的 AGENTS.md/CLAUDE.md**——解决「另外两个项目没自动沉淀」：
-    // 技能只在被加载时才影响 agent，而规程一旦粘进项目指令文件，**该项目的每个会话都会看到 T4/T5**。
-    // 与 install-hooks 同纪律：默认演练，--yes 才写入；幂等（按标记更新，不重复追加）。
-    const fi = rest.indexOf('--file');
-    const target = fi >= 0 ? rest[fi + 1] : null;
-    if (!target) fail('用法: light-cli.mjs install-snippet --file <AGENTS.md 或 CLAUDE.md 路径> [--yes]');
-    const yes = rest.includes('--yes');
-    const out = ['── install-snippet ' + (yes ? '（写入模式）' : '（演练模式，未落盘）') + ' ──'];
-    const abs = path.resolve(target);
-    out.push(`  目标文件: ${abs}`);
-    const exists = fs.existsSync(abs);
-    out.push(`  文件存在: ${exists ? '是' : '否（--yes 时会创建）'}`);
-    const cur = exists ? fs.readFileSync(abs, 'utf8') : '';
-    const has = cur.includes('evox-procedure:v1');
-    out.push(`  已含规程: ${has ? '是（将原位更新）' : '否（将追加到文件末尾）'}`);
-    if (yes) {
-      try {
-        const block = procedureText();
-        let next;
-        if (has) {
-          next = cur.replace(/<!-- evox-procedure:v1 -->[\s\S]*?<!-- \/evox-procedure -->/, '<!-- evox-procedure:v1 -->\n' + block + '\n<!-- /evox-procedure -->');
-        } else {
-          next = cur + (cur.endsWith('\n') || !cur ? '' : '\n') + '\n<!-- evox-procedure:v1 -->\n' + block + '\n<!-- /evox-procedure -->\n';
-        }
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, next, 'utf8');
-        out.push('  ✓ 已写入。该项目的 agent 每个会话都会看到此规程（T1–T5）。');
-      } catch (e) { out.push('  ✗ 写入失败: ' + String(e.message || e)); }
-    } else {
-      out.push('  （演练未落盘；确认无误加 --yes）');
+  case 'export-evidence': {
+    // 0.23：本地证据自审查包——把门禁/签名/时间线/审核台账导出为可审查集合（任何团队审计自己的库用）。
+    const dest = argOf(rest, '--out') || path.join(os.homedir(), '.evomap', `evidence-export-${Date.now()}`);
+    fs.mkdirSync(dest, { recursive: true });
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    let copied = 0;
+    for (const f of ['error_candidates.jsonl', 'recall_calls.jsonl', 'pending_injections.jsonl', 'hits.jsonl', 'review.jsonl', 'genes.jsonl']) {
+      try { fs.copyFileSync(path.join(hitsDir, f), path.join(dest, f)); copied++; } catch {}
+      try { fs.copyFileSync(path.join(STORE_DIR, f), path.join(dest, f)); copied++; } catch {}
     }
-    console.log(out.join('\n'));
+    // 签名验证摘要
+    const genes = readGenes();
+    const signed = genes.filter((g) => g.sig);
+    const bad = signed.filter((g) => verifyGene(g).status !== 'verified');
+    fs.writeFileSync(path.join(dest, 'signature-summary.json'), JSON.stringify({
+      exported_at: new Date().toISOString(), genes_total: genes.length,
+      signed: signed.length, signature_failures: bad.length, failure_ids: bad.map((g) => g.id),
+    }, null, 2));
+    console.log(`[gene-share] 证据包已导出 → ${dest}（文件 ${copied} | 基因 ${genes.length} | 签名失败 ${bad.length}）`);
+    break;
+  }
+  case 'stats': {
+    // 0.23：本地使用统计——recall/命中/回填率（从本地台账读，无外发）
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const count = (f) => { try { return fs.readFileSync(path.join(hitsDir, f), 'utf8').split('\n').filter(Boolean).length; } catch { return 0; } };
+    const rc = count('recall_calls.jsonl'), pi = count('pending_injections.jsonl'), hf = count('hits.jsonl');
+    const genes = readGenes();
+    const lww = {}; for (const r of readReview()) lww[r.assetId] = r.state;
+    const approved = genes.filter((g) => String(lww[g.asset_id] || '').toLowerCase().includes('approv')).length;
+    console.log(`[gene-share] 本地使用统计（${hitsDir}）：`);
+    console.log(`  召回调用 ${rc} | 注入待回填 ${pi} | 回填 ${hf} | 回填率 ${pi ? Math.round((hf / pi) * 100) : '—'}%`);
+    console.log(`  库: ${genes.length} 条（已审核 ${approved}）`);
+    console.log('  注：回填=调用方确认注入有效；不回填的注入不计入效果统计。');
+    break;
+  }
+  case 'demo': {
+    // 0.23 U2：90 秒自演示——新用户零文档成本看到「经验继承」的完整瞬间。
+    // 只读设计（不加 --yes 不改任何用户状态；库空时提示先跑 starter）。
+    const { spawnSync: ss } = await import('node:child_process');
+    const self = process.argv[1];
+    console.log('── Pi EvoX demo：90 秒看懂经验继承 ──');
+    console.log('[1/3] 环境自检');
+    let r = ss(process.argv[0], [self, 'doctor'], { encoding: 'utf8' });
+    if (r.status !== 0) { console.log(r.stdout || 'doctor 未通过——先解决环境问题'); process.exit(r.status || 1); }
+    console.log('[2/3] 模拟一个编码报错（对靶召回）');
+    r = ss(process.argv[0], [path.join(path.dirname(self), 'evolver-recall.mjs'), '--error', "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc4"], { encoding: 'utf8' });
+    const recallOut = (r.stdout || '');
+    console.log(recallOut.trim().split('\n').slice(0, 6).join('\n'));
+    const hit = /\[#\d+\|/.test(recallOut);
+    console.log(hit
+      ? '  ↑ 上面的编号修法就是本机经验库对靶命中的结果——**下次同类报错，agent 会直接看到它**。'
+      : '  ↑ 本次无命中（库空或未对靶）——先跑 `starter` 装起步包，或沉淀一条自己的修法（`draft --error`）。');
+    console.log('[3/3] 下一步');
+    console.log('  - 看全库：light-cli.mjs info / timeline');
+    console.log('  - 接入宿主：light-cli.mjs install <claude-code|cursor|codex|agents-md>');
+    console.log('  - 沉淀你的第一条：light-cli.mjs draft --error "<真实报错>"');
+    break;
+  }
+  case 'install': {
+    // 0.23 U2：一键宿主接入——自动定位各宿主的指令文件并写入五触发点规程。
+    // 纪律同 install-snippet：默认演练，--yes 才写入；幂等（evox-procedure:v1 标记）。
+    const host = (positional[0] || argOf(rest, '--host') || '').toLowerCase();
+    const HOSTS = {
+      'claude-code': () => path.join(os.homedir(), '.claude', 'CLAUDE.md'),
+      'claude': () => path.join(os.homedir(), '.claude', 'CLAUDE.md'),
+      'cursor': () => path.join(process.cwd(), '.cursor', 'rules', 'pievox.md'),
+      'codex': () => path.join(os.homedir(), '.codex', 'AGENTS.md'),
+      'agents-md': () => path.join(process.cwd(), 'AGENTS.md'),
+      'windsurf': () => path.join(process.cwd(), '.windsurf', 'rules', 'pievox.md'),
+    };
+    if (!host || !HOSTS[host]) {
+      console.log('[gene-share] 用法: light-cli.mjs install <host> [--yes] [--file <覆盖路径>]');
+      console.log('  支持: ' + Object.keys(HOSTS).join(' | '));
+      console.log('  注: openclaw/hermes 走钩子，请用 install-hooks；其余宿主为规程文件接入。');
+      process.exit(1);
+    }
+    const auto = HOSTS[host]();
+    const fi = rest.indexOf('--file');
+    const target = fi >= 0 ? rest[fi + 1] : auto;
+    if (!target) { console.log(`[gene-share] ${host} 宿主走钩子接入：light-cli.mjs install-hooks`); process.exit(1); }
+    console.log(`[gene-share] 宿主 ${host} → ${target}`);
+    // 复用 install-snippet 的写入管线（直接落进同名 case 的共享函数）
+    runInstallSnippet(['--file', target, ...(rest.includes('--yes') ? ['--yes'] : [])]);
+    break;
+  }
+  case 'install-snippet': {
+    // 0.17.0：把操作规程写进指定项目的 AGENTS.md/CLAUDE.md（0.23 起管线抽为 runInstallSnippet，install --host 共用）。
+    runInstallSnippet(rest);
     break;
   }
   case 'install-hooks': {
@@ -791,7 +886,9 @@ switch (cmd) {
   case 'gene': {
     // 共享基因库（0.14.9）：export / submit / import，全部经脱敏闸门
     const { runGene } = await import('./gene_share.mjs');
-    process.exit(runGene(rest));
+    const __rg = runGene(rest);
+    if (__rg && typeof __rg.then === 'function') __rg.then((c) => process.exit(typeof c === 'number' ? c : 0));
+    else process.exit(typeof __rg === 'number' ? __rg : 0);
     break;
   }
   default:
