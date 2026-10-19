@@ -20,6 +20,9 @@
 - **可验证的效果**：配对对照实验（扣除重复执行基线 ≈-22%）；
 - **provenance 签名链**（0.21）：Ed25519 每机身份，池基因验签，篡改拒收。
 
+## 场景词表（基因分类，0.24）
+`ops-deploy`（部署/服务器）· `coding-debug`（编码/解析）· `release-publish`（发布/版本）· `api-integration`（API/webhook）· `git-workflow`（git/仓库）· `agent-runtime`（宿主/管线）——拉取/策展/退役按此分；召回对靶仍由 signals 自由匹配。
+
 ## 上手路径
 见 [`examples/quickstart.md`](../examples/quickstart.md)。Node ≥22，无其他依赖。
 
