@@ -394,7 +394,7 @@ function usage() {
   node code/light-cli.mjs export-evidence [--out <dir>]            # 本地证据自审查包（门禁/签名/台账）——0.23
   node code/light-cli.mjs stats                                    # 本地使用统计（召回/命中/回填率）——0.23
   node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
-  node code/light-cli.mjs gene pull --pool <路径|URL> [--tier t]   # 拉取基因池（文件/git URL 自动识别）——0.23
+  node code/light-cli.mjs gene pull --pool <路径|URL> [--tier t] [--scene s]  # 拉取基因池（可按场景过滤）——0.24
   node code/light-cli.mjs gene submit --bundle <file>              # 产出单文件提交包（发给维护者/提 PR）——0.23
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
@@ -729,9 +729,12 @@ switch (cmd) {
     break;
   }
   case 'list': {
-    const rows = ledger.list();
+    // 0.24 场景过滤：list --scene <名> 只看该场景（category 受控词表）
+    const sceneFilter = argOf(rest, '--scene') || null;
+    const rows = ledger.list().filter((r) => !sceneFilter || r.category === sceneFilter);
+    if (sceneFilter && !rows.length) { console.log(`（场景 ${sceneFilter} 下无基因；可用场景见 docs/overview.md 或池镜像）`); break; }
     if (!rows.length) { console.log('（台账为空）'); break; }
-    console.log('state       | id                        | category | strategy（截断）');
+    console.log('state       | id                        | category | strategy（截断）' + (sceneFilter ? `  [场景: ${sceneFilter}]` : ''));
     for (const r of rows) {
       console.log(`${String(r.state).padEnd(11)} | ${String(r.id || r.assetId).padEnd(25)} | ${String(r.category || '-').padEnd(8)} | ${r.strategy}`);
     }
