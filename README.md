@@ -99,14 +99,14 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 关键开关：`--fresh`（备份并清空资产库，保证单变量）、`--auto-approve`（跳过人工审核门，默认**保留人工审核**）、`--llm-refine`（蒸馏摘录无修法信号时自动 LLM 重写）、`--ext-inject`（改用 Pi 原生扩展钩子注入）。
 
 
-## 采用与反馈（Adoption）
+## 上手与反馈（Getting Started & Feedback）
 
-> **EN**: New here? Run the [5-minute quickstart](examples/quickstart.md) (Node >= 22, zero deps). Feedback: `light-cli feedback "<text>"` or GitHub Discussions. Running it for real? Report your instance (we need 2 external instances for 1.0): adoption-report template - registry in ADOPTERS.md.
+> **EN**: New here? Run the [5-minute quickstart](examples/quickstart.md) (Node >= 22, zero deps). Feedback: `light-cli feedback "<text>"` or GitHub Discussions. Sharing your setup helps us verify it works in the wild: adoption-report template - registry in ADOPTERS.md.
 
 - **5 分钟体验**：[`examples/quickstart.md`](examples/quickstart.md)（Node ≥22，零依赖，全程本地）；
-- **一页纸**：[`docs/one-pager.md`](docs/one-pager.md)（问题/方案/信任要素/局限）；
+- **项目概览**：[`docs/overview.md`](docs/overview.md)（问题/方案/安全属性/已知局限）；
 - **反馈**：`node code/light-cli.mjs feedback "<想说的话>"` 或 [GitHub Discussions](https://github.com/stwhwing/pi-evox-lab/discussions)；
-- **实例登记**：用起来了？[提交 adoption-report](.github/ISSUE_TEMPLATE/adoption-report.yml) 或 PR [ADOPTERS.md](ADOPTERS.md)——**1.0 判据需要 ≥2 个外部实例**（作者自己的不算）。
+- **实例登记**：用起来了？[提交 adoption-report](.github/ISSUE_TEMPLATE/adoption-report.yml) 或 PR [ADOPTERS.md](ADOPTERS.md)——分享你的部署配置，帮助验证它在真实环境中工作。
 
 ## FAQ
 
@@ -186,8 +186,8 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
-- **0.22.0（外部实例版）**：
-  **EN**: Adoption & promotion release (the last 1.0 criterion - >=2 external instances): ① **`light-cli feedback`** command (local留痕 + Discussions guidance, no telemetry); ② **`examples/quickstart.md`** 5-minute minimal loop (doctor -> starter -> targeted recall -> deposit -> info/timeline); ③ **`docs/one-pager.md`** pitch page (problem/solution/trust/limits/credits); ④ **`ADOPTERS.md`** instance registry + **GitHub issue templates** (adoption-report + feedback) making external instances reportable; ⑤ README adoption section. All materials bilingual. ⑥ **Gate hardening (2026-10-18 review)**: depositionGate now REJECTS AVOID-only half-products (no FIX) - REPAIR_SIGNAL_RE contained the word `avoid` so pit-without-fix strategies passed (3 truncated deposits were all this shape); ⑦ **Pool rebuild now applies safetyGate** (exported) before export - 3 genes with private-identity words were caught by the redline scan at pooling time; shareable marking must pass the gate first (redline word list is stricter than safetyGate).
+- **0.22.0（宿主接入与文档版）**：
+  **EN**: Release: feedback command + bilingual onboarding docs + gate hardening: ① **`light-cli feedback`** command (local log + Discussions guidance, no telemetry); ② **`examples/quickstart.md`** 5-minute minimal loop (doctor -> starter -> targeted recall -> deposit -> info/timeline); ③ **`docs/overview.md`** project overview (problem/solution/security properties/known limits/credits); ④ **`ADOPTERS.md`** + **GitHub issue templates** (adoption-report + feedback); ⑤ README getting-started section. All materials bilingual. ⑥ **Gate hardening (2026-10-18 review)**: depositionGate now REJECTS AVOID-only half-products (no FIX) - REPAIR_SIGNAL_RE contained the word `avoid` so pit-without-fix strategies passed (3 truncated deposits were all this shape); ⑦ **Pool rebuild now applies safetyGate** (exported) before export - 3 genes with private-identity words were caught by the redline scan at pooling time; shareable marking must pass the gate first (redline word list is stricter than safetyGate).
 - **0.21.0（签名与稳定版）**：
   **EN**: Provenance + stability release: ① **Ed25519 gene signing chain** (1.0 criterion) - deposits auto-signed with the machine identity (`~/.evomap/identity/`, private key 0600); pool imports verify signatures (tampered content REJECTED; unsigned legacy accepted); `identity` / `verify` commands. ② **Bounded IO retry with hard deadline** (stability feedback, two rounds) - transient errors only (EBUSY/EPERM/EACCES/ETIMEDOUT), max 3 attempts, 3s deadline, fail-open boundary preserved. ③ **SKILL.md 238 → 224 lines** (progressive feedback): four-gate details moved to advanced, acknowledgements trimmed, new-user reading path added, research.md marked "most users never need to open".
 - **0.20.3（审核取证版）**：
