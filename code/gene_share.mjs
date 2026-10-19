@@ -9,7 +9,9 @@
  *   默认 --tier community（一律待审）；仅当操作者显式信任某个自建池时才 --tier official（自动通过）。
  */
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -154,7 +156,7 @@ const acquirePoolLock = (dir) => {
 };
 const withPoolLock = (dir, fn) => { const lp = acquirePoolLock(dir); try { return fn(); } finally { if (lp) { try { fs.unlinkSync(lp); } catch {} } } };
 
-import { verifyGene } from './engine/light/identity.mjs';
+import { verifyGene, loadIdentity } from './engine/light/identity.mjs';
 
 const argOf = (a, n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const positional = (a) => a.filter((x, i) => !x.startsWith('--') && !(i > 0 && a[i - 1].startsWith('--')));
@@ -175,6 +177,21 @@ function cmdExport(args) {
 }
 
 function cmdSubmit(args) {
+  // 0.23 G2：--bundle <file> = 单文件提交包（shareable+已审核+过闸 基因 + keyid 署名头），
+  // 发给维护者（gene import 默认隔离）或提 PR；不自动推官方池（治理层在人）。
+  const bundle = argOf(args, '--bundle');
+  if (bundle) {
+    const { out, blocked, pending } = exportable(store.readGenes());
+    if (!out.length) { console.log('[gene-share] 无可提交基因（shareable+已审核+过闸 均为空）'); return 1; }
+    const identity = loadIdentity();
+    const header = { type: 'GeneBundle', generated_at: new Date().toISOString(), keyid: identity.keyId, count: out.length };
+    fs.mkdirSync(path.dirname(path.resolve(bundle)), { recursive: true });
+    fs.writeFileSync(path.resolve(bundle), JSON.stringify(header) + '\n' + out.map((g) => JSON.stringify(g)).join('\n') + '\n');
+    console.log(`[gene-share] 提交包已生成 → ${path.resolve(bundle)}（${out.length} 条基因，keyid=${identity.keyId}）`);
+    if (blocked.length) { console.log(`[gene-share] 被闸门拦截 ${blocked.length}（未包含）`); reportBlocked(blocked); }
+    console.log('[gene-share] 下一步：把该文件发给维护者（PR / issue 附件 / 文件交换）；维护者 gene import 后默认隔离待审。');
+    return blocked.length ? 2 : 0;
+  }
   const pool = argOf(args, '--pool') || POOL_DIR;
   const { out, blocked, pending } = exportable(store.readGenes());
   const dest = path.join(pool, 'genes.jsonl');
@@ -192,6 +209,74 @@ function cmdSubmit(args) {
   if (pending.length) console.log(`[gene-share] 待审未推池 ${pending.length} 条（池=已审核集合；先 approve 再推）: ${pending.slice(0, 5).map((p) => p.id + '(' + p.state + ')').join(', ')}${pending.length > 5 ? ' …' : ''}`);
   reportBlocked(blocked);
   return blocked.length ? 2 : 0;
+}
+
+// 0.23 G1：gene pull —— 从本地文件/git URL 拉取基因池。
+// 信任模型：官方镜像（--tier official 显式指定）导入 approved；默认 community（隔离待审）。
+// 签名验证始终执行：tampered → BLOCKED（0.21 语义）。
+// git 操作带 timeout + 有界重试（0.22.0 评测 stability「复杂网络场景容错待验证」的落实）。
+function resolvePoolSource(src) {
+  const isUrl = /^https?:\/\/|^git@/.test(src);
+  if (isUrl && /\.jsonl($|\?)/.test(src)) {
+    // 静态 jsonl 文件 URL（如 zyx.pink 镜像）→ HTTPS 下载（timeout 30s + 1 次重试）
+    const cache = path.join(os.homedir(), '.evomap', 'pool-cache');
+    fs.mkdirSync(cache, { recursive: true });
+    const dest = path.join(cache, crypto.createHash('sha256').update(src).digest('hex').slice(0, 12) + '.jsonl');
+    const fetchOnce = async () => {
+      const ac = typeof AbortSignal !== 'undefined' ? AbortSignal.timeout(30000) : undefined;
+      const res = await fetch(src, { signal: ac });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+    };
+    return (async () => {
+      let ok = false;
+      for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+        try { await fetchOnce(); ok = true; } catch (e) { if (attempt >= 2) { console.error(`[gene-share] 镜像下载失败（已重试）: ${e.message}`); return null; } Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000); }
+      }
+      console.log(`[gene-share] 镜像已下载 → ${dest}`);
+      return dest;
+    })();
+  }
+  if (!isUrl) {
+    if (!fs.existsSync(src)) { console.error(`[gene-share] 池源不存在: ${src}`); return null; }
+    if (fs.statSync(src).isDirectory()) {
+      const cand = path.join(src, 'genes.jsonl');
+      if (fs.existsSync(cand)) return cand;
+      console.error(`[gene-share] 目录中无 genes.jsonl: ${src}`); return null;
+    }
+    return src;
+  }
+  // git URL → 缓存目录 clone/pull（有界重试 + 超时）
+  const cache = path.join(os.homedir(), '.evomap', 'pool-cache');
+  fs.mkdirSync(cache, { recursive: true });
+  const dir = path.join(cache, crypto.createHash('sha256').update(src).digest('hex').slice(0, 12));
+  const run = (args2) => { const r = spawnSync('git', args2, { timeout: 30000, encoding: 'utf8' }); return r; };
+  let ok = false;
+  for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
+    if (fs.existsSync(path.join(dir, '.git'))) {
+      const r = run(['-C', dir, 'pull', '--ff-only']);
+      ok = r.status === 0;
+    } else {
+      const r = run(['clone', '--depth', '1', src, dir]);
+      ok = r.status === 0;
+    }
+    if (!ok && attempt < 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  }
+  if (!ok) { console.error(`[gene-share] git 拉取失败（已重试，timeout 30s）: ${src}`); return null; }
+  const cand = path.join(dir, 'genes.jsonl');
+  if (!fs.existsSync(cand)) { console.error(`[gene-share] 拉取成功但无 genes.jsonl: ${dir}`); return null; }
+  console.log(`[gene-share] 池已拉取 → ${dir}`);
+  return cand;
+}
+
+async function cmdPull(args) {
+  const src = positional(args)[0] || argOf(args, '--pool');
+  if (!src) { console.error('[gene-share] pull 需要池源（本地路径或 git URL），或 --pool <源>'); return 1; }
+  const tier = argOf(args, '--tier') || 'community';
+  const file = await resolvePoolSource(String(src));
+  if (!file) return 1;
+  console.log(`[gene-share] 以 tier=${tier} 导入（签名验证始终执行）`);
+  return cmdImport([file, '--tier', tier]);
 }
 
 function cmdImport(args) {
@@ -223,11 +308,14 @@ export function runGene(args) {
   const [sub, ...rest] = args;
   if (sub === 'export') return cmdExport(rest);
   if (sub === 'submit') return cmdSubmit(rest);
+  if (sub === 'pull') return cmdPull(rest);
   if (sub === 'import') return cmdImport(rest);
   console.log('用法: gene_share.mjs export|import|submit');
   return 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exit(runGene(process.argv.slice(2)));
+if (process.argv[1] && fs.realpathSync(path.resolve(process.argv[1])) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+  const __rc = runGene(process.argv.slice(2));
+  if (__rc && typeof __rc.then === "function") __rc.then((c) => process.exit(typeof c === "number" ? c : 0));
+  else process.exit(typeof __rc === "number" ? __rc : 0);
 }
