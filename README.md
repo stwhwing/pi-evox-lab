@@ -158,7 +158,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.22.0（版本轨迹：0.3.0 首发 → 0.22.0） |
+| 当前版本 | 0.23.0（版本轨迹：0.3.0 首发 → 0.23.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -186,6 +186,8 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.23.0（可信度与可采用性版）**：
+  **EN**: Credibility & adoptability release: ① **benchmark methodology**: trap experiments gain a long-context baseline arm (`--arm full-context` injects ALL approved genes unfiltered, per community critique that memory systems must be measured against long-context baselines); ② **one-command host integration**: `install <claude-code|cursor|codex|agents-md>` auto-locates host config files (dry-run default, --yes writes); ③ **90-second demo** command (read-only); ④ **gene pool workflow**: `gene pull --pool <path|url>` (file/git-URL auto-detect, signature-verified, official mirror approves) + `gene submit --bundle <file>` (single-file submission package with keyid header); ⑤ pool repo gains CC-BY-4.0 LICENSE + CONTRIBUTING.md; ⑥ IO retry/timeout made visible (doctor shows config, EVOX_IO_RETRY/EVOX_IO_DEADLINE_MS tunable) + bad-line warnings with line numbers and previews; ⑦ SKILL.md gains deployment & distribution section (download paths/host matrix/concurrency semantics); ⑧ internal experiment-phase comment markers cleaned. All materials bilingual.
 - **0.22.0（宿主接入与文档版）**：
   **EN**: Release: feedback command + bilingual onboarding docs + gate hardening: ① **`light-cli feedback`** command (local log + Discussions guidance, no telemetry); ② **`examples/quickstart.md`** 5-minute minimal loop (doctor -> starter -> targeted recall -> deposit -> info/timeline); ③ **`docs/overview.md`** project overview (problem/solution/security properties/known limits/credits); ④ **`ADOPTERS.md`** + **GitHub issue templates** (adoption-report + feedback); ⑤ README getting-started section. All materials bilingual. ⑥ **Gate hardening (2026-10-18 review)**: depositionGate now REJECTS AVOID-only half-products (no FIX) - REPAIR_SIGNAL_RE contained the word `avoid` so pit-without-fix strategies passed (3 truncated deposits were all this shape); ⑦ **Pool rebuild now applies safetyGate** (exported) before export - 3 genes with private-identity words were caught by the redline scan at pooling time; shareable marking must pass the gate first (redline word list is stricter than safetyGate).
 - **0.21.0（签名与稳定版）**：
