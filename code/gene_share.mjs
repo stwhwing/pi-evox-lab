@@ -216,7 +216,22 @@ function cmdSubmit(args) {
 // 信任模型：官方镜像（--tier official 显式指定）导入 approved；默认 community（隔离待审）。
 // 签名验证始终执行：tampered → BLOCKED（0.21 语义）。
 // git 操作带 timeout + 有界重试（0.22.0 评测 stability「复杂网络场景容错待验证」的落实）。
+// 0.25 维2：pool profiles——~/.evomap/pools.json 命名池源（官方镜像/团队池/本地交换）
+const POOLS_FILE = path.join(os.homedir(), '.evomap', 'pools.json');
+function resolvePoolName(name) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(POOLS_FILE, 'utf8'));
+    const p2 = cfg.pools && cfg.pools[name];
+    if (p2 && p2.source) return p2.source;
+    if (p2 && typeof p2 === 'string') return p2;
+  } catch {}
+  return null;
+}
+
 function resolvePoolSource(src) {
+  // 命名池优先（pools.json 有该名则用其 source）
+  const named = resolvePoolName(String(src));
+  if (named) { console.log(`[gene-share] 池「${src}」→ ${named}`); src = named; }
   const isUrl = /^https?:\/\/|^git@/.test(src);
   if (isUrl && /\.jsonl($|\?)/.test(src)) {
     // 静态 jsonl 文件 URL（如 zyx.pink 镜像）→ HTTPS 下载（timeout 30s + 1 次重试）
@@ -272,6 +287,7 @@ function resolvePoolSource(src) {
 
 async function cmdPull(args) {
   const src = positional(args)[0] || argOf(args, '--pool');
+  // 命名池由 resolvePoolSource 内解析
   if (!src) { console.error('[gene-share] pull 需要池源（本地路径或 git URL），或 --pool <源>'); return 1; }
   const tier = argOf(args, '--tier') || 'community';
   const scene = argOf(args, '--scene');
