@@ -1,5 +1,8 @@
 # 宿主钩子模板（可直接复制改路径即用）
 
+> **EN**: Hook examples for OpenClaw and Hermes. Both call the same recall implementation (`evolver-recall.mjs`) and share one gene library, so a lesson deposited on one host is available on the other. Installing hooks changes gateway behaviour: back up the unit file before editing, and re-run the doctor's allowlist check afterwards.
+
+
 `SKILL.md` 的「宿主接入契约」讲的是**原则**；这里是**可直接复制的代码**。
 两个模板都取自真实运行中的实现（已剥离环境细节），保留了对靶、零注入、异常兜底三条纪律。
 
