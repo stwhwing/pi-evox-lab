@@ -211,3 +211,26 @@ light-cli evidence <gene_id>  # 审核取证（ approve 前自动执行；也可
 - 修法注入是**软提示**（system prompt），遵从度模型相关；守卫保证噪声不入库不出库，但不承诺 100% 避坑；
 - `tool_result` 失败点教学（扩展桥内）只在「策略注入后仍踩坑」时提供增量，价值在长时运行场景；
 - 并发锁覆盖 JSONL 台账与池 staging 写入；其他文件操作的原子性仍在 0.21 评估范围（stability 评测点名）。
+
+## 模块调用关系图（0.27）
+
+```
+   宿主钩子/手工 →  evolver-recall.mjs（召回+回填）
+                          │ import
+   用户 CLI     →  light-cli.mjs（唯一入口，子命令 switch）
+                          │
+                          ▼
+              ┌───────────────────────────┐
+              │      engine/light/*      │  ← 引擎层（零依赖）
+              │  store.mjs   账本读写（withLock/重试/埋点落点）
+              │  distill.mjs 基因构造 + 四道守卫
+              │  guards.mjs  注入前 ABF 扫描
+              │  identity.mjs Ed25519 签名/验签 + license token
+              │  ledger.mjs  审核台账（LWW 裁定）
+              └───────────┬───────────────┘
+                          │ 被复用，不重复实现
+      gene_share.mjs（池协作 export/import/pull/submit）──┘
+      pi_evolve.mjs（流程 C 实验编排，研究专用）
+```
+
+**读图要点**：用户只经 `light-cli.mjs` / `evolver-recall.mjs` 进入；引擎层是唯一实现——**改引擎行为只需改一处，所有入口同时生效**；`code/engine/light/store.mjs` 是账本与埋点的唯一落点（0.27 起 timeline 默认落在技能根 `experiments/`）。
