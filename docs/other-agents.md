@@ -1,5 +1,8 @@
 # 在其他 Agent 宿主中接入 Pi × EvoX Loop
 
+> **EN**: Manual integration for hosts without native hooks (any agent that reads an instruction file): paste the five trigger points (T1-T5) into the host's instruction file, or run the recall command as a pre-step of your workflow. This path is the weakest but most universal one; see `docs/cross-machine.md` for named pools and multi-host behaviour.
+
+
 > 本 skill 的两条核心流程（A 召回 / B 沉淀）是**纯 CLI**，与宿主无关——任何能执行命令的 agent 都可以用。
 > 宿主差异只体现在**注入方式**：如何把召回结果送进 agent 的上下文。本文给出 5 种宿主模式的最小接入方案。
 
