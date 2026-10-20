@@ -1,6 +1,6 @@
 {
   "name": "pi-evox-lab",
-  "version": "0.27.0",
+  "version": "0.28.0",
   "private": true,
   "description": "Experience-inheritance runtime for coding agents: recall validated fixes, deposit new ones, with a built-in zero-dependency engine (evolver optional) and a controlled experiment harness.",
   "type": "module",
@@ -19,5 +19,17 @@
   "optionalDependencies": {
     "@earendil-works/pi-coding-agent": "0.74.2",
     "@evomap/evolver": "2.0.30"
-  }
+  },
+  "keywords": [
+    "experience-inheritance",
+    "lessons",
+    "recall",
+    "agent-memory",
+    "prompt-injection-guard",
+    "gene-pool",
+    "skill",
+    "pi-evox",
+    "evolver",
+    "provenance"
+  ]
 }
