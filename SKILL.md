@@ -174,7 +174,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **并发语义**（三层）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。多宿主并行时按 gene_id 寻址（0.18 起），不用位置序号。
 - **命名池（0.25）**：`~/.evomap/pools.json` 定义命名池源（`{"pools":{"official":"<url>","team":"<git-url>"}}`），`gene pull official` 按名拉取；已拉池缓存在 `~/.evomap/pool-cache/`。
 - **效果量化（0.25）**：`light-cli.mjs report` 周报（L1 活性/L2 回填率/L3 错误家族复发，`--json` 可机读）；`recall --record "<结论>"` 把验证结论回填生产账本；`draft/distill --commit` 自动写 deposit 事件。
-- **许可验证（0.25）**：`light-cli.mjs license verify <token>` 验证 Ed25519 签名许可（发行方公钥随包 `assets/issuer-pub.pem`）；许可机制本身开源，便于任何发行方接入。
+- **许可验证（0.25）**：`light-cli.mjs license verify <token>` 验证 Ed25519 签名许可（发行方公钥随包 `assets/issuer-pub.txt（ClawHub/GitHub 0.25.0 首发的 .pem 版同样兼容）`）；许可机制本身开源，便于任何发行方接入。
 - **IO 重试语义**：文件读写对瞬态错误（EBUSY/EPERM/EACCES/ETIMEDOUT）自动重试（默认 3 次/截止 3s，`EVOX_IO_RETRY`/`EVOX_IO_DEADLINE_MS` 可调）；非瞬态错误不重试；重试是优化不是门——绝不因重试机制阻塞调用方（fail-open）。
 
 ## 安全：四道门（0.16.0）
