@@ -21,10 +21,11 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
-import { STORE_DIR, readGenes, readReview, approvedAssetIds } from './engine/light/store.mjs';
+import { STORE_DIR, readGenes, readReview, approvedAssetIds, appendDeposit } from './engine/light/store.mjs';
 const SKILL_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
 import { signGene, verifyGene, loadIdentity, privateKeyPath } from './engine/light/identity.mjs';
 import { SIGNAL_RULES, AVOID_TEMPLATES, proposeFromError } from './engine/light/distill.mjs';
+import { signLicense, verifyLicense } from './engine/light/identity.mjs';
 import { depositionGate } from './engine/light/guards.mjs';
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -393,8 +394,10 @@ function usage() {
   node code/light-cli.mjs demo                                     # 90 秒自演示（只读，不改状态）——0.23
   node code/light-cli.mjs export-evidence [--out <dir>]            # 本地证据自审查包（门禁/签名/台账）——0.23
   node code/light-cli.mjs stats                                    # 本地使用统计（召回/命中/回填率）——0.23
+  node code/light-cli.mjs report [--days N] [--json]                # 效果周报（L1 活性/L2 回填/L3 家族复发）——0.25
+  node code/light-cli.mjs license verify <token>                    # 验证 Ed25519 签名许可——0.25
   node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
-  node code/light-cli.mjs gene pull --pool <路径|URL> [--tier t] [--scene s]  # 拉取基因池（可按场景过滤）——0.24
+  node code/light-cli.mjs gene pull --pool <路径|URL|命名> [--tier t] [--scene s]  # 拉取基因池（命名池/场景过滤）——0.25
   node code/light-cli.mjs gene submit --bundle <file>              # 产出单文件提交包（发给维护者/提 PR）——0.23
   node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
@@ -446,6 +449,25 @@ function doctor() {
     if (!c.ok) console.log(`      → 修正：${c.fix}`);
   }
   console.log(`  IO 重试: 瞬态错误 ${parseInt(process.env.EVOX_IO_RETRY || '3', 10) || 3} 次 / 截止 ${parseInt(process.env.EVOX_IO_DEADLINE_MS || '3000', 10) || 3000}ms（EVOX_IO_RETRY / EVOX_IO_DEADLINE_MS 可调）`);
+  // 0.25 维3：推送就绪提示（shareable+approved 且未入官方池 ≥3 条时提醒——不自动外发）
+  try {
+    // 池基线：EVO_POOL_DIR 显式指定，或 ~/.evomap/pool-cache/ 的已缓存池文件（用户 pull 过就有）
+    let poolIds = new Set();
+    const cacheDir = path.join(os.homedir(), '.evomap', 'pool-cache');
+    try {
+      const envDir = process.env.EVO_POOL_DIR;
+      const files = envDir ? [path.join(envDir, 'genes.jsonl')] : (fs.existsSync(cacheDir) ? fs.readdirSync(cacheDir).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(cacheDir, f)) : []);
+      for (const pf of files) {
+        for (const l of fs.readFileSync(pf, 'utf8').split('\n').filter(Boolean)) {
+          try { poolIds.add(JSON.parse(l).asset_id); } catch {}
+        }
+      }
+    } catch {}
+    const genes = readGenes();
+    const lww = {}; for (const r of readReview()) lww[r.assetId] = r.state;
+    const ready = genes.filter((g) => g.shareable === true && String(lww[g.asset_id] || '').toLowerCase().includes('approv') && !poolIds.has(g.asset_id));
+    if (ready.length >= 3) console.log(`  推送就绪：${ready.length} 条已审核可共享基因尚未入池 → gene submit --bundle <file> 产出提交包（人工发送，不自动外发）`);
+  } catch { /* 提示失败不影响自检 */ }
   console.log(failed.length ? `\n自检未通过 ${failed.length} 项，请先修正后再用本技能（日常 recall / 沉淀不受影响）。` : `\n✓ 全部就绪，可正常使用 recall / 沉淀。`);
   process.exit(failed.length ? 1 : 0);
 }
@@ -492,6 +514,7 @@ switch (cmd) {
     signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
     const written = appendGene(gene);
     if (written) {
+      appendDeposit({ gene_id: gene.id, category: gene.category || 'repair', scene: gene.category, state: autoApproveState(rest), source: 'distill' });
       const st = autoApproveState(rest);
       appendReview({ assetId: gene.asset_id, state: st, reason: st === 'approved' ? (process.stdout.isTTY ? 'auto-approved (own library)' : 'auto-approved (explicit --auto-approve)') : (process.stdout.isTTY ? 'manually distilled — review before use' : 'non-interactive deposit — review before use') });
     }
@@ -536,7 +559,8 @@ switch (cmd) {
       if (!gate.ok) fail('沉淀质检未通过：' + gate.reason, { code: 1, hint: 'gate=' + gate.kind + '；修正后重新 distill/draft --commit' });
       signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
       const written = appendGene(gene);
-      if (written) appendReview({ assetId: gene.asset_id, state: autoApproveState(rest), reason: autoApproveState(rest) === 'approved' ? 'auto-approved (own library)' : 'guided draft — review before use' });
+      if (written) { appendDeposit({ gene_id: gene.id, category: gene.category || 'repair', scene: gene.category, state: autoApproveState(rest), source: 'draft' });
+      appendReview({ assetId: gene.asset_id, state: autoApproveState(rest), reason: autoApproveState(rest) === 'approved' ? 'auto-approved (own library)' : 'guided draft — review before use' }); }
       console.log(`\n${raw}${written ? '' : '\n（asset 已存在，跳过）'}`);
       if (written) {
         const st2 = autoApproveState(rest);
@@ -754,6 +778,82 @@ switch (cmd) {
   case 'snippet': {
     // 给**没有钩子机制**的 Agent 用：输出一段可直接粘进 AGENTS.md / CLAUDE.md / 系统提示的操作规程。
     console.log(procedureText());
+    break;
+  }
+  case 'license': {
+    // 0.25 维1：license 签发（维护者）/验证（用户）。token=Ed25519 签名的 JSON 载荷。
+    const sub2 = positional[0] || '';
+    if (sub2 === 'issue') {
+      const to = argOf(rest, '--to') || 'unnamed';
+      const tier = argOf(rest, '--tier') || 'team-monthly';
+      const days = parseInt(argOf(rest, '--days') || '30', 10) || 30;
+      const id = loadIdentity();
+      const payload = { iss: 'pi-evox-loop', sub: to, tier, iat: new Date().toISOString(), exp: new Date(Date.now() + days * 86400000).toISOString() };
+      const token = signLicense(payload, id.privateKey);
+      console.log(`[gene-share] license token 已签发（keyid=${id.keyId}）：`);
+      console.log(token);
+      console.log(`  载荷: sub=${to} tier=${tier} exp=${payload.exp.slice(0, 10)}`);
+      console.log('  （分发给购买方；对方用 license verify <token> 验证；公钥随包分发 assets/issuer-pub.pem）');
+    } else if (sub2 === 'verify') {
+      const token = positional[1] || argOf(rest, '--token');
+      if (!token) fail('用法: light-cli.mjs license verify <token>');
+      const pubPath = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'assets', 'issuer-pub.pem');
+      let pub = null;
+      try { pub = fs.readFileSync(pubPath, 'utf8'); } catch {}
+      const r = pub ? verifyLicense(token, pub) : { ok: false, reason: 'assets/issuer-pub.pem 缺失（发行方公钥未随包分发）' };
+      if (r.ok) {
+        const p2 = r.payload;
+        const expired = p2.exp && Date.parse(p2.exp) < Date.now();
+        console.log(`[gene-share] ✓ 签名有效：sub=${p2.sub} tier=${p2.tier} exp=${String(p2.exp || '').slice(0, 10)}${expired ? '（已过期）' : ''}`);
+        process.exit(expired ? 1 : 0);
+      } else {
+        console.error(`[gene-share] ✗ 验证失败：${r.reason}`);
+        process.exit(1);
+      }
+    } else {
+      console.log('用法: light-cli.mjs license issue --to <购买方> --tier <team-monthly|team-annual|team-lifetime> [--days N]');
+      console.log('      light-cli.mjs license verify <token>');
+    }
+    break;
+  }
+  case 'report': {
+    // 0.25 维4：效果量化周报——从生产账本聚合 L1 活性/L2 回填/L3 家族复发雏形。
+    const jsonOut = rest.includes('--json');
+    const days = parseInt(argOf(rest, '--days') || '7', 10) || 7;
+    const since = Date.now() - days * 86400000;
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const readJ = (f) => { try { return fs.readFileSync(path.join(hitsDir, f), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
+    const tsOf = (r) => Date.parse(r.ts || r.at || 0) || 0;
+    const inWin = (r) => tsOf(r) >= since;
+    const recalls = readJ('recall_calls.jsonl').filter(inWin);
+    const pend = readJ('pending_injections.jsonl').filter(inWin);
+    const deps = readJ('deposits.jsonl').filter(inWin);
+    const verifs = readJ('verifications.jsonl').filter(inWin);
+    const errs = readJ('error_candidates.jsonl').filter(inWin);
+    const allErrs = readJ('error_candidates.jsonl');
+    const targeted = recalls.filter((r) => r.targeted).length;
+    const injectedTotal = recalls.reduce((a, r) => a + (r.injected || 0), 0);
+    const sceneDist = {};
+    for (const d of deps) { const sc = d.category || 'repair'; sceneDist[sc] = (sceneDist[sc] || 0) + 1; }
+    // L3 雏形：错误家族复发（本窗 vs 全量家族分布）
+    const famOf = (r) => { try { let raw = r.snippet || r.error || ''; try { const j = JSON.parse(raw); raw = [j.stderr, j.stdout, j.message, j.error].filter(Boolean).join(' '); } catch {} return proposeFromError(String(raw).slice(0, 300), { tool: r.tool || '', context: '' }).family; } catch { return 'unknown'; } };
+    const famWin = {};
+    for (const e of errs) { const f = famOf(e); famWin[f] = (famWin[f] || 0) + 1; }
+    const famAll = {};
+    for (const e of allErrs) { const f = famOf(e); famAll[f] = (famAll[f] || 0) + 1; }
+    const rep = {
+      window_days: days, generated_at: new Date().toISOString(),
+      L1_activity: { recall_calls: recalls.length, targeted, injections: injectedTotal, deposits: deps.length, by_scene: sceneDist },
+      L2_relevance: { pending_injections: pend.length, verifications: verifs.length, backfill_rate: pend.length ? Math.round((verifs.length / pend.length) * 100) + '%' : 'n/a' },
+      L3_families: { window: famWin, all_time: famAll },
+    };
+    if (jsonOut) { console.log(JSON.stringify(rep, null, 2)); break; }
+    console.log(`[gene-share] 效果周报（近 ${days} 天，账本: ${hitsDir}）`);
+    console.log(`  L1 活性：召回 ${recalls.length} 次（对靶 ${targeted}）｜注入 ${injectedTotal} 条次｜沉淀 ${deps.length} 条${Object.keys(sceneDist).length ? '（' + Object.entries(sceneDist).map(([k, v]) => k + '×' + v).join(', ') + '）' : ''}`);
+    console.log(`  L2 相关性：注入待回填 ${pend.length}｜验证记录 ${verifs.length}｜回填率 ${rep.L2_relevance.backfill_rate}`);
+    const famEntries = Object.entries(famWin).sort((a, b) => b[1] - a[1]);
+    console.log(`  L3 错误家族（本窗）: ${famEntries.length ? famEntries.map(([k, v]) => k + '×' + v).join(', ') : '无'}`);
+    console.log('  注：L3 的「入库前后复发对比」需家族基因到位后由 report 的 all_time 分布演化观察；回填用 --register-hit 提升 L2 精度。');
     break;
   }
   case 'export-evidence': {
