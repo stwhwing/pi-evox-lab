@@ -52,3 +52,45 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
 - 错误统计用精确口径（`isError=true` 的 toolResult），不要用字符串计数（文本提及会混入）；
 - token 对比必须扣除重复执行效应基线（实测 ≈ -22%）——绝对降幅 ≠ 继承收益；
 - 完整 22 节实验报告（含 GBK/JSON 两陷阱的 N=5/N=3 统计证据）：[`experiment-report.md`](experiment-report.md)。
+
+## 可操作手册（命令级，0.26 补）
+
+> 绝大多数用户不需要本节；研究/复现实验时按此执行。
+
+### 1. 前置
+```bash
+node -v                    # Node >= 22
+npm install                # Pi CLI（实验模式 C 必需）+ 可选 evolver
+python3 --version           # 陷阱生成器需要 Python 3
+export AGNES_CN_API_KEY=... # 或 DEEPSEEK_API_KEY（任一 OpenAI 兼容端点）
+# 国内端点示例见 docs/providers.md
+```
+
+### 2. 三臂对照实验（含 long-context 基线臂）
+```bash
+# 生成陷阱（确定性失败环境）
+python traps/make_encoding_trap.py          # GBK 无效 UTF-8
+python traps/make_json_trap.py              # 非法 JSON
+
+# 运行实验：R1 无注入 → R2 注入（--arm 控制注入臂）
+node code/pi_evolve.mjs <repo模板目录> <任务文件> \
+  --provider agnes-cn --model agnes-3.0-flash \
+  --api-key \$AGNES_CN_API_KEY --rounds 2 [--arm targeted|full-context]
+```
+- `--arm targeted`（默认）：按对靶注入（继承效应）
+- `--arm full-context`：灌入**全部**已审核基因（长上下文基线臂——评测要求的效果声明必须带此对照）
+
+### 3. 指标口径（报告必带三列）
+| 列 | 含义 | 陷阱 |
+|---|---|---|
+| 准确率 | 任务是否修复（GBK：解码是否成功） | 只看"跑完"不算修复 |
+| token | 各臂用量 | **必须配无注入对照组**——重复执行本身有 ≈-22% 学习效应 |
+| 净收益 | 注入 − 对照 | 直接报降幅会把学习效应算成继承 |
+
+### 4. 复现历史实验
+- 编码陷阱：decode errors 11→4、token -55%（[A] 2026-09 私有节点）
+- 非法 JSON：JSONDecodeError 14→3、token -53%
+- 长上下文基线臂：0.25 起支持，结论见 `docs/experiment-report.md`
+
+### 5. 何时不该做实验
+生产环境；模型可能自主绕过的陷阱（BOM 类，命中率不可靠）；无对照组的单臂对比。
