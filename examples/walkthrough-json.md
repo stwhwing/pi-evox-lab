@@ -1,5 +1,8 @@
 # 完整示例走查：JSONL 被当单个 JSON 解析 → 经验继承生效
 
+> **EN**: Walkthrough for the invalid-JSON trap: how the trap is generated, what the agent sees, which fix gets deposited, and how the fix is recalled on the next run. Pairs with `examples/walkthrough-encoding.md` (GBK encoding trap).
+
+
 > 与 `walkthrough-gbk.md` 平行，这里演示**数据格式类**陷阱（而非编码类）的完整闭环。
 > 命令均在仓库根目录执行；未安装依赖先见 SKILL.md 的「首次运行 3 步就绪」。
 
