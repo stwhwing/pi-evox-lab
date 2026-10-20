@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.25.0
+version: 0.26.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -219,14 +219,13 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 > **EN**: Anti-pattern quick list - each row explains the MECHANISM, not just the symptom. Full 14-item catalog with [A] evidence: `docs/common-mistakes.md`. Key ones: success-summary strategies are noise (+36pp worse than nothing), model-may-fail traps have unreliable hit rates, token deltas need a no-injection control group (~-22% repeat-execution baseline), error counting must use authoritative flags (isError=true), cold start needs flow-B deposits first.
 > 每条附「**为什么会错**」——讲机制而非现象。完整清单（含更多条目）见 [`docs/common-mistakes.md`](docs/common-mistakes.md)。
 
-| 错误做法 | 为什么会错（机制） | 后果 | 正确做法 |
-|----------|--------------------|------|----------|
-| 注入「成功总结」型 strategy | 软提示里「结论」对智能体是零信息；只有**可执行动作**能改变下一轮行为 | 守卫过滤 / 等效噪声，比不注入更差（实测 +36pp） | 写成可执行修法（含参数/命令/编码） |
-| 用「模型可能犯错」型陷阱做实验（BOM、`int("120.0")`） | 陷阱可靠性是「陷阱 × 模型」联合属性——模型可能自主绕过 | 命中率不可控（实测 0/3），结论不可复现 | 改用「环境必然失败」型（无效 UTF-8、非法 JSON） |
-| token 降幅直接当继承收益 | 重复执行本身有学习效应（≈ -22%），不设对照组无法剥离基因净贡献 | 把重复执行效应误算成继承 | 设无注入对照组，报告净收益 |
-| 用字符串计数统计错误 | 正文「提到 error」≠「真的报错」 | 把文本提及误计为错误 | 用精确口径：`isError=true` 的 toolResult |
-| 冷启动就期待避坑效果 | 召回是「对靶注入」，空库时物理上无可注入修法 | 空库无修法，误判工具无效 | 先按流程 B 沉淀，价值随使用复利增长 |
-| 在生产环境开 `--auto-approve --llm-refine` | 人工审核门是唯一质量闸，跳过即让未复核的 LLM 改写直达注入 | 未复核内容直接注入 | 保留人工审核门；演示时知悉风险 |
+| 错误做法 | 为什么会错（机制） | 正确做法 |
+|----------|--------------------|----------|
+| 注入「成功总结」型 strategy | 软提示里「结论」对智能体零信息；只有**可执行动作**改变下一轮行为（等效噪声 +36pp） | 写成可执行修法（含参数/命令/编码） |
+| 冷启动就期待避坑效果 | 召回是「对靶注入」，空库时物理上无可注入修法 | 先按流程 B 沉淀，价值复利增长 |
+| 生产环境开 `--auto-approve --llm-refine` | 人工审核门是唯一质量闸，跳过即让未复核内容直达注入 | 保留人工审核门 |
+
+> 其余条目（陷阱类型选择、对照组设计、错误统计口径、跨机协作等）见 [`docs/common-mistakes.md`](docs/common-mistakes.md)（每条带 🔧现行/✅已修复 状态标注）；跨机与命名池工作流见 [`docs/cross-machine.md`](docs/cross-machine.md)。
 
 ## 安全与数据外发声明（精简版）
 
