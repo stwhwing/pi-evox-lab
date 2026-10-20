@@ -205,7 +205,7 @@ const QUERY = (() => {
 	// 旧版把裸位置参数（如 `evolver-recall.mjs "处理 GBK 报错"`）静默忽略，回落成
 	// 「按入库顺序注入尾部 N 条」——看似有结果实则与当前任务无关，非开发者极难察觉。
 	// 现把首个裸位置参数提升为 query 并提示规范写法，消除该静默 footgun。
-	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error', '--gene'];
+	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error', '--gene', '--record'];
 	const consumed = new Set();
 	for (const f of VALUED) {
 		const i = argv.indexOf(f);
@@ -521,6 +521,19 @@ function recall() {
 	picked.forEach((it, i) => {
 		console.log(`[#${i + 1}|${it.id}] [${it.category}] ${it.text}`);
 	});
+	// 0.25：--record "<结论>" —— 把隔离测试/验证结论回填生产账本（A5：狗粮证据落隔离目录即丢失）。
+	 const ri = process.argv.indexOf('--record');
+	if (ri >= 0) {
+		const note = process.argv[ri + 1] ?? '';
+		try {
+			fs.mkdirSync(HITS_DIR, { recursive: true });
+			fs.appendFileSync(path.join(HITS_DIR, 'verifications.jsonl'), JSON.stringify({
+				ts: new Date().toISOString(), kind: 'verification', note,
+			 query: QUERY, top: picked.slice(0, 3).map((x) => x.id), injected: picked.length,
+			}) + '\n');
+			console.log(`[pi-evox] 验证结论已回填生产账本（verifications.jsonl）：${note}`);
+		} catch (e) { console.error('[pi-evox] 验证结论回填失败：' + String(e.message || e)); }
+	}
 }
 
 /** 0.15.0 P0-3：--negate 回填「注入了但没起作用」——与 --register-hit 对称，闭合漏斗。 */
