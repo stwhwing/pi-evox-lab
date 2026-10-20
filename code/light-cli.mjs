@@ -797,9 +797,12 @@ switch (cmd) {
     } else if (sub2 === 'verify') {
       const token = positional[1] || argOf(rest, '--token');
       if (!token) fail('用法: light-cli.mjs license verify <token>');
-      const pubPath = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'assets', 'issuer-pub.pem');
+      // 发行方公钥：.pem（ClawHub/GitHub 已发版）或 .txt（skillhub 禁 .pem 扩展名）双兼容
+      const assetsDir = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'assets');
       let pub = null;
-      try { pub = fs.readFileSync(pubPath, 'utf8'); } catch {}
+      for (const ext of ['.pem', '.txt']) {
+        try { pub = fs.readFileSync(path.join(assetsDir, 'issuer-pub' + ext), 'utf8'); break; } catch {}
+      }
       const r = pub ? verifyLicense(token, pub) : { ok: false, reason: 'assets/issuer-pub.pem 缺失（发行方公钥未随包分发）' };
       if (r.ok) {
         const p2 = r.payload;
