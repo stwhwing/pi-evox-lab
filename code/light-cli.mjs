@@ -25,7 +25,7 @@ import * as ledger from './engine/light/ledger.mjs';
 import { STORE_DIR, readGenes, readReview, approvedAssetIds, appendDeposit } from './engine/light/store.mjs';
 const SKILL_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
 import { signGene, verifyGene, loadIdentity, privateKeyPath } from './engine/light/identity.mjs';
-import { SIGNAL_RULES, AVOID_TEMPLATES, proposeFromError } from './engine/light/distill.mjs';
+import { proposeFromError } from './engine/light/distill.mjs';
 import { signLicense, verifyLicense } from './engine/light/identity.mjs';
 import { depositionGate } from './engine/light/guards.mjs';
 
@@ -402,6 +402,9 @@ function usage() {
   node code/light-cli.mjs stats                                    # 本地使用统计（召回/命中/回填率）——0.23
   node code/light-cli.mjs report [--days N] [--json]                # 效果周报（L1 活性/L2 回填/L3 家族复发）——0.25
   node code/light-cli.mjs session open|close "<任务名/结论>"        # 会话围栏：open=自动 T1 召回+记账，close=收尾沉淀结论——0.27
+  node code/light-cli.mjs fix-signals [--apply]                      # 体检/展开无效中文 signal（召回永远匹配不上的）——0.28
+  node code/light-cli.mjs identity                                 # 本机签名身份（Ed25519 keyid/私钥路径）——0.21
+  node code/light-cli.mjs draft --error "<错>" --trigger "<动手前措辞>"  # 触发词展开成 signals（预防型经验动手前可召回）——0.28
   node code/light-cli.mjs license verify <token>                    # 验证 Ed25519 签名许可——0.25
   node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
   node code/light-cli.mjs gene pull --pool <路径|URL|命名> [--tier t] [--scene s]  # 拉取基因池（命名池/场景过滤）——0.25
@@ -554,15 +557,114 @@ switch (cmd) {
     }
     break;
   }
+  case 'fix-signals': {
+    // 0.28 S-4：清洗存量基因里的"死中文 signal"（>2 字中文在 CJK bigram 分词下永不可命中）
+    const { readGenes, appendGene, appendReview } = await import('./engine/light/store.mjs');
+    const { signGene } = await import('./engine/light/identity.mjs');
+    const { deadCjkSignals, expandTrigger, aliasStats } = await import('./engine/light/aliases.mjs');
+    const apply = rest.includes('--apply');
+    const genes = readGenes();
+    // 只统计**活跃**基因（台账 LWW 状态为 approved/quarantined 之外的已批准集合）——
+    // 历史被隔离的旧版本仍在文件里（审计留痕），但它们不参与召回，不该计入体检指标。
+    const { readReview } = await import('./engine/light/store.mjs');
+    const lww = {};
+    for (const r of readReview()) lww[r.assetId] = String(r.state || '').toLowerCase();
+    const active = genes.filter((g) => (lww[g.asset_id] || '').includes('approv'));
+    let touched = 0, fixed = 0;
+    for (const g0 of active) {
+      const dead = deadCjkSignals(g0.signals_match);
+      if (!dead.length) continue;
+      touched++;
+      const tokens = new Set();
+      let added = 0;
+      for (const s0 of g0.signals_match) {
+        // 「展开」= **替换**：多字中文 signal 本身不可命中，保留它只会让死信号永远归不了零
+        if (deadCjkSignals([s0]).length) {
+          const ex = expandTrigger(s0);
+          for (const t of ex.tokens) { if (!tokens.has(t)) { tokens.add(t); added++; } }
+        } else {
+          tokens.add(s0);
+        }
+      }
+      if (!added) continue;
+      fixed++;
+      if (!apply) continue;
+      const g = JSON.parse(JSON.stringify(g0));
+      g.signals_match = [...tokens];
+      g.scope = { ...(g.scope || {}), signals: [...tokens].map((s) => `capability:${s}`) };
+      const crypto = await import('node:crypto');
+      const digest = crypto.createHash('sha256').update(JSON.stringify({ strategy: g.strategy, signals: g.signals_match, at: Date.now() })).digest('hex');
+      g.asset_id = 'sha256:' + digest;
+      g.id = 'gene_manual_' + digest.slice(0, 8);
+      delete g.sig; delete g.keyid; delete g.pubkey; delete g.signed_at;
+      signGene(g);
+      if (appendGene(g)) {
+        appendReview({ assetId: g.asset_id, state: 'approved', reason: '0.28 fix-signals：死中文 signal 展开为可命中的 token（重签）' });
+        appendReview({ assetId: g0.asset_id, state: 'quarantined', reason: `0.28 fix-signals：被展开版取代（原 ${dead.length} 个死中文 signal）` });
+      }
+    }
+    const st = aliasStats();
+    console.log(`[gene-share] 死中文 signal 体检（活跃集 ${active.length} 条）：${touched} 条含死 signal，可展开 ${fixed} 条`);
+    // 去重：同一策略文本在活跃集里可能有多版本（历史展开留下的）——保留 signals 最全的一版，其余隔离
+    const byStrategy = new Map();
+    for (const g of active) {
+      const key = (g.strategy || []).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (!byStrategy.has(key)) byStrategy.set(key, []);
+      byStrategy.get(key).push(g);
+    }
+    let dupGroups = 0, dupQuarantined = 0;
+    for (const [, list] of byStrategy) {
+      if (list.length < 2) continue;
+      dupGroups++;
+      // 保留规则：**先看死信号数**（少者优先），再看 signals 完整度（多者优先）——
+      // 只按"signals 最多"保留会选中"追加版"（信号多但仍含死信号），把修复抵消掉。
+      const keep = list.reduce((a, b) => {
+        const da = deadCjkSignals(a.signals_match).length, db = deadCjkSignals(b.signals_match).length;
+        if (db !== da) return db < da ? b : a;
+        return (b.signals_match || []).length > (a.signals_match || []).length ? b : a;
+      });
+      for (const g of list) {
+        if (g.asset_id === keep.asset_id) continue;
+        if (!apply) { dupQuarantined++; continue; }
+        appendReview({ assetId: g.asset_id, state: 'quarantined', reason: '0.28 fix-signals：同内容旧版本（保留 signals 最全的一版）' });
+        dupQuarantined++;
+      }
+    }
+    if (dupGroups) console.log(`  同内容重复：${dupGroups} 组，${apply ? '已隔离' : '待隔离'} ${dupQuarantined} 条旧版本`);
+    console.log(`  概念表：${st.concepts} 概念 / ${st.enTokens} 英文 token / ${st.zhPhrases} 中文短语（${st.zhBigrams} 个 bigram 索引）`);
+    if (!apply) console.log('  （预览模式；加 --apply 执行展开+重签+旧版隔离）');
+    else console.log('  ✓ 已执行：展开并重签，旧 asset_id 已隔离');
+    break;
+  }
   case 'draft': {
     // 引导式草稿：从错误直接生成可编辑的 distill 草稿（预填 AVOID + anti_patterns），人只补 FIX。
     const errorText = flag('error');
     if (!errorText) fail('draft 需至少 --error "<错误文本>" 以自动抽信号', { hint: '用法：light-cli.mjs draft --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--commit]' });
     const proposed = proposeFromError(errorText, { tool: flag('tool', ''), context: flag('context', '') });
+    // 0.28 S-2：--trigger "<动手前的措辞>"（可多次）——把触发短语按概念表展开成 signals
+    //（英文 canonical + 中文 bigram 别名双写），使**预防型基因在动手前就能被召回**。
+    const triggerPhrases = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--trigger' && rest[i + 1]) triggerPhrases.push(rest[i + 1]);
+    }
+    let triggerInfo = null;
+    if (triggerPhrases.length) {
+      const { expandTrigger } = await import('./engine/light/aliases.mjs');
+      const tokens = new Set(proposed.signals);
+      const hitConcepts = new Set();
+      for (const ph of triggerPhrases) {
+        const ex = expandTrigger(ph);
+        for (const t of ex.tokens) tokens.add(t);
+        for (const c of ex.concepts) hitConcepts.add(c);
+      }
+      proposed.signals = [...tokens];
+      triggerInfo = { phrases: triggerPhrases, concepts: [...hitConcepts] };
+    }
     // 人可补 --strategy 覆盖（写完整的 AVOID+FIX）；缺省用预填占位符（需审核前补全）。
     const strategy = flag('strategy') || proposed.strategy;
     console.log('【引导草稿】从错误自动生成（预填 AVOID，请补 FIX 后审核）：');
     console.log(`  signals_match : ${proposed.signals.join(', ')}`);
+    if (triggerInfo) console.log(`  触发词展开    : ${triggerInfo.phrases.join(' / ')} → 概念 ${triggerInfo.concepts.join(', ') || '（无匹配概念，仅取原文 token）'}`);
     console.log(`  anti_patterns : ${proposed.antiPatterns.length ? proposed.antiPatterns.join(', ') : '（空·该信号族无无歧义单 token）'}`);
     console.log(`  负经验标签    : ${proposed.antiTag}`);
     console.log(`  summary       : ${proposed.summary}`);
