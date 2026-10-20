@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const STORE_DIR = process.env.EVO_STORE_DIR || path.join(os.homedir(), '.evomap', 'assets');
 export const GENES_PATH = path.join(STORE_DIR, 'genes.jsonl');
@@ -44,6 +45,17 @@ export function readJsonl(p, { warn = false } = {}) {
 
 // 0.24 场景受控词表（治理/拉取/策展用；召回对靶仍走 signals_match 自由信号）
 export const SCENES = ['ops-deploy', 'coding-debug', 'release-publish', 'api-integration', 'git-workflow', 'agent-runtime'];
+
+// 0.25：timeline deposit 事件（沉淀动作可审计——修 B4：draft/distill 落库不产生任何 timeline 事件的缺口）
+const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+export function appendDeposit(evt) {
+  try {
+    fs.mkdirSync(HITS_DIR, { recursive: true });
+    fs.appendFileSync(path.join(HITS_DIR, 'deposits.jsonl'), JSON.stringify({ ts: new Date().toISOString(), kind: 'deposit', ...evt }) + '\n');
+    return true;
+  } catch { return false; }
+}
+export function readDeposits() { return readJsonl(path.join(HITS_DIR, 'deposits.jsonl'), { warn: false }); }
 
 export const readGenes = () => readJsonl(GENES_PATH);
 export const readReview = () => readJsonl(REVIEW_PATH);
