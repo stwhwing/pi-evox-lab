@@ -17,6 +17,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as distill from './engine/light/distill.mjs';
@@ -87,12 +88,17 @@ const SYS_ERROR_HINTS = [
   [/EMFILE/, '同时打开的文件太多', '减少并发；或提高系统 ulimit -n'],
   [/ENOSPC/, '磁盘空间不足', '清理磁盘后重试'],
   [/EADDRINUSE/, '端口被占用', '换一个端口，或先停掉占用该端口的进程'],
-  [/JSON/i, 'JSON 解析失败（文件可能损坏或有坏行）', '经验库是 JSONL：坏行会被跳过；若整体损坏，从备份恢复'],
+  [/JSON/i, 'JSON 解析失败（文件可能损坏或有坏行）', '经验库是 JSONL（每行一个 JSON 对象）：坏行会被跳过；若整体损坏，从备份恢复'],
+  [/EBUSY/, '文件被其他进程占用（Windows 常见）', '关闭正在读写该文件的程序（如编辑器/同步盘）后重试；本技能对瞬态错误会自动重试 3 次'],
+  [/ETIMEDOUT|ESOCKETTIMEDOUT/, '网络操作超时', '检查网络/代理；或调大超时参数（见 docs/providers.md）'],
 ];
+// 0.27 A-2：系统错误码属 POSIX 英文术语，输出时附中文对照表指针——普通用户无需查外部文档
+const TERM_GLOSSARY_HINT = '（ENOENT=文件不存在｜EACCES/EPERM=权限不足｜EBUSY=文件占用｜JSON=数据格式｜POSIX=跨平台系统接口标准；术语对照见 docs/faq.md Q17）';
 
 function explainErr(err) {
   const raw = String((err && (err.stack || err.message)) || err);
   const head = raw.split('\n')[0];
+  console.log('  [术语对照]' + TERM_GLOSSARY_HINT);
   for (const [re, why, fix] of SYS_ERROR_HINTS) {
     if (re.test(head)) return { why, fix, head };
   }
@@ -395,6 +401,7 @@ function usage() {
   node code/light-cli.mjs export-evidence [--out <dir>]            # 本地证据自审查包（门禁/签名/台账）——0.23
   node code/light-cli.mjs stats                                    # 本地使用统计（召回/命中/回填率）——0.23
   node code/light-cli.mjs report [--days N] [--json]                # 效果周报（L1 活性/L2 回填/L3 家族复发）——0.25
+  node code/light-cli.mjs session open|close "<任务名/结论>"        # 会话围栏：open=自动 T1 召回+记账，close=收尾沉淀结论——0.27
   node code/light-cli.mjs license verify <token>                    # 验证 Ed25519 签名许可——0.25
   node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
   node code/light-cli.mjs gene pull --pool <路径|URL|命名> [--tier t] [--scene s]  # 拉取基因池（命名池/场景过滤）——0.25
@@ -429,6 +436,26 @@ function doctor() {
     fs.writeFileSync(probe, 'ok'); fs.rmSync(probe, { force: true });
   } catch (e) { storeOk = false; storeDetail = `${STORE_DIR} 不可写：${String(e.message).slice(0, 80)}`; }
   checks.push({ name: '经验库目录可写', ok: storeOk, detail: storeDetail, fix: '检查目录权限（Linux 用 chmod，Windows 检查只读属性 / 杀软拦截）' });
+  // 0.27 A-1：Python 3 前置检查（traps 生成器/流程 C 需要）——缺时给中文友好提示而非"命令找不到"
+  {
+    const probe = spawnSync('python3', ['-c', 'import sys;print(sys.version_info[0])'], { encoding: 'utf8' })
+      || spawnSync('python', ['-c', 'import sys;print(sys.version_info[0])'], { encoding: 'utf8' });
+    const major = probe.status === 0 ? parseInt(String(probe.stdout || '').trim(), 10) : 0;
+    checks.push({
+      name: 'Python 3（仅流程 C / traps 需要）', ok: major >= 3,
+      detail: major >= 3 ? `Python ${major}.x ✓` : '未检测到 Python 3',
+      fix: '装 Python 3（Windows: python.org 安装包勾选 Add to PATH；macOS/Linux: python3）。**只跑流程 A/B（召回/沉淀）无需 Python**',
+    });
+  }
+  // 0.27 B-2：timeline 落点自检——发现错位账本目录（如 0.25/0.26 的 HITS_DIR 层级缺陷）即提示
+  try {
+    const skillRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+    const suspects = [path.join(skillRoot, 'code', 'engine', 'experiments'), path.join(skillRoot, 'code', 'experiments')];
+    const found = suspects.filter((d) => fs.existsSync(path.join(d, 'deposits.jsonl')));
+    if (found.length) {
+      checks.push({ name: 'timeline 落点漂移', ok: false, detail: `发现错位账本目录：${found.join('、')}（0.25/0.26 的 HITS_DIR 层级缺陷）`, fix: `把其中的 deposits.jsonl 合并到 ${skillRoot}/experiments/ 后删除错位目录；新版（≥0.27）已修复默认落点` });
+    }
+  } catch { /* 自检失败不影响 doctor 主流程 */ }
   const hitsEnv = process.env.EVOX_HITS_DIR;
   checks.push({ name: '命中登记目录可达', ok: true, detail: hitsEnv ? hitsEnv : `默认 ${path.dirname(path.dirname(fileURLToPath(import.meta.url)))}/experiments（技能根，脱离 cwd）`, fix: '如需固定落点，设 EVOX_HITS_DIR 环境变量指向可写目录' });
   // 0.18：埋点散落检测——其他目录的 experiments/ 里有 evox 埋点时提示迁移（GameRemake 会话实测散落）
@@ -746,6 +773,42 @@ switch (cmd) {
     });
     console.log('  原则：候选只是线索；FIX 必须由你补全成可执行修法（占位符会被 depositionGate 拒绝）。');
     console.log(`  处理完毕：harvest --done <N>（已沉淀）或 harvest --dismiss <N>（无价值驳回，留痕）`);
+    break;
+  }
+  case 'session': {
+    // 0.27 会话围栏（让 T1 召回与收尾沉淀"跑不掉"）：open=开围栏并自动召回；close=收围栏（沉淀或显式声明无坑）
+    const hitsDir = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+    const sessionsFile = path.join(hitsDir, 'sessions.jsonl');
+    const sub = positional[0] || '';
+    const taskName = positional.slice(1).join(' ') || argOf(rest, '--task') || 'untitled';
+    const readSessions = () => { try { return fs.readFileSync(sessionsFile, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
+    const writeSession = (rec) => { try { fs.mkdirSync(hitsDir, { recursive: true }); fs.appendFileSync(sessionsFile, JSON.stringify({ ts: new Date().toISOString(), ...rec }) + '\n'); return true; } catch { return false; } };
+    if (sub === 'open') {
+      writeSession({ kind: 'session-open', task: taskName, cwd: process.cwd() });
+      console.log('[session] 围栏已开：' + taskName);
+      console.log('[session] → 自动执行 T1 召回（真实任务，落生产账本）：');
+      const r = spawnSync(process.argv[0], [path.join(path.dirname(fileURLToPath(import.meta.url)), 'evolver-recall.mjs'), '--query', taskName, '--record', taskName + '：session open 自动召回'], { encoding: 'utf8' });
+      process.stdout.write(r.stdout || '');
+      if (r.stderr) process.stderr.write(r.stderr);
+      console.log('[session] 提醒：收尾务必 `session close "<本轮结论>"`（踩坑先 draft 沉淀，无坑也要声明）——门禁会校验');
+      break;
+    }
+    if (sub === 'close') {
+      const note = positional.slice(1).join(' ') || argOf(rest, '--note') || '';
+      if (!note) fail('用法: light-cli.mjs session close "<本轮结论/无踩坑声明>"（必填——闭门账必须写结论）');
+      const since = Date.now() - 12 * 3600000;
+      let deposits = 0;
+      try { deposits = fs.readFileSync(path.join(hitsDir, 'deposits.jsonl'), 'utf8').split('\n').filter(Boolean).filter((l) => { try { return (Date.parse(JSON.parse(l).ts) || 0) >= since; } catch { return false; } }).length; } catch {}
+      writeSession({ kind: 'session-close', task: taskName, note, depositsInWindow: deposits });
+      console.log(`[session] 围栏已关：${taskName}`);
+      console.log(`  结论: ${note}`);
+      console.log(`  近 12h 沉淀事件: ${deposits} 条${deposits === 0 ? '（若本轮踩坑请先 draft --commit 再关门）' : ' ✓'}`);
+      break;
+    }
+    const rows = readSessions();
+    console.log('[session] 会话围栏（最近 10 条）：');
+    for (const r of rows.slice(-10)) console.log(`  ${(r.ts || '').slice(0, 19).replace('T', ' ')} | ${r.kind} | ${r.task}${r.note ? ' | ' + r.note : ''}`);
+    if (!rows.length) console.log('  （空——本项目任务请先 `light-cli.mjs session open "<任务名>"`）');
     break;
   }
   case 'doctor': {
