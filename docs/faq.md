@@ -89,3 +89,26 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 不会。0.21 起每台机器有 Ed25519 身份（`~/.evomap/identity/`，私钥 0600 不出本机）；沉淀的基因带 {sig, keyid, pubkey}，入池导入时验签——内容被篡改会被拒绝。无签名的老基因原样接受。查看本机身份：`light-cli identity`；验签：`light-cli verify <gene_id>`。
 **EN A15**: Ed25519 per-machine identity; genes carry {sig, keyid, pubkey}; pool imports verify - tampered content is rejected. Legacy unsigned genes pass. `light-cli identity` / `light-cli verify <gene_id>`.
 
+
+**Q17: 常见英文技术术语对照表（错误提示与文档共用）**
+**EN A17**: Chinese–English glossary for terms appearing in CLI errors and docs.
+
+| 英文术语 | 中文含义 | 出现在哪 |
+|---|---|---|
+| ENOENT | 文件/目录不存在 | 路径写错、库未初始化 |
+| EACCES / EPERM | 权限不足 | 只读文件、目录权限 |
+| EBUSY | 文件被占用（Windows 常见） | 编辑器/同步盘占用中 |
+| EISDIR | 目标是目录不是文件 | `--out` 等路径参数指错 |
+| ENOSPC | 磁盘空间不足 | 大库写入失败 |
+| ETIMEDOUT | 网络超时 | 端点不可达/代理 |
+| JSON / JSONL | 数据格式 / 每行一个 JSON 对象 | 经验库文件格式 |
+| POSIX | 跨平台系统接口标准 | chmod/ulimit 等术语出处 |
+| fail-closed | 失败即拒绝（宁可不通过） | 守卫/审核门语义 |
+| fail-open | 失败即放行（不阻塞调用方） | 文件锁超时等非关键路径 |
+| Ed25519 | 签名算法 | 基因签名链与许可 token |
+| asset_id | 基因资产标识（sha256:…） | 去重与审核台账键 |
+| keyid | 签名者身份短号 | 贡献归属与验签 |
+| T1–T5 | 五个触发点（召回/行动前/报错/修好/结束） | 使用规程 |
+| ABF | 对抗守卫（注入前扫描） | 安全门 |
+
+> 术语表由 `doctor`/`fail()` 的错误输出自动引用（输出末尾附「[术语对照]」行）；文档与 CLI 共用同一份，避免两处漂移。
