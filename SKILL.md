@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.27.0
+version: 0.28.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -171,9 +171,11 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **宿主接入**：`light-cli.mjs install <claude-code|cursor|codex|agents-md>`（自动定位配置文件写入规程，`--yes` 落盘）；OpenClaw/Hermes 用 `install-hooks`；
 - **基因池协作**：`gene pull --pool https://zyx.pink/pool/genes.jsonl --tier official` 从官方镜像拉取全池（签名验证，66+ 条策划基因）；`gene submit --bundle <file>` 产出提交包回传维护者（PR / issue 附件 / 文件交换）；导入默认隔离+验签；池仓库贡献条款见 CONTRIBUTING.md（CC-BY-4.0）；
 - **场景拉取**（0.24）：`gene pull --pool <URL> --scene <场景>` 只拉该场景子集；受控场景词表：`ops-deploy`（部署/服务器）/ `coding-debug`（编码/解析）/ `release-publish`（发布/版本）/ `api-integration`（API/webhook）/ `git-workflow`（git/仓库）/ `agent-runtime`（宿主/钩子/管线）；`gene list --scene <名>` 本地同粒度过滤；
-- **并发语义**（三层）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。多宿主并行时按 gene_id 寻址（0.18 起），不用位置序号。
+- **并发语义**（三层，**完整行为表见「五个触发点」节的"多宿主同时召回会发生什么"**）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。多宿主并行时按 gene_id 寻址（0.18 起），不用位置序号。
+- **召回打分与阈值（公开数值，0.28 补）**：每条候选基因的得分 = **signals 精确命中 +3/个** + **与基因正文 token 交集 +1/个** + 负载均衡偏置 **±2**（冷门基因上抬、热门下压；命中全 0 时不生效）；**低于阈值 2 分即不注入**（宁缺毋滥：只注入不对靶内容比不注入更差，实测 +36pp）。命中判定用与召回同一套分词：ASCII token（≥3 字符）+ 中文 **2 字二元词**（CJK bigram）——因此**多字中文短语写进 signals 是无效的**（见 `fix-signals`）。`--top` 默认注入条数见 `evolver-recall.mjs --help`。
 - **命名池（0.25）**：`~/.evomap/pools.json` 定义命名池源（`{"pools":{"official":"<url>","team":"<git-url>"}}`），`gene pull official` 按名拉取；已拉池缓存在 `~/.evomap/pool-cache/`。
 - **会话围栏（0.27）**：`light-cli.mjs session open "<任务名>"` 一步完成「T1 召回 + 记账」（落生产账本）；`session close "<本轮结论>"` 收尾记结论；`session` 查看围栏记录。**围栏让召回与沉淀可审计**：跳过召回或收尾沉淀，账本里没有配对的 open/close，外部构建门禁会拒绝构建。配套：`doctor` 检查埋点落点漂移。
+- **召回别名与触发词（0.28）**：`code/engine/light/aliases.json` 是概念别名表（concept → 英文 canonical + 中文别名短语）；①`draft --trigger "<动手前的措辞>"` 把触发短语展开成 signals（英文 canonical + 中文二元词**双写**）——预防型经验因此能在**动手前**被召回；②召回时中文 query 也会映射到英文 canonical（两种措辞都能命中）；③`light-cli.mjs fix-signals` 体检并展开存量基因里的**无效中文 signal**（>2 字在二元分词下永远匹配不上）。**打分公式与阈值不变**——语义只扩召回面，注入仍由确定性门决定。
 - **效果量化（0.25）**：`light-cli.mjs report` 周报（L1 活性/L2 回填率/L3 错误家族复发，`--json` 可机读）；`recall --record "<结论>"` 把验证结论回填生产账本；`draft/distill --commit` 自动写 deposit 事件。
 - **许可验证（0.25）**：`light-cli.mjs license verify <token>` 验证 Ed25519 签名许可（发行方公钥随包 `assets/issuer-pub.txt（ClawHub/GitHub 0.25.0 首发的 .pem 版同样兼容）`）；许可机制本身开源，便于任何发行方接入。
 - **IO 重试语义**：文件读写对瞬态错误（EBUSY/EPERM/EACCES/ETIMEDOUT）自动重试（默认 3 次/截止 3s，`EVOX_IO_RETRY`/`EVOX_IO_DEADLINE_MS` 可调）；非瞬态错误不重试；重试是优化不是门——绝不因重试机制阻塞调用方（fail-open）。
@@ -189,6 +191,17 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回 + 导入 + 导出 |
 | 4 | **脱敏闸门** | 会不会**泄私有内容**（IP/路径/密钥 → 拦截不出网） | 导出 + 导入 |
 
+> **四道门各自查什么、命中会怎样（0.28 补全——不必跳转 advanced.md 即可自足使用）**：
+>
+> | 门 | 具体扫什么 | 命中后的行为 |
+> |---|---|---|
+> | 修法守卫 | strategy 里是否有**可执行成分**（具体参数/命令/编码/路径等）；空话、"运行正确"式总结、只有结论没有动作 | **该基因不进入注入列表**（宁缺毋滥）；沉淀侧另有 depositionGate 在入库前就拒收同类内容 |
+> | 叙述守卫 | 是否为**旁白/流水账**（"我先打开文件，然后……"式叙述、复述日志） | 同样**不注入**；软提示里的旁白对智能体是零信息（实测等效噪声 +36pp，比不注入更差） |
+> | 注入守卫 | 是否含**提示词注入特征**（覆盖先前指令、对用户隐匿操作、伪装角色标记等，中英文变体；具体特征表见 `docs/advanced.md`，此处不复述以免文档本身触发扫描） | **不注入 + 导入/导出时拦截**；这是对抗"基因内容反过来操纵宿主"的主防线 |
+> | 脱敏闸门 | 是否含**私有内容**（内网 IP、绝对家目录、密钥/令牌、凭据、内部代号） | **导出/导入拦截，不出网**；沉淀时保留语义但中性化表述 |
+>
+> 门模块缺失时的降级：**导出/导入 fail-closed（拒绝执行）**；召回侧只跳过注入门、其余三门照常（只读路径不阻断使用者）。
+
 守卫模块缺失时 fail-closed（导出/导入拒绝执行；召回侧跳过注入门但其余三门照常——只读不阻断、写入必须 closed）。
 
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
@@ -199,7 +212,17 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | # | 触发点 | 时机 | 命令 | 没接会怎样 |
 |---|---|---|---|---|
 | **T1** | 任务开始 | 拿到非平凡任务、**规划之前** | `recall --query "<任务>"` | 预防失效：该避的坑照踩 |
-| **T2** | 行动前 | 即将执行写文件/跑命令/调接口 | 同上（query=将做的事） | 贴身预防（可选） |
+| **T2** | 行动前 | **即将执行第一次不可逆动作之前**（写文件/提交代码/部署/调外部接口/删改数据）；同一任务内同类动作**只触发一次**，后续沿用本次结论 | 同上（query=**将要做的具体动作**，如"用脚本批量改写文件"） | 贴身预防（可选） |
+
+> **T2 的判定口径（0.28 补明）**：①动作**尚未执行**（执行完就晚了）②动作**有副作用或不可逆**（写/提交/部署/外发/删除）③**本任务内首次**做这类动作时；纯读取/查询类动作不需要 T2。query 写**动作短语**（不是任务名）——召回按动作措辞对靶（如"批量改写文件"能命中对应修法）。
+
+**多宿主同时召回会发生什么（0.28 补明）**：
+| 情形 | 行为 | 依据 |
+|---|---|---|
+| 两个宿主同时召回同一基因 | **各自独立注入**（软提示按宿主上下文渲染，不共享状态） | 召回无跨进程状态 |
+| 同一宿主多会话并发召回 | 各自独立选出 top-N，**不共享选择快照**（0.18 起按 gene_id 寻址，不再有位置漂移） | `selectList` 每次现算 |
+| 同一基因被多台机器同时沉淀 | `asset_id` 去重（内容哈希）→ 只落一条；**不同内容则各落一条**（不同 asset_id） | store.appendGene |
+| 审核状态跨机冲突 | 各自台账 **LWW**（最后一个状态生效）——quarantine 可撤销 approve | review.jsonl |
 | **T3** | **遇到报错** | 工具返回错误、**准备重试之前** | `recall --error "<报错原文>"` | **最可惜**：明明库里就有修法，却盲目重试 |
 | **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
 | **T5** | 任务结束 | 收尾 | `--register-hit --gene <id>` / `--negate --gene <id>` | 无法度量，失效修法发现不了 |
