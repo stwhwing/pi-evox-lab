@@ -80,3 +80,23 @@ export function verifyGene(gene, pubkeyPem) {
     return { ok: true, status: 'unverifiable', why: `验签异常（${e.message}）——按无法验证处理` };
   }
 }
+
+/** 0.25 维1：license token（JWT-lite：base64url(payload).base64url(sig)） */
+const b64u = (buf) => Buffer.from(buf).toString('base64url');
+const unb64u = (s) => Buffer.from(String(s), 'base64url').toString('utf8');
+
+export function signLicense(payload, privateKeyPem) {
+  const body = b64u(JSON.stringify(payload));
+  const sig = crypto.sign(null, Buffer.from(body), privateKeyPem).toString('base64url');
+  return body + '.' + sig;
+}
+
+export function verifyLicense(token, publicKeyPem) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 2) return { ok: false, reason: 'token 格式错误（应为 payload.signature）' };
+  try {
+    const ok = crypto.verify(null, Buffer.from(parts[0]), publicKeyPem, Buffer.from(parts[1], 'base64url'));
+    if (!ok) return { ok: false, reason: '签名无效' };
+    return { ok: true, payload: JSON.parse(unb64u(parts[0])) };
+  } catch (e) { return { ok: false, reason: '解析失败: ' + String(e.message || e) }; }
+}
