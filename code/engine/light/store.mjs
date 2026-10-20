@@ -47,7 +47,8 @@ export function readJsonl(p, { warn = false } = {}) {
 export const SCENES = ['ops-deploy', 'coding-debug', 'release-publish', 'api-integration', 'git-workflow', 'agent-runtime'];
 
 // 0.25：timeline deposit 事件（沉淀动作可审计——修 B4：draft/distill 落库不产生任何 timeline 事件的缺口）
-const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'experiments');
+// 0.26.1 修复：本文件在 code/engine/light/ 下——两级 dirname 只到 code/engine，需四级到技能根。
+const HITS_DIR = process.env.EVOX_HITS_DIR || path.join(path.dirname(path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))))), 'experiments');
 export function appendDeposit(evt) {
   try {
     fs.mkdirSync(HITS_DIR, { recursive: true });
