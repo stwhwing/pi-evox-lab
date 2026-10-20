@@ -419,10 +419,20 @@ function resolveRef(ref) {
 }
 
 /** 对靶 + top-N 选取；并落一份「本次选中」sidecar，供 --register-hit 正确解析编号 */
-function selectList(all) {
+async function selectList(all) {
 	// 0.15.0：用**清洗后**的任务意图打分（治 私有节点实测 63% 打分落空）。
 	// 注：QUERY 原值仍用于埋点留痕/诊断，TASK_TEXT 才是"用户真实诉求"。
-	const qTokens = queryTokens(TASK_TEXT);
+	let qTokens = queryTokens(TASK_TEXT);
+	// 0.28 S-3：query 侧概念别名展开——中文 query 命中概念别名时，把该概念的英文 canonical
+	// 加入 token 集合（于是中文措辞能命中英文 canonical signals）。**不改打分公式与阈值**。
+	// EVOX_ALIAS=off：关闭别名展开（基线对照开关——门禁用它测本次改动新增的误选；非错误，不告警）
+	if (process.env.EVOX_ALIAS !== 'off') try {
+		const { expandQueryTokens } = await import('./engine/light/aliases.mjs');
+		qTokens = expandQueryTokens(qTokens, TASK_TEXT);
+	} catch (e) {
+		// 不静默：别名展开失败会让"中文措辞命中英文 signals"失效（静默退化为字面匹配）
+		console.error('[pi-evox] ⚠ 召回别名展开不可用（退化为纯字面匹配）：' + String((e && e.message) || e));
+	}
 	const hitInfo = aggregateHits();
 	let picked;
 	if (qTokens.size > 0) {
@@ -479,11 +489,11 @@ function registerHit(n, note, geneRef) {
 	console.log(`[pi-evox] 当前命中总数: ${readJsonl(HITS_FILE).length}`);
 }
 
-function recall() {
+async function recall() {
 	const all = readJsonl(EVO_GENES);
 	const approved = approvedAssetIds();
 	const full = recallList();
-	const { picked, total, targeted } = selectList(full);
+	const { picked, total, targeted } = await selectList(full);
 	recordRecallCall({ targeted, injected: picked.length, query: QUERY, taskText: TASK_TEXT, noise: !TASK_TEXT });
 	recordPending(picked);
 	console.log(
@@ -592,5 +602,5 @@ if (argv[0] === '--register-hit') {
 		registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
 	}
 } else {
-	recall();
+	await recall();
 }
