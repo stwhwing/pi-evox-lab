@@ -1,5 +1,8 @@
 # 示例运行日志（真实数据，脱敏）
 
+> **EN**: A recorded session log showing the deposit -> approve -> recall loop end to end (terminal output as produced by the commands in `examples/quickstart.md`). Use it to see what each step prints and what the timeline records.
+
+
 > 数据来源：本仓库作者的一次真实受控实验（GBK 确定性陷阱 / agnes-2.5-flash / --rounds 2）。
 > 已移除本机绝对路径；其余数值与输出均为原始记录，未做修饰。
 
