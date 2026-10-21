@@ -205,7 +205,7 @@ const QUERY = (() => {
 	// 旧版把裸位置参数（如 `evolver-recall.mjs "处理 GBK 报错"`）静默忽略，回落成
 	// 「按入库顺序注入尾部 N 条」——看似有结果实则与当前任务无关，非开发者极难察觉。
 	// 现把首个裸位置参数提升为 query 并提示规范写法，消除该静默 footgun。
-	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error', '--gene', '--record'];
+	const VALUED = ['--query', '--top', '--agent', '--register-hit', '--note', '--error', '--gene', '--record', '--because'];
 	const consumed = new Set();
 	for (const f of VALUED) {
 		const i = argv.indexOf(f);
@@ -457,6 +457,16 @@ async function selectList(all) {
 	return { picked, total: all.length, targeted: qTokens.size > 0 };
 }
 
+/** 0.29 B-1 溯源：命中/否定登记时带上「是谁在什么模型上得出的结论」——同源沉积是单作危机的根因 */
+function sourceOf() {
+	return {
+		source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
+		source_host: os.hostname().slice(0, 80),
+	};
+}
+/** 0.29 B-4：否定原因受控词表（让"A 沉积 B 失效"可归类、可统计） */
+const NEGATE_CAUSES = ['model-diff', 'env-diff', 'scene-mismatch', 'fix-wrong', 'unknown'];
+
 function registerHit(n, note, geneRef) {
 	// 0.18：--gene <asset_id|gene_id> 寻址优先（并发安全）；位置 N 为兼容路径
 	let item;
@@ -483,6 +493,7 @@ function registerHit(n, note, geneRef) {
 		asset_id: item.assetId,
 		category: item.category,
 		note: String(note).slice(0, 300),
+		...sourceOf(),
 	};
 	withLock(HITS_DIR, () => { fs.appendFileSync(HITS_FILE, JSON.stringify(rec) + '\n'); });
 	console.log(`[pi-evox] 命中已登记 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${HITS_FILE}`);
@@ -547,7 +558,7 @@ async function recall() {
 }
 
 /** 0.15.0 P0-3：--negate 回填「注入了但没起作用」——与 --register-hit 对称，闭合漏斗。 */
-function registerNegated(n, note, geneRef) {
+function registerNegated(n, note, geneRef, because = '') {
 	let item;
 	if (geneRef) {
 		item = resolveRef(geneRef);
@@ -570,7 +581,9 @@ function registerNegated(n, note, geneRef) {
 		fs.appendFileSync(PENDING_FILE, JSON.stringify({
 			ts: new Date().toISOString(), agent: AGENT, gene_id: item.id, asset_id: item.assetId,
 			category: item.category, outcome: 'negated', note: String(note).slice(0, 300),
+			because: because || 'unknown',
 			taskText: String(TASK_TEXT || '').slice(0, 200),
+			...sourceOf(),
 		}) + '\n');
 	});
 	console.log(`[pi-evox] 已回填未采用 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${PENDING_FILE}`);
@@ -592,14 +605,19 @@ if (argv[0] === '--register-hit') {
 	}
 } else if (argv[0] === '--negate') {
 	const ni = argv.indexOf('--note');
+	const bi = argv.indexOf('--because');
+	if (bi >= 0 && argv[bi + 1] && !NEGATE_CAUSES.includes(argv[bi + 1])) {
+		fail(`--because 必须是受控词表之一: ${NEGATE_CAUSES.join(' / ')}`, { code: 1, hint: 'model-diff=模型差异 / env-diff=环境差异 / scene-mismatch=场景不匹配 / fix-wrong=修法本身错' });
+	}
+	const because = bi >= 0 ? argv[bi + 1] ?? '' : '';
 	if (gi >= 0) {
-		registerNegated(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1]);
+		registerNegated(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1], because);
 	} else {
 		const n = parseInt(argv[1], 10);
 		if (!Number.isInteger(n) || n < 1) {
-			fail('用法: evolver-recall.mjs --negate [--gene <asset_id|gene_id>] --note "<为什么没起作用>"');
+			fail('用法: evolver-recall.mjs --negate [--gene <asset_id|gene_id>] --note "<为什么没起作用>" [--because <类别>]');
 		}
-		registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+		registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '', null, because);
 	}
 } else {
 	await recall();
