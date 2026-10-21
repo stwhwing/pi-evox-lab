@@ -39,7 +39,18 @@
 | 注入条数 | `--top` 默认 5 条 | 只注入「已审核 + 过修法守卫 + 与查询对靶」的条目；宁缺毋滥（实测：不对靶注入比不注入更差） |
 | 并发写入 | 单机多会话：文件锁（withLock，5s 超时 fail-open） | **跨机并发无分布式锁**——靠「各自库 + git 合并 + LWW 台账」裁定，不适合多机同时写同一库 |
 | 池同步延迟 | 自建 Git 池：推拉即 git 往返（秒级~分钟级，取决于网络） | 池不是实时服务；`gene pull` 拉到的是上次快照 |
-| 溯源覆盖 | deposit/register-hit 记录 `source_model` + `source_host`（0.29 起） | `report` 的 L4 出「跨源率」——单源占比高 = 修法只被一个（模型｜宿主）验证过，换环境可能失效 |
+| 溯源覆盖 | deposit/register-hit/negate 自动记录 `source_model` + `source_host`（0.29 起；0.30 起自动读 `~/.evomap/source.json`） | `report` 的 L4 出「跨源率」——单源占比高 = 修法只被一个（模型｜宿主）验证过，换环境可能失效 |
+
+> **EN**: Not a fit for: (1) several machines writing **one shared library** at the same time - no cross-machine locking; (2) anything requiring a **100% avoidance guarantee** - injection is a soft prompt and compliance varies by model (measured: 0/5 vs 5/5 on the same trap); (3) **real-time** library sync - the pool is a Git snapshot; (4) one-off tasks with no follow-up - the value only amortises on reuse; (5) using the gene library as an **authoritative knowledge base** - genes are *fixes*, not knowledge entries; (6) applying one fix across **different architectures** without independent reproduction - check the L4 cross-source rate first.
+### **不适用场景**（0.30 补：明确说"什么时候别指望它"）
+| 场景 | 为什么不适合 | 改用什么 |
+|---|---|---|
+| **多台机器同时写同一个基因库** | 跨机不共享文件锁，只能靠"各自写 + Git 合并 + LWW 裁定" | 各自维护本地库，用池做单向分发 |
+| **需要 100% 避开某个坑** | 注入是**软提示**，遵从度随模型而异（实测不同模型同一陷阱 0/5 vs 5/5） | 把关键修法写进项目文档/代码规范，不依赖提示层 |
+| **要求实时同步的共享库** | 自建池是 Git 快照，推拉有网络延迟（秒级~分钟级） | 需要实时就换中心化服务（本项目刻意不做） |
+| **一次性任务 / 无复盘场景** | 沉淀的价值靠复用摊薄，没有第二次就只剩成本 | 直接手工修，不必开围栏 |
+| **把基因库当权威知识库** | 基因是**修法**，不是知识条目；来源可追溯但可能单源未验证 | 知识库用文档/向量库，基因库只放"踩过的坑与修法" |
+| **给不同架构的 agent 直接复用同一条修法** | 修法的有效性受模型影响（实测跨模型失败签名可能完全不重叠） | 关键修法做**异构复现**（`report` 的 L4 跨源率）再扩散到更多宿主 |
 
 ## 致谢
 方法论受 [numbat](https://github.com/perplexityai/numbat)（Perplexity，Apache-2.0，取证重建）与 [FlyLoRA](https://arxiv.org/abs/2510.08396)（NeurIPS 2025，负载均衡/免训练合并不干扰）启发；上游引擎 [pi-coding-agent](https://github.com/earendil-works/pi)（MIT）/ [@evomap/evolver](https://github.com/EvoMap/evolver)（GPL，可选集成）。
