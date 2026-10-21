@@ -378,39 +378,46 @@ const argOf = (a, name) => { const i = a.indexOf(name); return i >= 0 ? a[i + 1]
 function usage() {
   console.log(`light-cli — 内置经验库运维命令（零依赖）
 
-用法：
-  node code/light-cli.mjs doctor                                                   # 首次运行自检（Node/目录/权限）
+用法（0.29 分组：先看「常用 6 条」，其余按需）：
+【常用 6 条 · 日常只用这些】
+  node code/light-cli.mjs doctor                        # 首次运行自检（Node/Python/目录/权限/埋点落点）
+  node code/light-cli.mjs starter                       # 一键装载起步基因包（冷启动消除焦虑）
+  node code/light-cli.mjs session open "<任务名>"       # 开工：自动 T1 召回 + 记账（会话围栏）
+  node code/light-cli.mjs draft --error "<错误文本>" [--context "<在做什么>"] [--trigger "<动手前措辞>"] [--commit]
+  node code/light-cli.mjs session close "<本轮结论>"    # 收尾：沉淀结论 + 关门（门禁会校验）
+  node code/light-cli.mjs list / info / report [--days N] [--json]   # 看库 / 看健康度 / 看效果周报
+
+【沉淀与审核】
   node code/light-cli.mjs distill --signals <a,b> --strategy "<可执行修法>" [--summary "<坑>"] [--category repair] [--shareable]
   node code/light-cli.mjs distill --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--shareable]   # 引导式：自动抽信号
-  node code/light-cli.mjs draft  --error "<错误文本>" [--context "<在做什么>"] [--tool <工具名>] [--shareable] [--commit]   # 生成可编辑草稿
   node code/light-cli.mjs approve <gene_id>
   node code/light-cli.mjs quarantine <gene_id> [--reason "<原因>"]
+  node code/light-cli.mjs fix-signals [--apply]         # 体检/展开无效中文 signal（召回永远匹配不上的）
+
+【共享池（跨机协作）】
   node code/light-cli.mjs gene export [--out <file>]          # 导出「已 --shareable 且过脱敏闸门」的基因
   node code/light-cli.mjs gene submit --pool <自有共享池目录>   # 过闸写入自建池（幂等）
   node code/light-cli.mjs gene import <池文件> [--tier official]  # 拉取合并；official=自建策展池自动通过，community(默认)=待审
-  node code/light-cli.mjs list
-  node code/light-cli.mjs info                                     # 含「闭环健康度」诊断
-  node code/light-cli.mjs starter                                  # 一键装载起步基因包（10 条通用教训）
+  node code/light-cli.mjs gene pull --pool <路径|URL|命名> [--tier t] [--scene s]  # 拉取基因池（命名池/场景过滤）
+  node code/light-cli.mjs gene submit --bundle <file>          # 产出单文件提交包（发给维护者/提 PR）
+
+【接入与规程】
   node code/light-cli.mjs install-hooks [--host openclaw|hermes] [--yes]  # 演练；加 --yes 才写入
-  node code/light-cli.mjs config [--auto-approve on|off]           # 自己沉淀的基因是否自动通过（默认 on）
-  node code/light-cli.mjs timeline [--last 50]                     # 四账本时间线（召回/注入/回填/工具错误）——0.18，方法致谢 numbat
-  node code/light-cli.mjs harvest [--last 10]                      # error_candidates → 沉淀建议清单（Layer2 消费端）
-  node code/light-cli.mjs harvest --done|--dismiss <N>             # 已处理/驳回某条候选（移入 .done.jsonl 留痕）——0.19
-  node code/light-cli.mjs install <host> [--yes]                  # 一键宿主接入（claude-code/cursor/codex/agents-md）——0.23
-  node code/light-cli.mjs demo                                     # 90 秒自演示（只读，不改状态）——0.23
-  node code/light-cli.mjs export-evidence [--out <dir>]            # 本地证据自审查包（门禁/签名/台账）——0.23
-  node code/light-cli.mjs stats                                    # 本地使用统计（召回/命中/回填率）——0.23
-  node code/light-cli.mjs report [--days N] [--json]                # 效果周报（L1 活性/L2 回填/L3 家族复发）——0.25
-  node code/light-cli.mjs session open|close "<任务名/结论>"        # 会话围栏：open=自动 T1 召回+记账，close=收尾沉淀结论——0.27
-  node code/light-cli.mjs fix-signals [--apply]                      # 体检/展开无效中文 signal（召回永远匹配不上的）——0.28
-  node code/light-cli.mjs identity                                 # 本机签名身份（Ed25519 keyid/私钥路径）——0.21
-  node code/light-cli.mjs draft --error "<错>" --trigger "<动手前措辞>"  # 触发词展开成 signals（预防型经验动手前可召回）——0.28
-  node code/light-cli.mjs license verify <token>                    # 验证 Ed25519 签名许可——0.25
-  node code/light-cli.mjs feedback "<文本>"                        # 反馈入口（本地留痕 + Discussions 引导）——0.22
-  node code/light-cli.mjs gene pull --pool <路径|URL|命名> [--tier t] [--scene s]  # 拉取基因池（命名池/场景过滤）——0.25
-  node code/light-cli.mjs gene submit --bundle <file>              # 产出单文件提交包（发给维护者/提 PR）——0.23
-  node code/light-cli.mjs snippet                                  # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
-  node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）——自动沉淀的绑定点
+  node code/light-cli.mjs install <host> [--yes]              # 一键宿主接入（claude-code/cursor/codex/agents-md）
+  node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）
+  node code/light-cli.mjs snippet                              # 输出可粘进 AGENTS.md 的操作规程（无钩子宿主用）
+  node code/light-cli.mjs feedback "<文本>"                    # 反馈入口（本地留痕 + Discussions 引导）
+
+【运维与诊断】
+  node code/light-cli.mjs timeline [--last 50]                 # 四账本时间线（召回/注入/回填/工具错误）
+  node code/light-cli.mjs harvest [--last 10]                  # error_candidates → 沉淀建议清单
+  node code/light-cli.mjs harvest --done|--dismiss <N>         # 已处理/驳回某条候选（移入 .done.jsonl 留痕）
+  node code/light-cli.mjs export-evidence [--out <dir>]        # 本地证据自审查包（门禁/签名/台账）
+  node code/light-cli.mjs stats                                # 本地使用统计（召回/命中/回填率）
+  node code/light-cli.mjs config [--auto-approve on|off]       # 自己沉淀的基因是否自动通过（默认 on）
+  node code/light-cli.mjs identity                             # 本机签名身份（Ed25519 keyid/私钥路径）
+  node code/light-cli.mjs license verify <token>               # 验证 Ed25519 签名许可
+  node code/light-cli.mjs demo                                 # 90 秒自演示（只读，不改状态）
 
 共享基因库：distill/draft 加 --shareable 标记该基因「可共享」（默认不共享=不外发）。
   任何基因导出/入池前必过脱敏闸门（私有IP/绝对路径/密钥/内网服务命中即拦截，不出网）。
@@ -541,6 +548,10 @@ switch (cmd) {
     // 只在真正写入时登记 quarantined（等待审核）
     const dgate = depositionGate((gene.strategy || []).join('\n'));
     if (!dgate.ok) fail('沉淀质检未通过：' + dgate.reason, { code: 1, hint: 'gate=' + dgate.kind + '；沉淀要写 AVOID(什么坑)+FIX(怎么避开)，不是日志复述' });
+    // 0.29 B-1 溯源：记录「哪台机器、哪个模型」沉积了这条——同源沉积是单作危机的根因
+    gene.generation_meta = { ...(gene.generation_meta || {}),
+      source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
+      source_host: os.hostname().slice(0, 80) };
     signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
     const written = appendGene(gene);
     if (written) {
@@ -686,7 +697,11 @@ switch (cmd) {
       // 把召回侧的守卫前移到生产侧——autoApprove 的安全性由此成立。
       const gate = depositionGate((gene.strategy || []).join('\n'));
       if (!gate.ok) fail('沉淀质检未通过：' + gate.reason, { code: 1, hint: 'gate=' + gate.kind + '；修正后重新 distill/draft --commit' });
-      signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
+      // 0.29 B-1 溯源：记录「哪台机器、哪个模型」沉积了这条——同源沉积是单作危机的根因
+    gene.generation_meta = { ...(gene.generation_meta || {}),
+      source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
+      source_host: os.hostname().slice(0, 80) };
+    signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
       const written = appendGene(gene);
       if (written) { appendDeposit({ gene_id: gene.id, category: gene.category || 'repair', scene: gene.category, state: autoApproveState(rest), source: 'draft' });
       appendReview({ assetId: gene.asset_id, state: autoApproveState(rest), reason: autoApproveState(rest) === 'approved' ? 'auto-approved (own library)' : 'guided draft — review before use' }); }
@@ -1009,11 +1024,34 @@ switch (cmd) {
     for (const e of errs) { const f = famOf(e); famWin[f] = (famWin[f] || 0) + 1; }
     const famAll = {};
     for (const e of allErrs) { const f = famOf(e); famAll[f] = (famAll[f] || 0) + 1; }
+    // 0.29 L4：异源复现率（B-1 溯源 + B-3 池信任分级的度量出口）
+    const srcKey = (r) => `${r.source_model || 'unknown-model'}|${r.source_host || 'unknown-host'}`;
+    const geneSrc = {};
+    for (const h of readJ('hits.jsonl')) {
+      if (!geneSrc[h.gene_id]) geneSrc[h.gene_id] = new Set();
+      geneSrc[h.gene_id].add(srcKey(h));
+    }
+    for (const d of deps) {
+      if (!geneSrc[d.gene_id]) geneSrc[d.gene_id] = new Set();
+      geneSrc[d.gene_id].add(srcKey(d));
+    }
+    const crossSrc = Object.entries(geneSrc).filter(([, v]) => v.size >= 2).length;
+    const singleSrc = Object.entries(geneSrc).filter(([, v]) => v.size === 1).length;
+    const negated = pend.filter((r) => r.outcome === 'negated');
+    const causeMatrix = {};
+    for (const r of negated) { const c = r.because || 'unknown'; causeMatrix[c] = (causeMatrix[c] || 0) + 1; }
     const rep = {
       window_days: days, generated_at: new Date().toISOString(),
       L1_activity: { recall_calls: recalls.length, targeted, injections: injectedTotal, deposits: deps.length, by_scene: sceneDist },
       L2_relevance: { pending_injections: pend.length, verifications: verifs.length, backfill_rate: pend.length ? Math.round((verifs.length / pend.length) * 100) + '%' : 'n/a' },
       L3_families: { window: famWin, all_time: famAll },
+      L4_heterogeneity: {
+        genes_with_evidence: Object.keys(geneSrc).length,
+        cross_source: crossSrc, single_source: singleSrc,
+        cross_source_rate: Object.keys(geneSrc).length ? +(crossSrc / Object.keys(geneSrc).length).toFixed(3) : null,
+        negate_causes: causeMatrix,
+        note: 'cross_source = the same gene reproduced by >=2 distinct (model|host) pairs - the direct monoculture metric',
+      },
     };
     if (jsonOut) { console.log(JSON.stringify(rep, null, 2)); break; }
     console.log(`[gene-share] 效果周报（近 ${days} 天，账本: ${hitsDir}）`);
@@ -1021,7 +1059,8 @@ switch (cmd) {
     console.log(`  L2 相关性：注入待回填 ${pend.length}｜验证记录 ${verifs.length}｜回填率 ${rep.L2_relevance.backfill_rate}`);
     const famEntries = Object.entries(famWin).sort((a, b) => b[1] - a[1]);
     console.log(`  L3 错误家族（本窗）: ${famEntries.length ? famEntries.map(([k, v]) => k + '×' + v).join(', ') : '无'}`);
-    console.log('  注：L3 的「入库前后复发对比」需家族基因到位后由 report 的 all_time 分布演化观察；回填用 --register-hit 提升 L2 精度。');
+    console.log(`  L4 异源复现：有证据基因 ${rep.L4_heterogeneity.genes_with_evidence} 条｜跨源 ${rep.L4_heterogeneity.cross_source}｜单源 ${rep.L4_heterogeneity.single_source}｜跨源率 ${rep.L4_heterogeneity.cross_source_rate}｜negate 根因分布 ${JSON.stringify(rep.L4_heterogeneity.negate_causes)}`);
+    console.log('  注：L4 的 cross_source 是「单作危机」的直接指标——单源占比高说明修法只被一个（模型|宿主）验证过，换环境可能失效。');
     break;
   }
   case 'export-evidence': {
