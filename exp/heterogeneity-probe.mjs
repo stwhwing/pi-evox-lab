@@ -14,6 +14,7 @@
 //   rb-bypass    用 'rb' 二进制读 + 手动解码（绕过而非正确识别）
 //   no-code      未给出可执行代码
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -31,7 +32,9 @@ function resolve(model) {
   const p = provs[prov];
   if (!p) throw new Error('unknown provider: ' + prov);
   const base = (p.baseUrl || p.base_url || '').replace(/\/+$/, '');
-  const key = p.apiKey || p.api_key || p.key;
+  // key 覆盖：EVOX_PROBE_KEY_<PROVIDER 大写> 优先（包内绝不带 key，凭据从环境注入）
+  const envKey = process.env['EVOX_PROBE_KEY_' + prov.toUpperCase().replace(/[^A-Z0-9]/g, '_')];
+  const key = envKey || p.apiKey || p.api_key || p.key;
   if (!base || !key) throw new Error('provider ' + prov + ' missing baseUrl/key');
   return { url: base + '/chat/completions', key, name };
 }
@@ -73,15 +76,24 @@ async function call(model) {
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
-    body: JSON.stringify({ model: name, messages: [{ role: 'user', content: PROMPT }], temperature: 0.3, max_tokens: 800 }),
+    body: JSON.stringify({ model: name, messages: [{ role: 'user', content: PROMPT }], temperature: 0.3, max_tokens: 3000 }),
   });
   if (!r.ok) throw new Error(model + ' HTTP ' + r.status);
   const d = await r.json();
-  return d.choices?.[0]?.message?.content || '';
+  const ch = d.choices?.[0] || {};
+  const msg = ch.message || {};
+  const content = String(msg.content || '');
+  // 推理模型可能把 token 预算全花在 reasoning_content 上 → 正文为空是**装置伪影**，
+  // 必须与『模型真的没给代码』区分开（否则会把装置误差写成模型行为差异）。
+  if (!content.trim() && String(msg.reasoning_content || '').trim()) {
+    return '<<<REASONING_ONLY>>>' + msg.reasoning_content;
+  }
+  return content;
 }
 
 function signature(text) {
   const t = String(text || '');
+  if (t.startsWith('<<<REASONING_ONLY>>>')) return 'reasoning-only';
   const hasCode = /open\(|def |import |print\(/.test(t);
   const gbk = /gbk|gb2312|gb18030|中文编码|encoding=['"]gb/i.test(t);
   const utf8 = /utf-?8/i.test(t);
@@ -120,7 +132,7 @@ for (let i = 0; i < N; i++) {
 }
 const dist = (m) => out[m].reduce((acc, x) => { acc[x.sig] = (acc[x.sig] || 0) + 1; return acc; }, {});
 const res = {
-  trap: { bytes: TRAP.length, sha256: require('crypto').createHash('sha256').update(TRAP).digest('hex').slice(0, 16) },
+  trap: { bytes: TRAP.length, sha256: crypto.createHash('sha256').update(TRAP).digest('hex').slice(0, 16) },
   n: N, models: MODELS,
   signatures: { [a]: dist(a), [b]: dist(b) },
   paired, agree,
