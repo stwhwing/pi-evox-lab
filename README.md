@@ -158,7 +158,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.28.0（版本轨迹：0.3.0 首发 → 0.25.0） |
+| 当前版本 | 0.29.0（版本轨迹：0.3.0 首发 → 0.25.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -186,6 +186,9 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.29.0（可读性与可验证性版）**：
+  **中文**：① **SKILL.md 中英混排治理**（术语首次出现标注一次英文、后文用中文，Q17 完整对照）+ **触发词瘦身**（8+ 收敛为 3 组主词：召回/沉淀/继承，同义词自动折叠）——回应 0.28 评测 usability 扣分；② **规模的量化边界**（docs/overview.md：库规模/上限/注入条数/并发写入/池同步延迟/溯源覆盖，全部标注实测状态，未实测的明确写"未实测"）；③ **CLI 用法分组**（常用 6 条 / 沉淀审核 / 共享池 / 接入规程 / 运维诊断）；④ **溯源与异构验证**：deposit/register-hit/negate 记录 source_model+source_host，report 新增 L4 异源复现率与 negate 根因分布，gene export 打 trust 标签；⑤ exp/heterogeneity-probe.mjs 跨模型错误相关性探针（本机凭据 401/TLS 不通，待有有效 key 时实跑）。
+  **EN**: ① mixed CN/EN prose normalised (term defined once, Chinese thereafter) + trigger words trimmed to 3 groups; ② quantified scale boundaries in docs/overview.md (library size / cap / injection count / concurrency / pool sync latency / provenance coverage - measured items marked, unmeasured marked as such); ③ CLI usage grouped (6 daily commands first); ④ provenance & heterogeneity: source_model/source_host on deposit/hit/negate, L4 cross-source reproduction rate + negate cause matrix in report, trust labels on export; ⑤ cross-model error-correlation probe added (blocked locally on credentials - 401/TLS, run when a valid key exists).
 - **0.28.0（可召回性版）**：
   **中文**：① **T2「行动前」判定口径补明**（动作未执行 + 有副作用/不可逆 + 本任务首次），并补**多宿主并发同时召回的行为表**（各自独立注入/不共享选择快照/asset_id 去重/审核 LWW）；② **四道安全门细节在 SKILL.md 内自足**（每道门扫什么、命中会怎样，不必跳转 advanced.md）；③ **公开召回打分与阈值数值**（signals 命中 +3、正文 token 交集 +1、负载均衡 ±2、**低于 2 分不注入**）并把并发语义集中到触发点节；④ **召回别名机制**：`aliases.json` 概念表 + `draft --trigger "<动手前措辞>"` 自动展开（英文 canonical + 中文二元词双写）+ 召回时中文 query 映射英文 canonical + `fix-signals` 体检/展开存量无效中文 signal——预防型经验从此能在**动手前**被召回。
   **EN**: ① sharper T2 trigger criteria (before the first irreversible action) + a table of what happens when several hosts recall concurrently; ② the four safety gates are now self-contained in SKILL.md (what each scans, what happens on a hit); ③ **published recall scoring & threshold** (signals hit +3, text-token overlap +1, load-balance bias +/-2, **below 2 points nothing is injected**) with concurrency semantics consolidated; ④ **recall aliasing**: concept table + `draft --trigger` auto-expansion (English canonical + Chinese bigrams) + Chinese queries mapped to English canonicals + `fix-signals` to repair dead Chinese signals - prevention lessons now surface *before* the action.
