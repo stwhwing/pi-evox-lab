@@ -42,6 +42,35 @@ node code/light-cli.mjs info        # 召回次数 / 命中 / 沉淀数
 node code/light-cli.mjs timeline    # 刚才一切事件的时间线
 ```
 
+> **EN**: Two sections added in 0.30. **Host integration in one command** - `install-hooks --auto` only probes (writes nothing) and prints the single recommended command for the host it detects. **Multi-host / multi-session concurrency** - three mechanisms keep parallel agents from corrupting each other: a file lock (5s timeout, gives up rather than corrupting), gene_id addressing (no positional drift across sessions), and an LWW review ledger (`quarantine` can revoke an earlier `approve`).
+## 6. 宿主接入（一条命令，0.30 补：不用再翻 FAQ）
+
+```bash
+node code/light-cli.mjs install-hooks --auto     # 只探测，不写入；给你唯一推荐命令
+```
+
+它会替你判断该走哪条路，并直接打印可复制的那一条：
+
+| 探测到 | 走哪条 | 含义 |
+|---|---|---|
+| `~/.openclaw` 或 `~/.hermes` 存在 | `install-hooks --host <host> --yes` | **钩子**：每次会话自动召回，最强 |
+| 没有钩子宿主，但当前目录有 `AGENTS.md` / `CLAUDE.md` | `install-snippet --file <文件> --yes` | **规程粘贴**：把操作规程写进指令文件，零依赖 |
+| 两者都没有 | `node code/light-cli.mjs snippet > snippet.md` | **通用**：贴进你已有的指令文件即可 |
+
+> 两种方式可以同时用（钩子负责自动触发，规程负责兜底）。安装前会自动备份宿主配置；`--auto` 本身**不写任何东西**。
+
+## 7. 多宿主 / 多会话并发（0.30 补）
+
+同时跑多个 agent（或同一台机器多个会话）时，**不会互相写坏**，原因是三条机制：
+
+| 机制 | 作用 |
+|---|---|
+| **文件锁**（`withLock`） | 每次写台账/基因库都先取锁，5 秒拿不到锁就放弃本次写入（不硬等、不损坏文件） |
+| **按 gene_id 寻址** | 命中/否定回填按基因 ID 定位，**不用位置序号**——多会话并行时不会串号 |
+| **LWW 审核台账** | 同一基因的审核状态取**最后一条**；`quarantine` 能撤销先前的 `approve`（池与本地库都守这条） |
+
+跨机器（各自库 + Git 池）不共享锁，靠**各自写 + 合并 + LWW 裁定**——所以跨机同时写同一个库属于**不适用场景**，见 `docs/overview.md` 的边界表。
+
 ## 然后？
 - **接入你的 Agent**：`node code/light-cli.mjs install-snippet --file <你的项目>/AGENTS.md --yes`（或 OpenClaw/Hermes 用 `install-hooks`）——之后每个会话都会自动触发；
 - **深入**：`docs/faq.md`（15 问）/ `docs/common-mistakes.md`（14 条反模式）/ `docs/advanced.md`（共享池/宿主接入/运维）；
