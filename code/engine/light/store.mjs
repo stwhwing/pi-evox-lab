@@ -183,3 +183,19 @@ export function assetIdOf(geneId) {
   const g = readGenes().find((x) => x.id === geneId);
   return g?.asset_id ?? null;
 }
+
+/** 0.30 B-2：溯源自动归因——读本机 `~/.evomap/source.json`（{model, host}）。
+ *  优先级：环境变量 EVOX_SOURCE_MODEL/EVOX_SOURCE_HOST > 本机 source.json > 空。
+ *  目的：让 deposit / register-hit / negate **自动**带上"哪个模型/哪台机"，不必改钩子、不必重启服务。 */
+export function sourceInfo() {
+  const env = {
+    model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
+    host: (process.env.EVOX_SOURCE_HOST || '').slice(0, 80),
+  };
+  if (env.model && env.host) return env;
+  try {
+    const p = path.join(os.homedir(), '.evomap', 'source.json');
+    const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return { model: env.model || String(cfg.model || '').slice(0, 80), host: env.host || String(cfg.host || '').slice(0, 80) };
+  } catch { return env; }
+}
