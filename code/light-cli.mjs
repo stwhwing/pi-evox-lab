@@ -22,7 +22,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
-import { STORE_DIR, readGenes, readReview, approvedAssetIds, appendDeposit } from './engine/light/store.mjs';
+import { STORE_DIR, readGenes, readReview, approvedAssetIds, appendDeposit, sourceInfo } from './engine/light/store.mjs';
 const SKILL_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
 import { signGene, verifyGene, loadIdentity, privateKeyPath } from './engine/light/identity.mjs';
 import { proposeFromError } from './engine/light/distill.mjs';
@@ -280,6 +280,27 @@ async function installHooks({ args, yes }) {
   const want = wantIdx >= 0 ? String(args[wantIdx + 1] || '').toLowerCase() : null;
   const targets = want ? detected.filter((d) => d.host === want) : detected;
 
+  // 0.30 A-2：`--auto` 只做一件事——**探测宿主并给出唯一推荐命令**（新手不必翻 FAQ Q10/Q12）。
+  // 无钩子宿主但当前目录有指令文件（AGENTS.md / CLAUDE.md）→ 推荐 install-snippet。
+  if (args.includes('--auto')) {
+    const L = ['── install-hooks --auto（只探测并给唯一推荐命令，不写入）'];
+    const cwdFiles = ['AGENTS.md', 'CLAUDE.md'].filter((f) => fs.existsSync(path.join(process.cwd(), f)));
+    if (detected.length) {
+      L.push(`  探测到钩子宿主: ${detected.map((d) => d.host).join(', ')}`);
+      const cmd = `node code/light-cli.mjs install-hooks --host ${detected[0].host} --yes`;
+      L.push(`  ▶ 推荐执行（一条就够）: ${cmd}`);
+      L.push('    （不确定就不加 --host：不给 --host 会给所有探测到的宿主装）');
+    } else if (cwdFiles.length) {
+      L.push(`  未探测到钩子宿主，但当前目录有指令文件: ${cwdFiles.join(', ')}`);
+      L.push('  ▶ 推荐执行（无钩子宿主用规程粘贴）: node code/light-cli.mjs install-snippet --file ' + cwdFiles[0] + ' --yes');
+    } else {
+      L.push('  未探测到钩子宿主，当前目录也没有 AGENTS.md / CLAUDE.md');
+      L.push('  ▶ 任意宿主通用做法: node code/light-cli.mjs snippet > snippet.md（贴进你的指令文件）');
+    }
+    L.push('  说明：钩子方式 = 每次会话自动召回（更强）；规程粘贴 = 零依赖（更通用）。两者可同时用。');
+    return { text: L.join('\n'), wrote: false, code: 0 };
+  }
+
   out.push('── install-hooks ' + (yes ? '（写入模式）' : '（演练模式，未落盘）') + ' ──');
   if (!detected.length) {
     out.push('  ⚠ 未探测到已知宿主（~/.openclaw 或 ~/.hermes）。可手工按 examples/hooks/README.md 接入。');
@@ -386,6 +407,7 @@ function usage() {
   node code/light-cli.mjs draft --error "<错误文本>" [--context "<在做什么>"] [--trigger "<动手前措辞>"] [--commit]
   node code/light-cli.mjs session close "<本轮结论>"    # 收尾：沉淀结论 + 关门（门禁会校验）
   node code/light-cli.mjs list / info / report [--days N] [--json]   # 看库 / 看健康度 / 看效果周报
+  node code/light-cli.mjs gene-pull-trust                     # 池内信任分布（单源/跨源）——0.30
 
 【沉淀与审核】
   node code/light-cli.mjs distill --signals <a,b> --strategy "<可执行修法>" [--summary "<坑>"] [--category repair] [--shareable]
@@ -402,6 +424,7 @@ function usage() {
   node code/light-cli.mjs gene submit --bundle <file>          # 产出单文件提交包（发给维护者/提 PR）
 
 【接入与规程】
+  node code/light-cli.mjs install-hooks --auto                      # 只探测宿主并给**唯一推荐命令**（新手用这个）——0.30
   node code/light-cli.mjs install-hooks [--host openclaw|hermes] [--yes]  # 演练；加 --yes 才写入
   node code/light-cli.mjs install <host> [--yes]              # 一键宿主接入（claude-code/cursor/codex/agents-md）
   node code/light-cli.mjs install-snippet --file <AGENTS.md> [--yes]  # 把规程写进项目指令文件（默认演练）
@@ -550,8 +573,8 @@ switch (cmd) {
     if (!dgate.ok) fail('沉淀质检未通过：' + dgate.reason, { code: 1, hint: 'gate=' + dgate.kind + '；沉淀要写 AVOID(什么坑)+FIX(怎么避开)，不是日志复述' });
     // 0.29 B-1 溯源：记录「哪台机器、哪个模型」沉积了这条——同源沉积是单作危机的根因
     gene.generation_meta = { ...(gene.generation_meta || {}),
-      source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
-      source_host: os.hostname().slice(0, 80) };
+      source_model: sourceInfo().model || os.hostname().slice(0, 80),
+      source_host: sourceInfo().host || os.hostname().slice(0, 80) };
     signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
     const written = appendGene(gene);
     if (written) {
@@ -699,8 +722,8 @@ switch (cmd) {
       if (!gate.ok) fail('沉淀质检未通过：' + gate.reason, { code: 1, hint: 'gate=' + gate.kind + '；修正后重新 distill/draft --commit' });
       // 0.29 B-1 溯源：记录「哪台机器、哪个模型」沉积了这条——同源沉积是单作危机的根因
     gene.generation_meta = { ...(gene.generation_meta || {}),
-      source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
-      source_host: os.hostname().slice(0, 80) };
+      source_model: sourceInfo().model || os.hostname().slice(0, 80),
+      source_host: sourceInfo().host || os.hostname().slice(0, 80) };
     signGene(gene); // 0.21 provenance：落库即签（Ed25519，本机身份）
       const written = appendGene(gene);
       if (written) { appendDeposit({ gene_id: gene.id, category: gene.category || 'repair', scene: gene.category, state: autoApproveState(rest), source: 'draft' });
@@ -997,6 +1020,26 @@ switch (cmd) {
       console.log('用法: light-cli.mjs license issue --to <购买方> --tier <team-monthly|team-annual|team-lifetime> [--days N]');
       console.log('      light-cli.mjs license verify <token>');
     }
+    break;
+  }
+  case 'gene-pull-trust': {
+    // 0.30 B-3：池内基因的信任分布（single-source / cross-source / unknown-source）
+    // **不阻断拉取**（池里 99% 是单源，阻断=把池拉空）——只做可见化：拉之前先知道信谁。
+    const { readGenes, readReview } = await import('./engine/light/store.mjs');
+    const lww = {};
+    for (const r of readReview()) lww[r.assetId] = String(r.state || '').toLowerCase();
+    const genes = readGenes().filter((g) => g.shareable === true && lww[g.asset_id] === 'approved');
+    const dist = { 'single-source': 0, 'cross-source': 0, 'unknown-source': 0 };
+    for (const g of genes) {
+      const sm = (g.generation_meta || {}).source_model || '';
+      const sh = (g.generation_meta || {}).source_host || '';
+      if (sm && sh) dist['single-source']++; else dist['unknown-source']++;
+    }
+    const total = genes.length || 1;
+    console.log('[gene-share] 池内信任分布（0.30）：');
+    console.log(`  single-source（仅一个源验证过）: ${dist['single-source']}（${Math.round(dist['single-source'] / total * 100)}%）`);
+    console.log(`  unknown-source（无溯源字段）  : ${dist['unknown-source']}（${Math.round(dist['unknown-source'] / total * 100)}%）`);
+    console.log('  提示：单源基因换一个模型/宿主可能失效；关键修法看 report 的 L4 跨源率再决定是否扩散到更多宿主。');
     break;
   }
   case 'report': {
