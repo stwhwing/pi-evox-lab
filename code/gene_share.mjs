@@ -131,6 +131,13 @@ const exportable = (genes) => {
   const out = [], blocked = [], pending = [];
   for (const g of genes) {
     if (g?.shareable !== true) continue;
+    // 0.29 B-3 池信任分级：按溯源字段判定——有 ≥2 个不同 (模型|宿主) 证据的才标 cross-source
+    {
+      const sm = (g.generation_meta || {}).source_model || '';
+      const sh = (g.generation_meta || {}).source_host || '';
+      g.trust = sm && sh ? 'single-source' : 'unknown-source';
+      g.trust_note = 'single-source = 仅一个沉积源；升级 cross-source 需 ≥2 个不同 (模型|宿主) 的 register-hit 证据';
+    }
     const st = stateOf(g);
     if (st !== 'approved') { pending.push({ id: g.id, state: st }); continue; }
     const gate = safetyGate(g);
