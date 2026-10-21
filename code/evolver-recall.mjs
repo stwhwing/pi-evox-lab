@@ -458,7 +458,13 @@ async function selectList(all) {
 }
 
 /** 0.29 B-1 溯源：命中/否定登记时带上「是谁在什么模型上得出的结论」——同源沉积是单作危机的根因 */
-function sourceOf() {
+async function sourceOf() {
+	// 0.30 B-2：优先读 ~/.evomap/source.json（sourceInfo），env 仍可覆盖
+	try {
+		const { sourceInfo } = await import('./engine/light/store.mjs');
+		const si = sourceInfo();
+		if (si.model || si.host) return { source_model: si.model, source_host: si.host };
+	} catch { /* 回落 */ }
 	return {
 		source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
 		source_host: os.hostname().slice(0, 80),
@@ -467,7 +473,7 @@ function sourceOf() {
 /** 0.29 B-4：否定原因受控词表（让"A 沉积 B 失效"可归类、可统计） */
 const NEGATE_CAUSES = ['model-diff', 'env-diff', 'scene-mismatch', 'fix-wrong', 'unknown'];
 
-function registerHit(n, note, geneRef) {
+async function registerHit(n, note, geneRef) {
 	// 0.18：--gene <asset_id|gene_id> 寻址优先（并发安全）；位置 N 为兼容路径
 	let item;
 	if (geneRef) {
@@ -487,13 +493,14 @@ function registerHit(n, note, geneRef) {
 		if (!item) fail(`登记失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '多会话并发环境建议改用 --gene <asset_id>（位置编号可能漂移）' });
 	}
 	fs.mkdirSync(HITS_DIR, { recursive: true });
+	const srcInfo = await sourceOf();
 	const rec = {
 		ts: new Date().toISOString(),
 		gene_id: item.id,
 		asset_id: item.assetId,
 		category: item.category,
 		note: String(note).slice(0, 300),
-		...sourceOf(),
+		...srcInfo,
 	};
 	withLock(HITS_DIR, () => { fs.appendFileSync(HITS_FILE, JSON.stringify(rec) + '\n'); });
 	console.log(`[pi-evox] 命中已登记 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${HITS_FILE}`);
@@ -558,7 +565,7 @@ async function recall() {
 }
 
 /** 0.15.0 P0-3：--negate 回填「注入了但没起作用」——与 --register-hit 对称，闭合漏斗。 */
-function registerNegated(n, note, geneRef, because = '') {
+async function registerNegated(n, note, geneRef, because = '') {
 	let item;
 	if (geneRef) {
 		item = resolveRef(geneRef);
@@ -576,6 +583,7 @@ function registerNegated(n, note, geneRef, because = '') {
 		item = list[n - 1];
 		if (!item) fail(`回填失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '多会话并发环境建议改用 --gene <asset_id>' });
 	}
+	const srcInfo = await sourceOf();
 	withLock(HITS_DIR, () => {
 		fs.mkdirSync(HITS_DIR, { recursive: true });
 		fs.appendFileSync(PENDING_FILE, JSON.stringify({
@@ -583,7 +591,7 @@ function registerNegated(n, note, geneRef, because = '') {
 			category: item.category, outcome: 'negated', note: String(note).slice(0, 300),
 			because: because || 'unknown',
 			taskText: String(TASK_TEXT || '').slice(0, 200),
-			...sourceOf(),
+			...srcInfo,
 		}) + '\n');
 	});
 	console.log(`[pi-evox] 已回填未采用 ${geneRef ? `(${item.id})` : `#${n} (${item.id})`} → ${PENDING_FILE}`);
@@ -595,13 +603,13 @@ const gi = argv.indexOf('--gene');
 if (argv[0] === '--register-hit') {
 	const ni = argv.indexOf('--note');
 	if (gi >= 0) {
-		registerHit(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1]);
+		await registerHit(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1]);
 	} else {
 		const n = parseInt(argv[1], 10);
 		if (!Number.isInteger(n) || n < 1) {
 			fail('用法: evolver-recall.mjs --register-hit [--gene <asset_id|gene_id>] --note "<任务一句话>"（0.18 推荐按 --gene 寻址）');
 		}
-		registerHit(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
+		await registerHit(n, ni >= 0 ? argv[ni + 1] ?? '' : '');
 	}
 } else if (argv[0] === '--negate') {
 	const ni = argv.indexOf('--note');
@@ -611,13 +619,13 @@ if (argv[0] === '--register-hit') {
 	}
 	const because = bi >= 0 ? argv[bi + 1] ?? '' : '';
 	if (gi >= 0) {
-		registerNegated(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1], because);
+		await registerNegated(null, ni >= 0 ? argv[ni + 1] ?? '' : '', argv[gi + 1], because);
 	} else {
 		const n = parseInt(argv[1], 10);
 		if (!Number.isInteger(n) || n < 1) {
 			fail('用法: evolver-recall.mjs --negate [--gene <asset_id|gene_id>] --note "<为什么没起作用>" [--because <类别>]');
 		}
-		registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '', null, because);
+		await registerNegated(n, ni >= 0 ? argv[ni + 1] ?? '' : '', null, because);
 	}
 } else {
 	await recall();
