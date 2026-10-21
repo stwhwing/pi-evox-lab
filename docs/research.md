@@ -94,3 +94,34 @@ node code/pi_evolve.mjs <repo模板目录> <任务文件> \
 
 ### 5. 何时不该做实验
 生产环境；模型可能自主绕过的陷阱（BOM 类，命中率不可靠）；无对照组的单臂对比。
+
+> **EN**: Section 19 records where the "heterogeneous verification" idea comes from (arXiv:2512.05117, read at source) and what we measured ourselves. 19.1 theory - the paper keeps "shared subspace implies shared failure modes" as an **open question**, has no cross-architecture comparison method, and its 500 LoRAs share one base checkpoint. 19.2 our measurement (response-level, a different kind of claim): on one deterministic GBK trap, deepseek-v4-flash 5/5 correct vs agnes-3.0-flash 0/5, failure-signature agreement 0%. 19.3 apparatus lesson - the first run mis-scored the reasoning model as "no code" because its token budget went to `reasoning_content`; fixed before drawing conclusions. 19.4 mechanism - L4 cross-source rate + automatic provenance from `~/.evomap/source.json`.
+## 19. 异构验证：理论出处与我们的实测（0.30，2026-10-21）
+
+### 19.1 理论出处（已读原文并核对，不引二手转述）
+**arXiv:2512.05117**《The Universal Weight Subspace Hypothesis》（Kaushik, Chaudhari, Vaidya, Chellappa, Yuille；v1 2025-12-04，v3 2026-10-05，56 页）：1200+ 模型（500 Mistral-7B LoRA / 500 ViT / 50 LLaMA-8B），**截断零中心 HOSVD**，发现**同一架构内**模型共享低维参数子空间。
+
+与本项目相关的三点（均为原文支持）：
+1. 论文把「若网络都塌缩到同一子空间 → **继承共同的偏差、能力与失败模式**，这种缺乏多样性是否构成瓶颈」明确列为**开放问题**；并写明**跨架构子空间比较尚无方法**（"there is no current method that enables us to compare subspaces of models with different architectures"）。
+2. 500 个 Mistral LoRA **同基座**（Mistral-7B-Instruct-v0.2）；理论部分假设共享参考权重 θ₀，作者承认实际分析偏离该理想化条件 ⇒ **「同构」要按「模型 × 版本 × 宿主」联合算，不能按架构算**。
+3. 论文**未**给出跨模型的相关盲点或对抗迁移的定量实验。
+
+**明确不引用的说法**（原文无法核实）：「16 维 = 智能只需 16 维」（原文只说"16 个或更少方向集中了大部分信息"，无方差百分比；40 维的数亦不可核实）、「投影后 98–99% 几何误差仍保功能」（投影的定量几何误差不在可核实文本内；原文给的是**掉点**结果：ResNet50 90.89→87.58、9 个从头训模型 81.00→77.91、ViT OOD 91.3→87.8）。
+
+### 19.2 我们的实测（响应级，与论文不同类）
+装置：`exp/heterogeneity-probe.mjs`——同一确定性 GBK 字节输入（500 B，sha256 前 16 位 `ebca2ce3b2ee4933`）→ 两个端点各 5 次 → 按失败签名分类（`gbk-correct` / `utf8-wrong` / `rb-bypass` / `no-code` / `reasoning-only`）。
+
+| 模型 | 签名分布（N=5） | 判定 |
+|---|---|---|
+| `deepseek/deepseek-v4-flash` | gbk-correct ×5 | **5/5 正确**（显式 `encoding='gbk'`） |
+| `agnes-cn/agnes-3.0-flash` | utf8-wrong ×3、rb-bypass ×2 | **0/5 正确**（3 次默认 utf-8 必失败；2 次用 `'rb'` 绕过=未识别编码） |
+
+**失败签名一致率 0/5（0%）** ⇒ 两个模型在同一确定性输入上的失败模式**不相关** ⇒ 在这个陷阱上**异构兜底是真实存在的**（deepseek 正好补上 agnes 的盲区）。
+
+### 19.3 装置效应的教训（比结论更重要）
+第一轮探针把 deepseek 判成 `no-code` ×4——**那是装置伪影**：deepseek-v4-flash 是推理模型，800 token 预算被 `reasoning_content` 吃光（`finish_reason: length`，正文 0 字符）。修正：token 预算提到 3000，并新增 `reasoning-only` 签名把「正文空但有推理」与「模型没给代码」分开。**没有这一步，就会把装置误差写成"某模型系统性不会写代码"的结论。**
+
+### 19.4 落到机制
+- 跨源复现率 → `report` 的 **L4 异源复现率**（同一基因被 ≥2 个不同「模型｜宿主」复现过 = cross-source）；0.30 首测：29 条有证据基因里跨源 1 条（3.2%）。
+- 溯源自动归因（0.30 B-2）：deposit / register-hit / negate 自动读 `~/.evomap/source.json` 记录 `source_model` + `source_host`（不必改钩子、不必重启服务）。
+- 结论：0.29 之前所有修法**都是单源**（跨源率 0%）——这正是"同构"在我们自己库里的量化形态；异构验证要靠**不同模型/宿主的独立复现**，不是靠多开实例。
