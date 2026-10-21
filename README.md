@@ -103,7 +103,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 > **EN**: New here? Run the [5-minute quickstart](examples/quickstart.md) (Node >= 22, zero deps). Feedback: `light-cli feedback "<text>"` or GitHub Discussions. Sharing your setup helps us verify it works in the wild: adoption-report template - registry in ADOPTERS.md.
 
-- **5 分钟体验**：[`examples/quickstart.md`](examples/quickstart.md)（Node ≥22，零依赖，全程本地）；
+- **5 分钟体验**：[`docs/one-pager.md`（一分钟判断要不要用，0.30 新增）｜`examples/quickstart.md`](examples/quickstart.md)（Node ≥22，零依赖，全程本地）；
 - **项目概览**：[`docs/overview.md`](docs/overview.md)（问题/方案/安全属性/已知局限）；
 - **反馈**：`node code/light-cli.mjs feedback "<想说的话>"` 或 [GitHub Discussions](https://github.com/stwhwing/pi-evox-lab/discussions)；
 - **实例登记**：用起来了？[提交 adoption-report](.github/ISSUE_TEMPLATE/adoption-report.yml) 或 PR [ADOPTERS.md](ADOPTERS.md)——分享你的部署配置，帮助验证它在真实环境中工作。
@@ -121,6 +121,16 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 ## 致谢（Acknowledgements）
 
 本项目**不是**任何上游项目的一部分，也不代表它们各自的官方观点——它是一个独立的研究 Harness，站在一批优秀开源项目与公开方法论的肩膀上。
+
+### 二、理论启发（已读原文并核对）
+
+**[The Universal Weight Subspace Hypothesis](https://arxiv.org/abs/2512.05117)**（Kaushik, Chaudhari, Vaidya, Chellappa, Yuille；arXiv:2512.05117，v1 2025-12-04，v3 2026-10-05）—— 1200+ 个模型（500 Mistral-7B LoRA / 500 ViT / 50 LLaMA-8B）做截断零中心 HOSVD，发现**同一架构内**的不同模型共享低维参数子空间。
+
+它给本项目的启发是**问题意识**，不是结论移植：
+- 论文明确把「若网络都塌缩到同一子空间 → **继承共同的偏差、能力与失败模式**、这种缺乏多样性是否构成瓶颈」列为**开放问题**，并指出**跨架构比较尚无方法**——这正是我们做「异构验证（跨源复现）」的出发点。
+- 500 个 Mistral LoRA **同基座**（Mistral-7B-Instruct-v0.2）——「共享结构」有多少来自共同检查点，论文自己承认偏离了「共享 θ₀」的理想化条件。**所以「同构风险」在我们的语境下要按「模型 × 版本 × 宿主」联合计算，不能按架构算。**
+- **本项目自己的数据**（0.30 实测，N=5/模型，同一确定性 GBK 陷阱）：`deepseek-v4-flash` 5/5 给出正确修法（`encoding='gbk'`），`agnes-3.0-flash` 0/5（3 次默认 utf-8 必失败、2 次用 `'rb'` 绕过=没识别编码），**失败签名一致率 0%**。这与论文的权重空间结论**不是一回事**，是我们的响应级实测。
+- **不引用媒体转述**：坊间流传的「16 维 = 智能只需 16 维」「投影后 98–99% 几何误差仍保功能」等说法，在原文中**无法核实**（原文只说「16 个或更少方向集中了大部分信息」，未给方差百分比；投影的定量几何误差不在可核实文本内）——故本项目**不引用**这两个说法。
 
 ### 一、上游引擎与宿主
 
@@ -158,7 +168,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.29.0（版本轨迹：0.3.0 首发 → 0.25.0） |
+| 当前版本 | 0.30.0（版本轨迹：0.3.0 首发 → 0.25.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因**默认自动通过**（`config --auto-approve off` 可改回）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 10 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -186,6 +196,9 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.30.0（上手与异构验证版）**：
+  **中文**：① **上手路径补两块**：quickstart 新增「宿主接入（一条命令，`install-hooks --auto` 自动探测并给唯一推荐命令）」与「多宿主/多会话并发（文件锁 / 按 gene_id 寻址 / LWW 台账三条机制）」——回应 0.29 评测 usability 扣分；② **「不适用场景」显式化**（docs/overview.md 新增表：跨机同写同库 / 要 100% 避坑 / 实时同步 / 一次性任务 / 把基因库当知识库 / 跨架构直接复用）；③ **溯源自动归因**（deposit/register-hit/negate 自动读 `~/.evomap/source.json` 记录模型与主机，不必改钩子、不必重启）；④ **异构验证实测**（`exp/heterogeneity-probe.mjs` 首次真跑：同一确定性 GBK 陷阱，deepseek-v4-flash **5/5 正确**、agnes-3.0-flash **0/5**，失败签名一致率 **0%** ⇒ 异构兜底真实存在）；⑤ **理论出处致谢**（arXiv:2512.05117 原文核对：其"共享子空间→继承共同失败模式"是**开放问题**，我们做的是响应级实测；媒体转述的"16 维=智能""98–99% 误差仍保功能"**原文不支持，本项目不引用**）；⑥ `docs/one-pager.md` 一页纸（判断要不要用，含信任要素与局限）并挂进导航；⑦ `gene-pull-trust` 池信任分布可见化；⑧ **两个平台的 GBK 陷阱数据修正**（≤0.28 误为 UTF-8，陷阱实际永不触发）。
+  **EN**: ① onboarding: quickstart gains "host integration in one command" (`install-hooks --auto` detects and prints the single recommended command) and "multi-host / multi-session concurrency" (file lock, gene_id addressing, LWW ledger) - answering the 0.29 usability deduction; ② explicit "not applicable" scenarios in docs/overview.md; ③ provenance auto-attribution (deposit/hit/negate read `~/.evomap/source.json` automatically - no hook edits, no restarts); ④ first real cross-model measurement (`exp/heterogeneity-probe.mjs`: same deterministic GBK trap - deepseek-v4-flash **5/5 correct**, agnes-3.0-flash **0/5**, failure-signature agreement **0%** => heterogeneous fallback is real); ⑤ theory attribution (arXiv:2512.05117, read at source: its "shared subspace -> shared failure modes" is an **open question**; the media's "16 dims = intelligence" / "98-99% error yet function preserved" are **not supported by the paper** and are not cited here); ⑥ one-pager for the adoption decision; ⑦ pool trust distribution; ⑧ corrected GBK trap data (shipped as UTF-8 in <=0.28, so the trap could never fire).
 - **0.29.0（可读性与可验证性版）**：
   **中文**：① **SKILL.md 中英混排治理**（术语首次出现标注一次英文、后文用中文，Q17 完整对照）+ **触发词瘦身**（8+ 收敛为 3 组主词：召回/沉淀/继承，同义词自动折叠）——回应 0.28 评测 usability 扣分；② **规模的量化边界**（docs/overview.md：库规模/上限/注入条数/并发写入/池同步延迟/溯源覆盖，全部标注实测状态，未实测的明确写"未实测"）；③ **CLI 用法分组**（常用 6 条 / 沉淀审核 / 共享池 / 接入规程 / 运维诊断）；④ **溯源与异构验证**：deposit/register-hit/negate 记录 source_model+source_host，report 新增 L4 异源复现率与 negate 根因分布，gene export 打 trust 标签；⑤ exp/heterogeneity-probe.mjs 跨模型错误相关性探针（本机凭据 401/TLS 不通，待有有效 key 时实跑）。
   **EN**: ① mixed CN/EN prose normalised (term defined once, Chinese thereafter) + trigger words trimmed to 3 groups; ② quantified scale boundaries in docs/overview.md (library size / cap / injection count / concurrency / pool sync latency / provenance coverage - measured items marked, unmeasured marked as such); ③ CLI usage grouped (6 daily commands first); ④ provenance & heterogeneity: source_model/source_host on deposit/hit/negate, L4 cross-source reproduction rate + negate cause matrix in report, trust labels on export; ⑤ cross-model error-correlation probe added (blocked locally on credentials - 401/TLS, run when a valid key exists).
