@@ -2,10 +2,10 @@
 name: pi-evox-loop
 slug: pi-evox-loop
 displayName: "Pi EvoX Loop"
-description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
-description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
-description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains."
-version: 0.29.0
+description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
+description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
+description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
+version: 0.30.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -18,6 +18,7 @@ homepage: https://github.com/stwhwing/pi-evox-lab
 >
 > **文档地图（0.21 分层）**：
 > - **新用户只需读三节**：30 秒上手 → 流程 A → 流程 B（约 60 行）；其余按需查。
+> - **一分钟判断要不要用**：`docs/one-pager.md`（0.30 新增）
 > - **最佳实践集中入口**：`examples/quickstart.md`（5 分钟闭环）+ `docs/overview.md`（项目概览）+ `docs/common-mistakes.md`（14 条反模式）——三份覆盖"上手/全景/避坑"。
 > - 本文件其余部分 = 触发点/安全摘要/反模式速查/导航；`docs/advanced.md` = 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细；`docs/common-mistakes.md` = 常见错误用法完整清单；`docs/config-errors.md` = 常见配置错误；`docs/faq.md` = 完整 FAQ。
 > - `docs/research.md` = 流程 C 受控实验 + 陷阱设计纪律——**研究专用，绝大多数用户无需打开**。
@@ -179,6 +180,8 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **会话围栏（0.27）**：`light-cli.mjs session open "<任务名>"` 一步完成「T1 召回 + 记账」（落生产账本）；`session close "<本轮结论>"` 收尾记结论；`session` 查看围栏记录。**围栏让召回与沉淀可审计**：跳过召回或收尾沉淀，账本里没有配对的 open/close，外部构建门禁会拒绝构建。配套：`doctor` 检查埋点落点漂移。
 - **召回别名与触发词（0.28）**：`code/engine/light/aliases.json` 是概念别名表（concept → 英文 canonical + 中文别名短语）；①`draft --trigger "<动手前的措辞>"` 把触发短语展开成 signals（英文 canonical + 中文二元词**双写**）——预防型经验因此能在**动手前**被召回；②召回时中文 query 也会映射到英文 canonical（两种措辞都能命中）；③`light-cli.mjs fix-signals` 体检并展开存量基因里的**无效中文 signal**（>2 字在二元分词下永远匹配不上）。**打分公式与阈值不变**——语义只扩召回面，注入仍由确定性门决定。
 - **溯源与异构验证（0.29）**：deposit / `--register-hit` / `--negate` 都记录 `source_model` + `source_host`（环境变量 `EVOX_SOURCE_MODEL` 可显式指定模型）；`report` 新增 **L4 异源复现率**（同一基因被 ≥2 个不同「模型｜宿主」复现过才算 cross-source）与 **negate 根因分布**（`--because model-diff|env-diff|scene-mismatch|fix-wrong`）；`gene export` 给基因打 `trust` 标签（single-source / unknown-source）。**动机**：基因库是单点，防污染的三道门是同源代码——「单作危机」的直接指标就是跨源率，单源占比高说明该修法只被一个环境验证过。
+> **EN**: Our "heterogeneous verification" question comes from arXiv:2512.05117 (models of the same architecture share a low-dimensional weight subspace, and may therefore **inherit shared biases and failure modes**; the paper leaves "is that lack of diversity a bottleneck" as an **open question** and notes cross-architecture comparison has no method yet). What we do is a **response-level measurement** (failure-signature agreement across models on one deterministic trap) - not a port of its weight-space results.
+- **理论出处（0.30）**：本项目的「异构验证」问题意识来自 arXiv:2512.05117《The Universal Weight Subspace Hypothesis》（同架构模型共享低维参数子空间 → 可能**继承共同偏差与失败模式**；该文把"是否构成瓶颈"列为**开放问题**，跨架构比较尚无方法）。我们据此做的是**响应级实测**（不同模型在同一确定性陷阱上的失败签名一致率），**不是**权重空间结论的移植——详见 README 致谢区与 `docs/research.md`。
 - **效果量化（0.25）**：`light-cli.mjs report` 周报（L1 活性/L2 回填率/L3 错误家族复发，`--json` 可机读）；`recall --record "<结论>"` 把验证结论回填生产账本；`draft/distill --commit` 自动写 deposit 事件。
 - **许可验证（0.25）**：`light-cli.mjs license verify <token>` 验证 Ed25519 签名许可（发行方公钥随包 `assets/issuer-pub.txt（ClawHub/GitHub 0.25.0 首发的 .pem 版同样兼容）`）；许可机制本身开源，便于任何发行方接入。
 - **IO 重试语义**：文件读写对瞬态错误（EBUSY/EPERM/EACCES/ETIMEDOUT）自动重试（默认 3 次/截止 3s，`EVOX_IO_RETRY`/`EVOX_IO_DEADLINE_MS` 可调）；非瞬态错误不重试；重试是优化不是门——绝不因重试机制阻塞调用方（fail-open）。
