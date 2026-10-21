@@ -31,5 +31,15 @@
 - 库的价值随使用复利增长，冷启动需要先沉淀几条；
 - 共享池是自建 opt-in 机制，不是中心化服务。
 
+### 规模的量化边界（0.29 补，全部标注实测状态）
+| 维度 | 当前实测值 [A] | 边界说明 |
+|---|---|---|
+| 库规模 | 本机 217 条记录 / **133 条活跃（已审核）**（2026-10-21） | 打分公式：信号匹配 +3/个、正文 token 交集 +1/个、负载均衡 ±2，**低于 2 分不注入**；召回排序对 10² 量级稳定 |
+| 库规模上限 | **未实测** | 预期在 >500 条活跃后需重新校准 top-N 与阈值（届时用 `report` 的 L1/L2 指标做 A/B，不拍脑袋） |
+| 注入条数 | `--top` 默认 5 条 | 只注入「已审核 + 过修法守卫 + 与查询对靶」的条目；宁缺毋滥（实测：不对靶注入比不注入更差） |
+| 并发写入 | 单机多会话：文件锁（withLock，5s 超时 fail-open） | **跨机并发无分布式锁**——靠「各自库 + git 合并 + LWW 台账」裁定，不适合多机同时写同一库 |
+| 池同步延迟 | 自建 Git 池：推拉即 git 往返（秒级~分钟级，取决于网络） | 池不是实时服务；`gene pull` 拉到的是上次快照 |
+| 溯源覆盖 | deposit/register-hit 记录 `source_model` + `source_host`（0.29 起） | `report` 的 L4 出「跨源率」——单源占比高 = 修法只被一个（模型｜宿主）验证过，换环境可能失效 |
+
 ## 致谢
 方法论受 [numbat](https://github.com/perplexityai/numbat)（Perplexity，Apache-2.0，取证重建）与 [FlyLoRA](https://arxiv.org/abs/2510.08396)（NeurIPS 2025，负载均衡/免训练合并不干扰）启发；上游引擎 [pi-coding-agent](https://github.com/earendil-works/pi)（MIT）/ [@evomap/evolver](https://github.com/EvoMap/evolver)（GPL，可选集成）。
