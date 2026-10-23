@@ -2,9 +2,10 @@
  * engine/light/ledger.mjs — 轻量后端的审核台账
  *
  * 语义与 evolver `review` 对齐：approve / quarantine / list。
- * fail-closed 不变量：只有台账中 state 含 "approv" 的 asset 才可被注入（读取侧见 store.approvedAssetIds）。
+ * fail-closed 不变量：只有台账中 state **等于** "approved" 的 asset 才可被注入
+ * （读取侧见 store.approvedAssetIds；判定统一走 store.isApprovedState，禁止子串匹配）。
  */
-import { appendReview, readGenes, readReview, assetIdOf } from './store.mjs';
+import { appendReview, readGenes, readReview, assetIdOf, isApprovedState } from './store.mjs';
 
 /** 审核通过（接受 gene_id 或 asset_id） */
 export function approve(idOrAssetId) {
@@ -15,7 +16,9 @@ export function approve(idOrAssetId) {
   // 2026-10-11 实测：5 条 approve 静默无效假 ✓）。
   let lastState = null;
   for (const r of readReview()) { if (r.assetId === assetId) lastState = r.state; }
-  if (lastState && String(lastState).toLowerCase().includes('approv')) return { ok: true, assetId, alreadyApproved: true };
+  // 0.31 安全修复：精确比对。旧写法 `includes('approv')` 遇到 'unapproved'/'disapproved'
+  // 会判为 alreadyApproved ⇒ **真正的 approve 被静默跳过**（写入侧假 ✓）。
+  if (isApprovedState(lastState)) return { ok: true, assetId, alreadyApproved: true };
   appendReview({ assetId, state: 'approved', reason: 'approved via light ledger' });
   return { ok: true, assetId, alreadyApproved: false };
 }
