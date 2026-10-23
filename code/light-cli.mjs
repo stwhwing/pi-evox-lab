@@ -22,7 +22,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as distill from './engine/light/distill.mjs';
 import * as ledger from './engine/light/ledger.mjs';
-import { STORE_DIR, readGenes, readReview, approvedAssetIds, appendDeposit, sourceInfo } from './engine/light/store.mjs';
+import { STORE_DIR, readGenes, readReview, approvedAssetIds, appendDeposit, sourceInfo, isApprovedState, isQuarantinedState } from './engine/light/store.mjs';
 const SKILL_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
 import { signGene, verifyGene, loadIdentity, privateKeyPath } from './engine/light/identity.mjs';
 import { proposeFromError } from './engine/light/distill.mjs';
@@ -364,7 +364,7 @@ function loopHealth(genes, approved) {
     }
   } catch { /* 无台账 */ }
   const isAppr = (g) => g && g.asset_id && approved.has(g.asset_id);
-  const isQuar = (g) => g && g.asset_id && String(lww[g.asset_id] || '').toLowerCase().includes('quarantin');
+  const isQuar = (g) => g && g.asset_id && isQuarantinedState(lww[g.asset_id]);
   const undecided = genes.filter((g) => !isAppr(g) && !isQuar(g));
   const quarantined = genes.filter(isQuar);
 
@@ -439,6 +439,8 @@ function usage() {
   node code/light-cli.mjs stats                                # 本地使用统计（召回/命中/回填率）
   node code/light-cli.mjs config [--auto-approve on|off]       # 自己沉淀的基因是否自动通过（默认 on）
   node code/light-cli.mjs identity                             # 本机签名身份（Ed25519 keyid/私钥路径）
+  node code/light-cli.mjs verify <gene_id>                    # 验签本地库基因（exit 1 = 验签失败）
+  node code/light-cli.mjs resign [--yes]                      # 把存量 v1 签名升级为 v2（v2 覆盖嵌套内容；默认演练，--yes 才落盘）——0.31
   node code/light-cli.mjs license verify <token>               # 验证 Ed25519 签名许可
   node code/light-cli.mjs demo                                 # 90 秒自演示（只读，不改状态）
 
@@ -525,7 +527,7 @@ function doctor() {
     } catch {}
     const genes = readGenes();
     const lww = {}; for (const r of readReview()) lww[r.assetId] = r.state;
-    const ready = genes.filter((g) => g.shareable === true && String(lww[g.asset_id] || '').toLowerCase().includes('approv') && !poolIds.has(g.asset_id));
+    const ready = genes.filter((g) => g.shareable === true && isApprovedState(lww[g.asset_id]) && !poolIds.has(g.asset_id));
     if (ready.length >= 3) console.log(`  推送就绪：${ready.length} 条已审核可共享基因尚未入池 → gene submit --bundle <file> 产出提交包（人工发送，不自动外发）`);
   } catch { /* 提示失败不影响自检 */ }
   console.log(failed.length ? `\n自检未通过 ${failed.length} 项，请先修正后再用本技能（日常 recall / 沉淀不受影响）。` : `\n✓ 全部就绪，可正常使用 recall / 沉淀。`);
@@ -603,7 +605,7 @@ switch (cmd) {
     const { readReview } = await import('./engine/light/store.mjs');
     const lww = {};
     for (const r of readReview()) lww[r.assetId] = String(r.state || '').toLowerCase();
-    const active = genes.filter((g) => (lww[g.asset_id] || '').includes('approv'));
+    const active = genes.filter((g) => isApprovedState(lww[g.asset_id]));
     let touched = 0, fixed = 0;
     for (const g0 of active) {
       const dead = deadCjkSignals(g0.signals_match);
@@ -865,6 +867,36 @@ switch (cmd) {
     const v = verifyGene(g);
     console.log(`[gene-share] ${g.id}: ${v.status} — ${v.why}`);
     if (!v.ok) process.exitCode = 1;
+    break;
+  }
+  case 'resign': {
+    // 0.31：把 v1 规范化的存量签名升级为 v2（v2 把**嵌套字段**纳入签名域，修复嵌套篡改仍验签通过）。
+    // 默认演练（只打印将重签的条目，绝不落盘）；--yes 才真正写库。
+    // 只处理「本机身份签署 + 当前验签通过 + 仍是 v1」的基因 —— 已篡改或他机签署的不动。
+    const yes = rest.includes('--yes');
+    const id = loadIdentity();
+    const genes = readGenes();
+    const todo = genes.filter((g) => g.sig && g.keyid === id.keyId
+      && Number(g.sig_v || 1) < 2 && verifyGene(g).status === 'verified');
+    console.log(`[gene-share] 待升级签名 ${todo.length} 条（本机身份 ${id.keyId}，共 ${genes.length} 条基因）`);
+    for (const g of todo.slice(0, 10)) console.log(`  ${g.id}  ${String(g.summary || '').slice(0, 50)}`);
+    if (todo.length > 10) console.log(`  … 另 ${todo.length - 10} 条`);
+    if (!yes) {
+      console.log('  （演练模式：加 --yes 才会写入 genes.jsonl）');
+      break;
+    }
+    const { withLock } = await import('./engine/light/store.mjs');
+    let n = 0;
+    withLock(STORE_DIR, () => {
+      for (const g of todo) { signGene(g); n++; }
+      const lines = genes.map((x) => JSON.stringify(x)).join('\n') + '\n';
+      fs.writeFileSync(path.join(STORE_DIR, 'genes.jsonl'), lines);
+    });
+    // 回读验证：重签后必须全部 verified
+    const after = readGenes().filter((g) => todo.some((t) => t.id === g.id));
+    const stillBad = after.filter((g) => verifyGene(g).status !== 'verified');
+    console.log(`[gene-share] 已重签 ${n} 条（v2）；回读验签失败 ${stillBad.length} 条`);
+    if (stillBad.length) process.exitCode = 1;
     break;
   }
   case 'evidence': {
@@ -1134,7 +1166,7 @@ switch (cmd) {
     const rc = count('recall_calls.jsonl'), pi = count('pending_injections.jsonl'), hf = count('hits.jsonl');
     const genes = readGenes();
     const lww = {}; for (const r of readReview()) lww[r.assetId] = r.state;
-    const approved = genes.filter((g) => String(lww[g.asset_id] || '').toLowerCase().includes('approv')).length;
+    const approved = genes.filter((g) => isApprovedState(lww[g.asset_id])).length;
     console.log(`[gene-share] 本地使用统计（${hitsDir}）：`);
     console.log(`  召回调用 ${rc} | 注入待回填 ${pi} | 回填 ${hf} | 回填率 ${pi ? Math.round((hf / pi) * 100) : '—'}%`);
     console.log(`  库: ${genes.length} 条（已审核 ${approved}）`);
