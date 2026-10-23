@@ -23,6 +23,10 @@
  */
 import { spawnSync } from 'node:child_process';
 import { selectEngine } from './engine/index.mjs';
+import { isApprovedState } from './engine/light/store.mjs';
+// 0.31（S5）：注入守卫。静态导入 —— 编排器不是宿主 bootstrap，模块缺失应当**响亮失败**，
+// 不做静默降级（与 evolver-recall 的 try/catch 降级策略不同，那边必须保证宿主能启动）。
+import { injectionScan } from './injection_scan.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -204,7 +208,8 @@ function loadApprovedStrategy() {
     } catch {}
     const approved = new Set();
     for (const [assetId, state] of latestState) {
-      if (typeof state === 'string' && state.toLowerCase().includes('approv')) approved.add(assetId);
+      // 0.31 安全修复：精确比对（旧写法 `includes('approv')` 会放行 unapproved/disapproved）。
+      if (isApprovedState(state)) approved.add(assetId);
     }
     // 2) 抽取这些基因的 strategy
     const out = [];
@@ -221,6 +226,9 @@ function loadApprovedStrategy() {
       if (!aid || !approved.has(aid)) continue;
       const text = st.join(' ').slice(0, 1200);
       if (!isRepairLike(text)) continue; // 守卫：无修法信号的叙述（如成功总结）不注入，宁缺毋滥（§20）
+      // 0.31 注入守卫（S5）：与 evolver-recall 同口径——文档声称注入守卫覆盖「召回」，
+      // 而编排器是另一条注入通道，此前缺位（ClawHub clawscan 点名）。
+      if (!injectionScan(g).ok) continue;
       out.push(`- [${g.category || 'repair'}] ${text}`);
     }
     return out.join('\n\n').slice(0, 4000);
@@ -340,13 +348,17 @@ for (let r = 1; r <= opts.rounds; r++) {
       // 方法学依据：AMA-Bench 类工作显示长上下文基线必须作为对照臂，否则效果声明不可信。
       const latest = new Map();
       try { for (const line of fs.readFileSync(EVO_REVIEW, 'utf8').split('\n')) { const t = line.trim(); if (!t) continue; try { const rr = JSON.parse(t); if (rr && typeof rr.assetId === 'string' && rr.assetId) latest.set(rr.assetId, rr.state); } catch {} } } catch {}
-      const ok = new Set([...latest].filter(([, st]) => String(st).toLowerCase().includes('approv')).map(([aid]) => aid));
+      // 0.31 安全修复：精确比对（旧写法 `includes('approv')` 会放行 unapproved/disapproved）。
+      const ok = new Set([...latest].filter(([, st]) => isApprovedState(st)).map(([aid]) => aid));
       const all = [];
       for (const line of fs.readFileSync(EVO_GENES, 'utf8').split('\n')) {
         const t = line.trim(); if (!t) continue;
         let g; try { g = JSON.parse(t); } catch { continue; }
         if (!g.asset_id || !ok.has(g.asset_id)) continue;
         const st = g.strategy; if (!Array.isArray(st) || !st.length) continue;
+        // 0.31（S5）：full-context 臂同样过注入守卫 —— 该臂本就是「不做对靶筛选」的长上下文对照臂，
+        // 「不做对靶筛选」不等于「不做安全检查」。
+        if (!injectionScan(g).ok) continue;
         all.push(`- [${g.category || 'repair'}] ${st.join(' ').slice(0, 1200)}`);
       }
       strat = all.join('\n');
