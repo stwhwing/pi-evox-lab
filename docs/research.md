@@ -122,6 +122,48 @@ node code/pi_evolve.mjs <repo模板目录> <任务文件> \
 第一轮探针把 deepseek 判成 `no-code` ×4——**那是装置伪影**：deepseek-v4-flash 是推理模型，800 token 预算被 `reasoning_content` 吃光（`finish_reason: length`，正文 0 字符）。修正：token 预算提到 3000，并新增 `reasoning-only` 签名把「正文空但有推理」与「模型没给代码」分开。**没有这一步，就会把装置误差写成"某模型系统性不会写代码"的结论。**
 
 ### 19.4 落到机制
-- 跨源复现率 → `report` 的 **L4 异源复现率**（同一基因被 ≥2 个不同「模型｜宿主」复现过 = cross-source）；0.30 首测：29 条有证据基因里跨源 1 条（3.2%）。
+- 跨源复现率 → `report` 的 **L4 异源复现率**（同一基因被 ≥2 个不同「模型｜宿主」复现过 = cross-source）；0.30 首测 29 条有证据基因里跨源 1 条（3.2%），2026-10-21 收工复核为 **39 条里 2 条 = 5.1%**。
 - 溯源自动归因（0.30 B-2）：deposit / register-hit / negate 自动读 `~/.evomap/source.json` 记录 `source_model` + `source_host`（不必改钩子、不必重启服务）。
 - 结论：0.29 之前所有修法**都是单源**（跨源率 0%）——这正是"同构"在我们自己库里的量化形态；异构验证要靠**不同模型/宿主的独立复现**，不是靠多开实例。
+
+## 20. 双陷阱矩阵与免费模型补测（0.31，2026-10-22）
+
+> **EN**: Two-trap matrix (GBK bytes + malformed JSON) and a free-tier retest across 9 previously unmeasured models. Key method rule: separate **service availability** (non-error call share) from **capability** (avoidance rate among valid samples) — mixing them reads "service unavailable" as "model can't do it".
+
+### 20.1 为什么要加第二个陷阱
+单一陷阱（GBK）只能说明「编码这一类」。加非法 JSON（550 B，`json.load` 实测抛错）是为了验证**跨类别**是否同样成立。探针改为 per-trap 架构：每个陷阱自带提示词与分类器。
+
+| 陷阱 | 必然失败的属性 | 分类器签名 |
+|---|---|---|
+| **gbk** | 文件含非 UTF-8 字节 ⇒ 默认 utf-8 解码必然抛 `UnicodeDecodeError` | `gbk-correct` / `utf8-wrong` / `rb-bypass` / `no-code` / `reasoning-only` |
+| **json** | fixture 有尾逗号 + 缺 `}` ⇒ `json.load` 必然抛 `JSONDecodeError` | `json-guarded` / `json-naive` / `regex-bypass` / `no-code` / `reasoning-only` |
+
+装置修正（与 §19.3 同源教训）：`reasoning` 字段兼容 `reasoning_content`；模型 ID 按**第一个**斜杠切分（OpenRouter 多段 ID 曾被截断）；单次请求 180 s 超时；每 (陷阱, 模型) 增量落盘；`--self-test` 11/11。
+
+### 20.2 补测结果（15 个待测 → 9 个拿到真实数据）
+
+首轮探活：可用 9 / 限流 3 / **403 永久排除 2** / 404（疑似下架）1。实测 9 模型 × 2 陷阱 × N=5 = **90 次调用**。
+
+**GBK（9/9 拿到有效样本）**
+
+| 模型 | 调用 | 有效 | 避坑率 | 签名分布 |
+|---|---|---|---|---|
+| `poolside/laguna-xs-2.1:free` | 5 | 3 | 100% | rb-bypass×3, error×2 |
+| `nvidia/nemotron-3.5-super-vl:free` | 5 | 1 | 100%（**n=1，勿过度解读**） | gbk-correct×1, error×4 |
+| `cohere/north-mini-code:free` | 5 | 5 | 20% | utf8-wrong×4, rb-bypass×1 |
+| `nvidia/nemotron-3.5-lightning` / `nemotron-3-ultra-550b` / `poolside/laguna-s-2.1` / `dots-studio/dots-3-note-preview` | 5 | 5 | **0%** | utf8-wrong×5 |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | 5 | 5 | 0% | no-code×3, utf8-wrong×2 |
+| `liquid/lfm-2.5-2.6b:free` | 5 | 3 | 0% | utf8-wrong×3, timeout×1, error×1 |
+
+**非法 JSON（仅 2/9，配额中途耗尽）**：`nemotron-3.5-super-vl` **80%**（json-guarded×3、regex-bypass×1、json-naive×1）；`nemotron-3.5-lightning` 0%（n=2）；其余 7 个全部 error。
+
+**对照基线**：`deepseek/deepseek-v4-flash` GBK 100% / JSON 80%；`agnes-cn/agnes-3.0-flash` GBK 80% / JSON 80%；`minimax/minimax-m3.1-flash:free` GBK 0% / JSON 0%。
+
+### 20.3 三条方法学结论
+
+1. **必须拆两轴**：服务可用性（非 error 占比）与能力（有效样本中的避坑率）**不能混算**。`nemotron-3.5-super-vl` 的 GBK 显示 100%，但那是 **n=1**（5 次调用只成功 1 次）——强但不稳，不适合做 fallback 候选。
+2. **陷阱的跨模型稳健性再次成立**：GBK 在 **9 个此前从未测过的模型**上，6 个稳定 0% 掉坑（`utf8-wrong` 5/5）⇒ 「环境必然失败」型陷阱可以作为后续实验的可靠工具。边界：`nemotron-3-nano` 出现 `no-code=3`（推理型模型可能不给代码块）。
+3. **免费档配额是两种 429 并存**（2026-10-22 实测更正）：① `<model>:free is temporarily rate limited` = **按模型**短期限流（会自愈）；② `Rate limit exceeded: free-models-per-day` = **账号级日配额**。早期「50/天全局配额」与「只是按模型限流」两种说法都只对一半。另 `thinkingmachines/inkling*` 返回 **403**（`only available on agentic harnesses`），属路由限制而非配额，直连 Chat API 永久不可用。
+
+### 20.4 未完成的样本（透明声明）
+JSON 陷阱尚有 7 个模型、以及 3 个未测模型（`google/gemma-4-26b-a4b-it` / `google/gemma-4-31b-it` / `xingchen-agi/xing4.0-29b-a4b`）卡在账号级日配额上。本轮数据**只用于说明陷阱稳健性与模型差异**，不作为任何能力承诺（免费档可用性不可控）。
