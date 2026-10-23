@@ -46,17 +46,59 @@ export function keyIdOf(publicKeyPem) {
   return crypto.createHash('sha256').update(publicKeyPem).digest('hex').slice(0, 16);
 }
 
-/** 规范化签名域：asset_id + 去签名字段后的稳定 JSON */
-function canonical(gene) {
-  const { sig, keyid, pubkey, signed_at, ...rest } = gene || {};
+/**
+ * 规范化签名域。
+ *
+ * ⚠️ 有两个版本，且**必须并存**：
+ *  - v1（历史）：`JSON.stringify(rest, Object.keys(rest).sort())`。replacer 数组会被应用到
+ *    **每一层嵌套对象** ⇒ 嵌套里不在顶层键名列表中的属性被**静默丢弃**，不在签名域内。
+ *    实测后果：改嵌套内容后验签仍是 `verified`（ClawHub clawscan 于 0.30.0 点名）。
+ *  - v2（0.31 起）：递归规范化，所有嵌套内容都进签名域。
+ * 若直接把 v1 换成 v2，存量已签名基因会**集体验签失败**并被判 `tampered`
+ * （`gene import` 会直接 BLOCK 导入）⇒ 因此按 `sig_v` 分派，存量基因继续用 v1 验，
+ * 新签名一律 v2。用户可跑 `light-cli resign --yes` 把存量升级到 v2。
+ */
+const SIG_META = ['sig', 'keyid', 'pubkey', 'signed_at', 'sig_v'];
+export const SIG_V2 = 2;
+
+function stripMeta(gene) {
+  const rest = { ...(gene || {}) };
+  for (const k of SIG_META) delete rest[k];
+  return rest;
+}
+
+/** v1：与历史行为逐字节一致（仅用于验签存量基因，不再用于签名） */
+function canonicalV1(gene) {
+  const rest = stripMeta(gene);
   return String(rest.asset_id || '') + '\n' + JSON.stringify(rest, Object.keys(rest).sort());
+}
+
+/** v2：递归规范化——对象按键排序、数组保序，嵌套内容全部纳入签名域 */
+function canonicalValue(v) {
+  if (Array.isArray(v)) return '[' + v.map(canonicalValue).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort()
+      .map((k) => JSON.stringify(k) + ':' + canonicalValue(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+
+function canonicalV2(gene) {
+  const rest = stripMeta(gene);
+  return String(rest.asset_id || '') + '\n' + canonicalValue(rest);
+}
+
+/** 按基因自带的 sig_v 分派；缺省视为 v1（legacy） */
+function canonical(gene) {
+  return Number(gene && gene.sig_v) === SIG_V2 ? canonicalV2(gene) : canonicalV1(gene);
 }
 
 /** 给基因签名（原地补 {sig, keyid, pubkey, signed_at} 并返回同一对象） */
 export function signGene(gene) {
   if (!gene || !gene.asset_id) return gene;
   const { privateKey, publicKey, keyId } = loadIdentity();
-  const data = Buffer.from(canonical(gene), 'utf8');
+  gene.sig_v = SIG_V2; // 先打版本，再用 v2 规范化（canonicalV2 会剔除 sig_v 自身）
+  const data = Buffer.from(canonicalV2(gene), 'utf8');
   const sig = crypto.sign(null, data, privateKey).toString('base64');
   gene.sig = sig; gene.keyid = keyId; gene.pubkey = publicKey; gene.signed_at = new Date().toISOString();
   return gene;
@@ -72,9 +114,14 @@ export function verifyGene(gene, pubkeyPem) {
   const pem = pubkeyPem || gene.pubkey;
   if (!pem) return { ok: true, status: 'unverifiable', why: '有 sig 但无 pubkey，无法验证' };
   try {
-    const data = Buffer.from(canonical(gene), 'utf8');
+    const v2 = Number(gene.sig_v) === SIG_V2;
+    const data = Buffer.from(v2 ? canonicalV2(gene) : canonicalV1(gene), 'utf8');
     const ok = crypto.verify(null, data, pem, Buffer.from(String(gene.sig), 'base64'));
-    if (ok) return { ok: true, status: 'verified', why: `签名有效（keyid=${gene.keyid || '?'}）` };
+    if (ok) {
+      // v1（legacy）虽然验签通过，但其签名域不含嵌套内容 —— 明确告知，不静默当作同等强度。
+      const note = v2 ? '签名有效' : '签名有效（v1 规范化：嵌套字段不在签名域，建议 light-cli resign 升级）';
+      return { ok: true, status: 'verified', why: `${note}（keyid=${gene.keyid || '?'}）` };
+    }
     return { ok: false, status: 'tampered', why: '签名与内容不匹配——基因可能被篡改' };
   } catch (e) {
     return { ok: true, status: 'unverifiable', why: `验签异常（${e.message}）——按无法验证处理` };
