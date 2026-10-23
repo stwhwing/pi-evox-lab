@@ -16,11 +16,12 @@
 - **`--llm-refine` 涉及数据外发**：会把会话 transcript（截 9000 字符）发送到 `EVOLVER_REFINE_URL` 指定的外部端点。**未配置该变量时此功能自动禁用**，不存在默认外发。请在了解外发范围后启用，或使用本地/自有端点；
 - **`--fresh` 有破坏性**：备份后清空全局经验库 `~/.evomap/assets/`——执行前确认，恢复用备份目录；
 - **实验产物含会话内容**：`--root` 目录下的 sessions/transcript/inject-*.txt 包含任务文本、代码与工具输出，注意保管；
-- **`--auto-approve` 为显式 opt-in**：默认保留人工审核门（quarantined 基因不生效），开启后由召回/沉淀双向守卫兜底；
+- **审核门默认值（0.31 修订，与代码对齐）**：**交互式沉淀（有 TTY）默认 approved**（`autoApprove` 缺省 true，0.16.0 起"自己的库自己负责"），**非交互式（脚本 / cron / 宿主自动管道，无 TTY）默认 quarantined**——后者须显式传 `--auto-approve` 才生效。显式 `--no-auto-approve` / `--manual-review` 一律 quarantined。旧文档表述为"默认人工审核门"，**只对非交互路径成立**，已按实际行为修订（ClawHub clawscan 于 0.30.0 指出该不一致）；
+  > **EN**: Review-gate defaults (0.31, aligned with the code): **interactive deposits (TTY) default to approved** (`autoApprove` defaults to true), while **non-interactive deposits (scripts / cron / host pipelines, no TTY) default to quarantined** and need an explicit `--auto-approve`. `--no-auto-approve` / `--manual-review` always quarantine. The older "manual review by default" wording only held for the non-interactive path and has been corrected (ClawHub clawscan flagged the mismatch on 0.30.0).
 - **注入块透明标注**：所有注入内容均带 `[Evolver inherited fixes]` 明示来源，无隐蔽指令；扩展留痕文件 `bridge-last-inject.txt` 仅含时间戳与注入内容（不含路径）；
 - **adapter 默认脱敏 cwd**：transcript 头部的 env_fingerprint 默认不含工作目录（可泄露项目/客户身份），实验确需时显式传 `--include-cwd`；
 - **全局输出脱敏（0.10.0）**：编排器的所有 stdout/stderr 输出统一做密钥掩码（已注册的 API key 与 sk-/Bearer 形态），密钥不出现在任何输出；
-- **关于安全扫描器**：本 skill 的核心功能（持久化并复用模型生成的经验）会被启发式扫描器持续标记为 Excessive Agency / Prompt Injection——这是功能本质而非缺陷。我们的安全基线 = 显式 opt-in 标志 + 双向守卫 + 透明标注 + 默认人工审核门；`--auto-approve --llm-refine` 组合启用时编排器默认拒绝（需 `--allow-unreviewed-refine` 显式放行）。
+- **关于安全扫描器**：本 skill 的核心功能（持久化并复用模型生成的经验）会被启发式扫描器持续标记为 Excessive Agency / Prompt Injection——这是功能本质而非缺陷。我们的安全基线 = 显式 opt-in 标志 + 三向守卫（修法 / 叙述 / 注入）+ 透明标注 + 审核门精确比对 + 输出脱敏；`--auto-approve --llm-refine` 组合启用时编排器默认拒绝（需 `--allow-unreviewed-refine` 显式放行）。
 
 ## 已知的安全扫描器判定（透明记录）
 
@@ -30,4 +31,8 @@
 - skillhub 科恩实验室：benign；
 - 平台审核层：ClawHub `moderation.verdict = clean`、skillhub TRACE 综合评级「优秀」。
 
-我们的安全基线：显式 opt-in 标志 + 双向守卫 + 透明标注 + 默认人工审核门 + 全局输出脱敏（0.10.0）。
+我们的安全基线：显式 opt-in 标志 + 三向守卫（修法 / 叙述 / 注入）+ 透明标注 + 审核门（**状态精确比对 `approved`，unapproved/disapproved/revoked 一律不生效**）+ 全局输出脱敏（0.10.0）。
+
+> **0.31 变更**：注入守卫此前只在 `evolver-recall.mjs` 与 `gene_share.mjs` 生效，而文档声称覆盖「召回」——Pi 扩展桥（`evolver-bridge.ts`）与闭环编排器（`pi_evolve.mjs`）是另外两条注入通道，现已补齐（桥单文件部署，内置精简版守卫）。审核态判定原本散落 10 处做子串匹配 `includes('approv')`，会把 `unapproved`/`disapproved` 判为已批准，现统一为精确比对。签名规范化升级到 v2（嵌套内容纳入签名域），存量 v1 签名继续有效，可用 `light-cli resign --yes` 升级。
+>
+> **EN (0.31 changes)**: The injection guard previously ran only in `evolver-recall.mjs` and `gene_share.mjs` although the docs claimed "recall" coverage - the Pi bridge (`evolver-bridge.ts`) and the closed-loop orchestrator (`pi_evolve.mjs`) are two more injection channels and are now covered (the bridge ships a reduced built-in guard because it deploys as a single file). Approval-state checks that were scattered across 10 substring matches (`includes('approv')`) treated `unapproved`/`disapproved` as approved and are now exact comparisons. Signature canonicalization moved to v2 (nested content inside the signing domain); existing v1 signatures stay valid and can be upgraded with `light-cli resign --yes`.
