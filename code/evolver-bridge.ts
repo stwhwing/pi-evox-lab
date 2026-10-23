@@ -22,9 +22,23 @@ const EVO_STORE = path.join(os.homedir(), ".evomap", "assets");
 const EVO_GENES = path.join(EVO_STORE, "genes.jsonl");
 const EVO_REVIEW = path.join(EVO_STORE, "review.jsonl");
 
+/**
+ * 审核态判定（0.31 新增，本文件自带一份 —— 桥是**单文件拷贝部署**到 ~/.pi/agent/extensions/，
+ * 不能 import 兄弟模块）。语义必须与 `engine/light/store.mjs` 的 isApprovedState 一致：
+ * 仅 `approved` 为真，未知/畸形 false（fail-closed）。
+ *
+ * 为什么不能用子串匹配：旧写法 `state.toLowerCase().includes("approv")` 会把
+ * "unapproved" / "disapproved" 也判为已批准 ⇒ 被明确撤销/拒绝的基因仍被注入 system prompt
+ * （ClawHub clawscan 在 0.30.0 上点名，我方实测确认）。
+ */
+function isApprovedState(state: unknown): boolean {
+	return typeof state === "string" && state.trim().toLowerCase() === "approved";
+}
+
 /** 读取 review.jsonl 台账「每个 assetId 的最后一条状态」，返回 state=approved 的集合（尊重审核门）。
  *  修复（2026-09-17，与 evolver-recall.mjs 同步）：旧实现只要台账历史上出现过 approved 就计入，
- *  导致 quarantine 无法撤销已批准 —— 被隔离的基因仍会被注入。追加式台账必须 last-write-wins。 */
+ *  导致 quarantine 无法撤销已批准 —— 被隔离的基因仍会被注入。追加式台账必须 last-write-wins。
+ *  修复（0.31）：子串匹配改为 isApprovedState 精确比对。 */
 function approvedAssetIds(): Set<string> {
 	const latestState = new Map<string, string>();
 	try {
@@ -47,7 +61,7 @@ function approvedAssetIds(): Set<string> {
 	}
 	const approved = new Set<string>();
 	for (const [assetId, state] of latestState) {
-		if (state.toLowerCase().includes("approv")) approved.add(assetId);
+		if (isApprovedState(state)) approved.add(assetId);
 	}
 	return approved;
 }
@@ -75,6 +89,38 @@ const NARRATION_RE =
 
 function isNarrationLike(text: string): boolean {
 	return NARRATION_RE.test(text);
+}
+
+/**
+ * 注入守卫（0.31 新增，桥自带的**精简版**）。
+ *
+ * 背景：完整扫描器在 `code/injection_scan.mjs`，但桥是单文件拷贝部署，无法 import 它；
+ * 而文档（SKILL.md / advanced.md）声称注入守卫覆盖「召回」——桥正是召回通道之一，此前缺位，
+ * 被 ClawHub clawscan 点名（"appends accepted strategies without the advertised injection guard"）。
+ *
+ * 取舍：这里只保留**语境无关**的高危特征（指令覆盖 / 角色劫持 / 伪造角色标记 / 诱导泄漏提示 /
+ * 隐匿行为 / 零宽字符 / base64 大块）。需区分 AVOID「警告」语境的动作类模式（rm -rf 等）
+ * **不在此列** —— 单文件版无法可靠切分 AVOID/FIX 语境，纳入会误杀正常基因；
+ * 那部分仍由 recall / import / export 路径上的完整扫描器负责。
+ */
+const BRIDGE_INJECTION_RE: RegExp[] = [
+	// 指令覆盖（中英；中文用白名单式放宽，覆盖插入常见程度副词的变体）
+	/忽略((之前|上面|以上|先前|前述)?(的)?(所有|一切|全部)?(的)?|(系统|原有|初始)(的)?)(指令|指示|规则|要求|约束)|ignore (all )?(previous|prior|above|earlier) (instructions|prompts|rules)/i,
+	/disregard (all )?(previous|prior|earlier)|forget (everything|all) (above|before)/i,
+	// 角色劫持 / 伪造标记
+	/你现在是|从现在起你是|you are now|act as (a )?(different|new) (ai|assistant|model)/i,
+	/^\s*(system|assistant|user)\s*:/im,
+	// 诱导泄漏 system prompt
+	/(输出|显示|告诉我|reveal|print|show).{0,10}(你的)?(系统提示|system prompt|指令|instructions)/i,
+	// 隐匿行为
+	/不要(告诉|告知|让).{0,10}(用户|对方)|(don'?t|do not) tell (the )?user|silently|隐蔽地|静默(执行|上传)/i,
+	// 混淆
+	/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/,
+	/\b[A-Za-z0-9+/]{40,}={0,2}\b/,
+];
+
+function isInjectionLike(text: string): boolean {
+	return BRIDGE_INJECTION_RE.some((re) => re.test(text));
 }
 
 /**
@@ -108,6 +154,7 @@ function loadApprovedStrategies(): string[] {
 			const text = strategy.join(" ").slice(0, 1200);
 			if (!isRepairLike(text)) continue; // 守卫：无修法信号词 → 不注入
 			if (isNarrationLike(String(strategy[0] ?? "").trim())) continue; // 叙述守卫：旁白开场 → 不注入
+			if (isInjectionLike(text)) continue; // 注入守卫（0.31）：命中注入特征 → 不注入
 			out.push(`- [${g.category || "repair"}] ${text}`);
 		}
 	} catch {
