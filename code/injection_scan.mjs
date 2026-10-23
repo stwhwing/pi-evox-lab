@@ -14,7 +14,12 @@
 /** 危险模式表。severity: 'high' 一律拦截；'med' 仅在 FIX 语境（指示去做）时拦截。 */
 const PATTERNS = [
   // ── 指令覆盖 / 角色劫持（high：直接瞄准 system prompt）──
-  { id: 'override-instructions', sev: 'high', re: /忽略(之前|上面|以上|所有)(的)?(指令|指示|规则|要求)|ignore (all )?(previous|prior|above|earlier) (instructions|prompts|rules)/i },
+  // 中文放宽（0.31）：旧正则对「忽略」类动词与指令类名词之间可插入的修饰词限制过死，
+  // 仅插入一个常见程度副词（如"所有"）就不命中 —— 而这正是这类短语最常见的形态。
+  // 纪律：注释里**只描述机制类别，不引用触发串原文** —— 说明文字本身会被扫描器当成注入样本
+  // （本仓已有为此发版的先例：gene_manual_9ca2aed5）。
+  // 用**白名单式**放宽而非任意通配：后者会把「忽略 + 普通名词」这类正常文本误杀。
+  { id: 'override-instructions', sev: 'high', re: /忽略((之前|上面|以上|先前|前述)?(的)?(所有|一切|全部)?(的)?|(系统|原有|初始)(的)?)(指令|指示|规则|要求|约束)|ignore (all )?(previous|prior|above|earlier) (instructions|prompts|rules)/i },
   { id: 'disregard-prior', sev: 'high', re: /disregard (all )?(previous|prior|earlier)|forget (everything|all) (above|before)/i },
   { id: 'role-hijack', sev: 'high', re: /你现在是|从现在起你是|you are now|act as (a )?(different|new) (ai|assistant|model)/i },
   { id: 'fake-role-marker', sev: 'high', re: /^\s*(system|assistant|user)\s*:/im },
@@ -48,14 +53,23 @@ const PATTERNS = [
  * 把 strategy 切成 AVOID / FIX 两段。
  * 命中 `AVOID:` 到 `FIX:` 之间算 avoid；`FIX:` 之后算 fix。
  * 没有标记时整段视为 fix（**保守**：当作指示性内容）。
+ *
+ * ⚠️ 0.31 修复（T09 safeguard bypass，ClawHub clawscan 点名 + 我方实测复现）：
+ * 旧实现在没有 `AVOID` 标记时直接丢弃 `FIX:` **之前**的文本（既不进 avoid 也不进 fix），
+ * 于是「指令覆盖类前缀 + `FIX:` 修法后缀」的组合能绕过扫描，而召回时前缀会被原样保留
+ * 给智能体消费 —— 是一条真实的提示词注入通道。
+ * 现在：未被 AVOID 段覆盖的前缀一律**归入 fix**（保守口径，与「无标记整段视为 fix」一致）。
  */
 export function splitAvoidFix(strategyText) {
   const s = String(strategyText || '');
   const iAvoid = s.search(/AVOID\s*[:：]/i);
   const iFix = s.search(/FIX\s*[:：]/i);
-  if (iFix < 0) return { avoid: '', fix: s };
-  if (iAvoid >= 0 && iAvoid < iFix) return { avoid: s.slice(iAvoid, iFix), fix: s.slice(iFix) };
-  return { avoid: '', fix: s.slice(iFix) };
+  if (iFix < 0) return { avoid: '', fix: s }; // 无 FIX：整段视为 fix（保守）
+  if (iAvoid >= 0 && iAvoid < iFix) {
+    // AVOID 段之外（含 AVOID 之前的前缀）→ fix
+    return { avoid: s.slice(iAvoid, iFix), fix: s.slice(0, iAvoid) + s.slice(iFix) };
+  }
+  return { avoid: '', fix: s }; // 无 AVOID / AVOID 在 FIX 之后：整段（含前缀）归 fix
 }
 
 /**
