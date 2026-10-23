@@ -160,10 +160,32 @@ export function appendReview(rec) {
   });
 }
 
+/**
+ * 审核态判定：**唯一权威入口**（0.31 新增）。
+ *
+ * 为什么必须由一处统一判定：旧写法散落各处做 `state.toLowerCase().includes('approv')`，
+ * 而 `'unapproved'` / `'disapproved'` 同样包含子串 'approv' ⇒ **被明确撤销/拒绝的基因
+ * 会被当成已批准**，进而注入 system prompt 或进入共享池（ClawHub clawscan + skillspector
+ * 于 0.30.0 上点名，实测确认）。
+ *
+ * 语义：仅 `approved` 为真；大小写/空白归一；**未知或畸形状态一律 false（fail-closed）**。
+ */
+export function isApprovedState(state) {
+  if (typeof state !== 'string') return false;
+  return state.trim().toLowerCase() === 'approved';
+}
+
+/** 隔离态判定（同上，精确比对）。'unquarantined' 之类不得被算作隔离。 */
+export function isQuarantinedState(state) {
+  if (typeof state !== 'string') return false;
+  return state.trim().toLowerCase() === 'quarantined';
+}
+
 /** 已 approved 的 asset_id 集合（fail-closed：台账不可用时为空集，调用方据此跳过注入）
  *  追加式台账 ⇒ 以「每个 assetId 的最后一条状态」为准（last-write-wins）。
  *  修复（2026-09-23）：旧实现只要历史上出现过 approved 就计入，导致 quarantine 无法撤销已批准
- *  —— 与 evolver-recall.mjs / evolver-bridge.ts 的 2026-09-17 修复对齐（此前遗漏本处）。 */
+ *  —— 与 evolver-recall.mjs / evolver-bridge.ts 的 2026-09-17 修复对齐（此前遗漏本处）。
+ *  修复（0.31）：子串匹配改为 `isApprovedState` 精确比对。 */
 export function approvedAssetIds() {
   const latestState = new Map();
   for (const r of readReview()) {
@@ -173,7 +195,9 @@ export function approvedAssetIds() {
   }
   const set = new Set();
   for (const [assetId, state] of latestState) {
-    if (typeof state === 'string' && state.toLowerCase().includes('approv')) set.add(assetId);
+    // 0.31 安全修复：改为**精确比对**。旧写法 `includes('approv')` 会把 'unapproved' /
+    // 'disapproved' 当成已批准 ⇒ 被明确撤销/拒绝的基因仍会被注入（ClawHub clawscan 点名）。
+    if (isApprovedState(state)) set.add(assetId);
   }
   return set;
 }
