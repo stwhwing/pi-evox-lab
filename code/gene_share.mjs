@@ -10,7 +10,7 @@
  */
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { SCENES } from './engine/light/store.mjs';
+import { SCENES, isApprovedState, isQuarantinedState } from './engine/light/store.mjs';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -123,9 +123,11 @@ const exportable = (genes) => {
   const lww = {};
   try { for (const r of store.readReview()) lww[r.assetId] = r.state; } catch { /* 台账缺失按未决定 */ }
   const stateOf = (g) => {
-    const s = String(lww[g.asset_id] || '').toLowerCase();
-    if (s.includes('approv')) return 'approved';
-    if (s.includes('quarantin')) return 'quarantined';
+    // 0.31 安全修复：改为精确比对。这里判定的是**池导出资格**——旧写法 `includes('approv')`
+    // 会把 'unapproved' / 'disapproved' 判成 approved ⇒ 未审核或已撤销的基因可进共享池，
+    // 审核门在他机上失效（本仓六处审批门中危害最大的一处）。
+    if (isApprovedState(lww[g.asset_id])) return 'approved';
+    if (isQuarantinedState(lww[g.asset_id])) return 'quarantined';
     return 'undecided';
   };
   const out = [], blocked = [], pending = [];
