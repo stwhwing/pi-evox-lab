@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { withLock } from './engine/light/store.mjs';
+import { withLock, isApprovedState } from './engine/light/store.mjs';
 import { proposeFromError } from './engine/light/distill.mjs';
 import { REPAIR_SIGNAL_RE, NARRATION_RE, RETRY_LOG_RE } from './engine/light/guards.mjs';
 
@@ -143,7 +143,8 @@ function approvedAssetIds() {
 	}
 	const set = new Set();
 	for (const [assetId, state] of latestState) {
-		if (typeof state === 'string' && state.toLowerCase().includes('approv')) set.add(assetId);
+		// 0.31 安全修复：精确比对（旧写法 `includes('approv')` 会放行 unapproved/disapproved）。
+		if (isApprovedState(state)) set.add(assetId);
 	}
 	return set;
 }
