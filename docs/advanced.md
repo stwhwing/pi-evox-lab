@@ -38,13 +38,13 @@ node code/light-cli.mjs harvest --dismiss <N>                  # 无价值驳回
 
 ## 安全：四道门（明细，自 SKILL.md 下沉）
 
-> **EN**: Four gates detail (moved from SKILL.md for progressive disclosure). The injection guard distinguishes `AVOID:` (warning - allowed) from `FIX:` (instruction - blocked) contexts; measured 11/11 malicious samples caught, 7/7 legitimate zero false-kill. Fail-closed if the guard module is missing: export/import refuse to run; recall skips the injection gate but the other three still apply (read-only must not block, writes must be closed).
+> **EN**: Four gates detail (moved from SKILL.md for progressive disclosure). The injection guard distinguishes `AVOID:` (warning - allowed) from `FIX:` (instruction - blocked) contexts; regression suite (0.31): **16/16 malicious samples caught, 7/7 legitimate zero false-kill**, including the two newly fixed漏检 (text before `FIX:` was silently dropped; Chinese override regex too narrow). Fail-closed if the guard module is missing: export/import refuse to run; `evolver-recall.mjs` skips the injection gate but the other three still apply (read-only must not block, writes must be closed); the Pi bridge ships a reduced built-in guard and `pi_evolve.mjs` uses the full scanner without降级.
 
 | # | 门 | 管什么 | 在哪生效 |
 |---|---|---|---|
 | 1 | **修法守卫** | 有没有**真修法**（无可执行内容 → 不注入） | 召回 |
 | 2 | **叙述守卫** | 是不是**旁白流水**（开场白式 → 不注入） | 召回 |
-| 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回 + 导入 + 导出 |
+| 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回（CLI / Pi 扩展桥 / 编排器三条通道）+ 导入 + 导出 |
 | 4 | **脱敏闸门** | 会不会**泄私有内容**（IP/路径/密钥 → 拦截不出网） | 导出 + 导入 |
 
 **关键设计：区分 `AVOID` 与 `FIX` 语境**——`AVOID:` 段出现危险词 = 在警告别这么做（合法，放行）；`FIX:` 段出现危险词 = 在指示这么做（可疑，拦截）。
@@ -194,13 +194,16 @@ wc -l experiments/hits.jsonl             # >1 条说明闭环闭合
 
 ## 基因签名与 provenance（明细，0.21）
 
-> **EN**: Provenance detail: Ed25519 keypair per machine (`~/.evomap/identity/`, private key mode 0600). Signing domain = asset_id + canonical JSON (signature fields excluded). Deposit signs automatically; `gene submit` carries the signature; `gene import` verifies with the embedded pubkey: tampered -> BLOCKED, unsigned/legacy -> accepted with note, unverifiable -> accepted with warning. Trust model = keyid traceability, not a central CA.
+> **EN**: Provenance detail: Ed25519 keypair per machine (`~/.evomap/identity/`, private key mode 0600). Signing domain = asset_id + canonical JSON (signature fields excluded, **v2: recursively canonicalized so nested content is covered**). Deposit signs automatically; `gene submit` carries the signature; `gene import` verifies with the embedded pubkey: tampered -> BLOCKED, unsigned/legacy -> accepted with note, unverifiable -> accepted with warning. Trust model = keyid traceability, not a central CA.
 
 ```
 light-cli identity            # 查看本机 keyid 与密钥路径
 light-cli verify <gene_id>    # 验签本地库基因（exit 1 = 验签失败）
 light-cli evidence <gene_id>  # 审核取证（ approve 前自动执行；也可单独跑）
+light-cli resign [--yes]      # 0.31：把存量 v1 签名升级为 v2（v2 覆盖嵌套内容；默认演练，--yes 才落盘）
 ```
+
+**签名规范化 v1 / v2（0.31）**：v1 用 `JSON.stringify(rest, Object.keys(rest).sort())`，replacer 数组作用于**每一层** ⇒ 嵌套字段被静默丢弃、不在签名域内（改嵌套内容仍验签 `verified`，实测确认）。v2 改为递归规范化，嵌套内容全部纳入。为不让存量已签名基因集体变 `tampered`，按 `sig_v` 分派：v1 基因继续按 v1 验（验签通过但会提示可升级），新签名一律 v2。
 
 ## IO 重试与截止（0.21，stability）
 
