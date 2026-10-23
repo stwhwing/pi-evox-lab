@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.30.0
+version: 0.31.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -164,7 +164,8 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 > **EN**: Provenance signing (0.21, one of the last 1.0 criteria): every deposit is signed with this machine's Ed25519 identity (`~/.evomap/identity/`, private key 0600, never leaves the machine); genes carry {sig, keyid, pubkey}. Pool imports verify signatures - tampered content is REJECTED, unsigned/legacy genes pass with a note. `light-cli identity` shows your keyid; `light-cli verify <gene_id>` verifies.
 
 - 沉淀自动签、入池随行、导入验签：**内容被篡改 → 拒绝导入**；无签名的老基因原样接受（legacy）；
-- 私钥不出本机；公钥随基因出入池供他机验签——信任模型是“按 keyid 溯源”，不是中心化 CA。
+- 私钥不出本机；公钥随基因出入池供他机验签——信任模型是“按 keyid 溯源”，不是中心化 CA；
+- **签名规范化 v2（0.31）**：v1 的签名域**不含嵌套字段**（ replacer 数组作用于每一层，嵌套内容被静默丢弃）；v2 递归规范化，把嵌套内容全部纳入。新签名一律 v2，存量 v1 仍有效（验签通过但会提示可升级）；升级用 `light-cli resign --yes`（默认只演练不落盘）。
 
 ## 部署与分发（0.23）
 
@@ -188,13 +189,13 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 ## 安全：四道门（0.16.0）
 
-> **EN**: Genes are soft prompts injected into the system prompt - one malicious gene is one prompt injection. Four gates: repair-signal guard, narration guard, injection guard (malice; AVOID=warning allowed vs FIX=instruction blocked - 11/11 malicious caught, 7/7 legitimate zero false-kill), redaction gate (privacy, fail-closed off-machine). Full details: `docs/advanced.md`.
+> **EN**: Genes are soft prompts injected into the system prompt - one malicious gene is one prompt injection. Four gates: repair-signal guard, narration guard, injection guard (malice; AVOID=warning allowed vs FIX=instruction blocked - regression suite 16/16 malicious caught, 7/7 legitimate zero false-kill), redaction gate (privacy, fail-closed off-machine). Full details: `docs/advanced.md`.
 
 | # | 门 | 管什么 | 在哪生效 |
 |---|---|---|---|
 | 1 | **修法守卫** | 有没有**真修法**（无可执行内容 → 不注入） | 召回 |
 | 2 | **叙述守卫** | 是不是**旁白流水**（开场白式 → 不注入） | 召回 |
-| 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回 + 导入 + 导出 |
+| 3 | **注入守卫** | 是不是**恶意指令**（提示词注入 → 不注入） | 召回（CLI / Pi 扩展桥 / 编排器三条通道）+ 导入 + 导出 |
 | 4 | **脱敏闸门** | 会不会**泄私有内容**（IP/路径/密钥 → 拦截不出网） | 导出 + 导入 |
 
 > **四道门各自查什么、命中会怎样（0.28 补全——不必跳转 advanced.md 即可自足使用）**：
@@ -206,7 +207,9 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 > | 注入守卫 | 是否含**提示词注入特征**（覆盖先前指令、对用户隐匿操作、伪装角色标记等，中英文变体；具体特征表见 `docs/advanced.md`，此处不复述以免文档本身触发扫描） | **不注入 + 导入/导出时拦截**；这是对抗"基因内容反过来操纵宿主"的主防线 |
 > | 脱敏闸门 | 是否含**私有内容**（内网 IP、绝对家目录、密钥/令牌、凭据、内部代号） | **导出/导入拦截，不出网**；沉淀时保留语义但中性化表述 |
 >
-> 门模块缺失时的降级：**导出/导入 fail-closed（拒绝执行）**；召回侧只跳过注入门、其余三门照常（只读路径不阻断使用者）。
+> 门模块缺失时的降级：**导出/导入 fail-closed（拒绝执行）**；`evolver-recall.mjs` 侧只跳过注入门、其余三门照常（宿主 bootstrap 路径不能因守卫失败而阻断使用者）。**例外**：Pi 扩展桥（`evolver-bridge.ts`）内置**精简版**注入守卫（单文件拷贝部署，无法 import 完整扫描器），编排器 `pi_evolve.mjs` 则用完整扫描器且不降级。
+>
+> **0.31 修复（实测确认的两个漏检）**：① 注入扫描器原先把 `FIX:` **之前**的文本整体丢弃、不进任何扫描区 ⇒ 「指令覆盖类前缀 + `FIX:` 修法后缀」可绕过；② 中文「指令覆盖」正则对动词与指令类名词之间的修饰词限制过死，仅插入一个常见程度副词即不命中。两者均已修复并纳入回归用例。**纪律**：注释与文档里只描述机制类别、不引用触发串原文——说明文字本身会被扫描器当成注入样本（本仓有为此发版的先例）。
 
 守卫模块缺失时 fail-closed（导出/导入拒绝执行；召回侧跳过注入门但其余三门照常——只读不阻断、写入必须 closed）。
 
@@ -233,13 +236,32 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
 | **T5** | 任务结束 | 收尾 | `--register-hit --gene <id>` / `--negate --gene <id>` | 无法度量，失效修法发现不了 |
 
-**触发词（0.29 瘦身：只记 3 组主词，同义词自动折叠）**：
+### T3：报错自动触发（最容易被忽略、但收益最高的一个点）
 
-| 组 | 主词（记这一个就够） | 同义词（说了也算） | 触发动作 |
-|---|---|---|---|
-| **召回类** | **召回** | 经验召回 / 错题本 / 避坑 / recall / lessons | T1：`recall --query "<任务>"` |
-| **沉淀类** | **沉淀** | 记一笔 / 入库 / deposit / distill | T4：`draft --error "<报错>"` |
-| **进化类** | **继承** | 自进化 / 经验继承 / evolver / pi-evox | T1 + T4 |
+> **EN**: T3 is the highest-yield trigger: when a tool returns an error, run recall with the raw error text **before retrying**. Without it you re-derive a fix your own store already holds.
+
+**为什么单独拎出来**：T3 是唯一「**不用你记得**」的触发点——报错本身就是提醒。实测里最可惜的失效形态正是「库里明明有修法，却盲目重试」。
+
+**口径**：工具返回错误、**准备重试之前**，把**报错原文**直接当查询（不要自己概括）：
+
+```bash
+node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xd5 in position 0"
+```
+
+命中后按修法重试；仍失败 → 走 T4 沉淀这条新坑。
+
+**触发词 ↔ 命令映射（0.31 补全：每组主词给到可直接复制的命令）**
+
+| 组 | 主词（记这一个就够） | 同义词（说了也算） | 触发点 | 具体命令（可直接复制） |
+|---|---|---|---|---|
+| **召回类** | **召回** | 经验召回 / 错题本 / 避坑 / recall / lessons | T1 任务开始 | `node code/evolver-recall.mjs --query "<任务一句话>"` |
+| **召回类（报错）** | **报错了** | 失败了 / 又挂了 / 重试 / 修一下 / error / traceback | T3 遇到报错 | `node code/evolver-recall.mjs --error "<报错原文>"` |
+| **沉淀类** | **沉淀** | 记一笔 / 入库 / deposit / distill / 存起来 | T4 修好坑后 | `node code/light-cli.mjs draft --error "<报错原文>"` |
+| **进化类** | **继承** | 自进化 / 经验继承 / evolver / pi-evox | T1 + T4 | 先 T1 召回，修好后 T4 沉淀 |
+| **体检类** | **体检** | 自检 / 健康度 / 有没有失效 / doctor / info | 随时 | `node code/light-cli.mjs info` |
+| **签名类** | **签名** | 验签 / 篡改 / provenance / identity | 跨机协作前 | `node code/light-cli.mjs verify <gene_id>` |
+
+> 术语不确定时（signals_match / anti_patterns / LWW / depositionGate / sig_v 等）查 [`docs/glossary.md`](docs/glossary.md)（一页纸，每个词配一个最小例子）。
 
 **接入方式**：有钩子的宿主（OpenClaw/Hermes）用 `install-hooks`；任何有 AGENTS.md/CLAUDE.md 的宿主用 `install-snippet` 把五触发点规程写进指令文件。完整接入契约（三步+模板）见 `docs/advanced.md`。
 
@@ -272,6 +294,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | `code/light-cli.mjs` | 流程 B：沉淀/审核/取证 + timeline/harvest/gene 池 | 沉淀修法、审核基因 |
 | `code/pi_evolve.mjs` · `code/engine/light/` | 流程 C 编排器 · 轻量引擎三件套 | 研究用 / 理解引擎 |
 | **`docs/advanced.md`** | 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细 | 接生产环境、排查「没生效」 |
+| **`docs/glossary.md`**（0.31 新增） | 术语一页纸：signal / signals_match / anti_patterns / LWW / depositionGate / sig_v 等，各配一个最小例子 | 看不懂某个词时 |
 | **`docs/common-mistakes.md`** · **`docs/config-errors.md`** · **`docs/faq.md`** | 14 条错误用法 · 常见配置错误 · 完整 FAQ | 踩坑后 / 环境出错 / 速览不够时 |
 | `docs/forensics-numbat.md` · `docs/providers.md` · `docs/security-and-license.md` | numbat 取证 PoC · LLM 配置 · 安全与许可 | 对靶验证 / 跑流程 C 前 / 引入生产前 |
 | `examples/walkthrough-*.md` · `traps/make_*_trap.py` | 端到端走查（GBK/JSON/流程 C）· 6 种陷阱生成器 | 第一次照着跑 / 流程 C |
