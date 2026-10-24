@@ -36,3 +36,18 @@
 > **0.31 变更**：注入守卫此前只在 `evolver-recall.mjs` 与 `gene_share.mjs` 生效，而文档声称覆盖「召回」——Pi 扩展桥（`evolver-bridge.ts`）与闭环编排器（`pi_evolve.mjs`）是另外两条注入通道，现已补齐（桥单文件部署，内置精简版守卫）。审核态判定原本散落 10 处做子串匹配 `includes('approv')`，会把 `unapproved`/`disapproved` 判为已批准，现统一为精确比对。签名规范化升级到 v2（嵌套内容纳入签名域），存量 v1 签名继续有效，可用 `light-cli resign --yes` 升级。
 >
 > **EN (0.31 changes)**: The injection guard previously ran only in `evolver-recall.mjs` and `gene_share.mjs` although the docs claimed "recall" coverage - the Pi bridge (`evolver-bridge.ts`) and the closed-loop orchestrator (`pi_evolve.mjs`) are two more injection channels and are now covered (the bridge ships a reduced built-in guard because it deploys as a single file). Approval-state checks that were scattered across 10 substring matches (`includes('approv')`) treated `unapproved`/`disapproved` as approved and are now exact comparisons. Signature canonicalization moved to v2 (nested content inside the signing domain); existing v1 signatures stay valid and can be upgraded with `light-cli resign --yes`.
+
+## 如何判读安全扫描器的判定（0.32 C-2）
+
+外部扫描器（ClawHub 的 `static-analysis` / `clawscan` / `skillspector`）的判定**不能一概接受或一概拒绝**，必须逐条分流。我们的判读方法公开如下，便于他人复核：
+
+| 类别 | 特征 | 我们的处置 |
+|---|---|---|
+| **功能固有** | `child_process` 调用（`distill_sessions` / `pi_evolve` / `light-cli` / `gene_share` / hooks 示例）、env 读取凭据（`EVOX_PROBE_KEY_*`，包内绝不带 key） | **接受为设计**：本地 runtime 本就要 spawn 子进程；凭据只从 env 注入。逐条对比上一版确认非回归 |
+| **扫描器自身覆盖不足** | `skillspector` 的 `analysis-evasion` / `Incomplete referenced artifact analysis`（它没读完被引用的文件就判"隐瞒"） | **判为噪声**：0.30.0 的 25 个列出项里 22 个属此类。不为它改设计 |
+| **真实缺陷** | `clawscan` 点名、且我们**亲读源码 + 本地复现**成立的 | **必修**。历史实例：`[T09]` `FIX:` 前缀绕过注入守卫（0.31 已修，`splitAvoidFix` 不再丢弃前缀文本）；审批门子串匹配（0.31 已修，10 处全改精确比对） |
+| **误报** | 启发式把「本地 fixture 路径 + 网络发送」配对判为可疑外传（`potential_exfiltration`） | **改写法消除**而非争辩：0.32 把 `exp/heterogeneity-probe.mjs` 的 fixture 路径从环境变量改为 CLI 参数 `--json-trap` |
+
+**原则**：扫描器 verdict（suspicious / DO_NOT_INSTALL）是**线索**，不是判决。我们只对"亲读源码 + 本地复现"成立的条目改设计；对噪声记录但不为其发版；对误报改写法以消除触发条件。每次发布后复拉扫描报告，与上一版**逐条对比**确认非回归。
+
+> **EN**: Scanner verdicts are leads, not verdicts. We only change design for findings we can reproduce by reading our own source and running it locally; we record noise without shipping for it; for false positives we change the code pattern that triggers the heuristic (e.g. 0.32 moved a fixture path from an env var to a CLI argument). Every release re-pulls the scan report and diffs it against the previous version.
