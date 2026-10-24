@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.31.0
+version: 0.32.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 ---
@@ -166,6 +166,11 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - 沉淀自动签、入池随行、导入验签：**内容被篡改 → 拒绝导入**；无签名的老基因原样接受（legacy）；
 - 私钥不出本机；公钥随基因出入池供他机验签——信任模型是“按 keyid 溯源”，不是中心化 CA；
 - **签名规范化 v2（0.31）**：v1 的签名域**不含嵌套字段**（ replacer 数组作用于每一层，嵌套内容被静默丢弃）；v2 递归规范化，把嵌套内容全部纳入。新签名一律 v2，存量 v1 仍有效（验签通过但会提示可升级）；升级用 `light-cli resign --yes`（默认只演练不落盘）。
+- **精确归因（0.32 D-2）**：此前 `~/.evomap/source.json` 只是**静态 per-host 默认值**，而宿主有 fallback 链——某轮实际由 fallback 服务时会被误记成 primary。现两个生产钩子把**本轮实际服务的模型**透传（OpenClaw 读 `transcript_events` 里最近一条 assistant 事件的 `model`；Hermes 读 `pre_llm_call` payload 的 `extra.model`），落成 `~/.evomap/last_source.json`。`sourceInfo()` 优先级：**env > last_source.json（7 天窗）> source.json > 空**。⚠️ 语义是「最近一次观测到的服务模型」，不保证与本次 deposit 同轮次；存量基因不回填。
+- **压缩方案族 `source_kv`（0.32 B-5/B-6）**：`generation_meta.source_kv` 记录基因出自哪种 **KV 压缩方案**（`none` / `csa-s4`（W=8,S=4）/ `stride2` / `unknown`；闭源或架构未公开一律 `unknown`，不猜）。召回打分对**已知同族**基因加分（`EVOX_SAME_KV_WEIGHT`，默认 1.5，设 0 关闭）；**本机族未知时完全不加权**，行为与此前一致。为什么按压缩方案而非模型血统：arXiv:2609.36322 把 DeepSeek 的 CSA 压缩核移植到 Qwen3-0.6B 骨架从头预训练仍复现「位置相关的检索失败」⇒ 决定因素是压缩核，不是厂商。
+- **注入长度留痕（0.32 B-1）**：注入块是追加在 system prompt 尾部的，其 token 数会**平移其后所有内容的相位**；召回是动态 top-N ⇒ 注入长度随会话变化。`evolver-bridge.ts` 现把 `chars`/`estTokens` 写入 sidecar；`EVOX_ALIGN_INJECT_MOD4=1` 可把**估算** token 数对齐到 4 的倍数（估算值，非真实分词）。
+
+> **EN**: 0.32 provenance & phase line - `~/.evomap/source.json` used to be only a static per-host default, so a turn actually served by a fallback was mis-recorded as the primary. The two production hooks now pass the **actually served model** (OpenClaw reads the most recent assistant event's `model` from `transcript_events`; Hermes reads `extra.model` from the `pre_llm_call` payload) into `~/.evomap/last_source.json`. `sourceInfo()` priority is **env > last_source.json (7-day window) > source.json > empty** - it means "most recently observed serving model", not guaranteed to be this deposit's turn; existing genes are not back-filled. Genes also carry `generation_meta.source_kv`, the **KV compression scheme** they came from (`none` / `csa-s4` (W=8,S=4) / `stride2` / `unknown`; closed or undisclosed architectures are always `unknown`, never guessed), and recall scoring bonus-boosts **known same-family** genes (`EVOX_SAME_KV_WEIGHT`, default 1.5, 0 disables; when the local family is unknown there is no weighting at all). The axis is the compression scheme rather than vendor lineage because arXiv:2609.36322 reproduces position-dependent retrieval failure by porting DeepSeek's CSA kernel onto a Qwen3-0.6B backbone. Finally, because the injected block is appended to the system prompt its token count **shifts the phase of everything after it**, and recall is dynamic top-N, so injection length varies per session: `evolver-bridge.ts` now logs `chars`/`estTokens` and `EVOX_ALIGN_INJECT_MOD4=1` aligns the **estimated** token count to a multiple of four (an estimate, not real tokenization).
 
 ## 部署与分发（0.23）
 
@@ -306,5 +311,8 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 **方法论致谢（完整列表见 README）**：
 - **[numbat](https://github.com/perplexityai/numbat)**（Perplexity AI，Apache-2.0）—— agent 行为审计器。`timeline` 与 `harvest` 的方法论直接受其启发；PoC 手册见 `docs/forensics-numbat.md`。
 - **[FlyLoRA](https://arxiv.org/abs/2510.08396)**（NeurIPS 2025，清华大学）—— 负载均衡偏置与免训练合并不干扰两条原理的显式迁移来源（0.14.4）。
+- **[Periodic Weak Spots: Phase Sensitivity from Chunked KV-Cache Compression](https://arxiv.org/abs/2609.36322)**（ByteDance Seed）—— **相位轴**与**等长对照臂**这两项的来源（0.32）：分块 KV-cache 压缩引入「相位」这一新位置坐标，长上下文检索精度随其周期性起伏。本项目据此补上 R2-pad 等长中性对照臂，把继承增益从相位运气里分离出来（实测 n=10/臂、长度 Δ=0：语义 +100pp、相位 0pp）；并因论文把 CSA 核移植到 Qwen3-0.6B 骨架仍复现，把基因族字段定在**压缩方案**（`source_kv`）而非模型血统上。**论文自身结论本机未复现**（既未证实也未证伪），已在 `docs/research.md` §21.3 诚实标注；转述中越界的条目（`CSA2`、`Kimi`、`MLA` 等，原文 0 出现）本项目不引用。
+
+> **EN**: **[Periodic Weak Spots](https://arxiv.org/abs/2609.36322)** (ByteDance Seed) - source of the *phase* axis and of the length-matched control arm (0.32): chunked KV-cache compression introduces a new positional coordinate, phase, and long-context retrieval accuracy rises and falls with it. It is why we added the R2-pad control arm that separates the inheritance gain from phase luck (measured n=10/arm, length Δ=0: semantic +100pp, phase 0pp), and why the gene-family field is the **compression scheme** (`source_kv`) rather than vendor lineage - the paper reproduces the effect by porting the CSA kernel onto a Qwen3-0.6B backbone.
 
 > 以上均为**研读与对照**：本项目与它们均无隶属关系，也不代表其观点；本仓库实现均为原创，默认后端是 MIT 的内置引擎。完整方法论清单（Palantir Ontology 等）见 README 致谢节。
