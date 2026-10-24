@@ -167,3 +167,66 @@ node code/pi_evolve.mjs <repo模板目录> <任务文件> \
 
 ### 20.4 未完成的样本（透明声明）
 JSON 陷阱尚有 7 个模型、以及 3 个未测模型（`google/gemma-4-26b-a4b-it` / `google/gemma-4-31b-it` / `xingchen-agi/xing4.0-29b-a4b`）卡在账号级日配额上。本轮数据**只用于说明陷阱稳健性与模型差异**，不作为任何能力承诺（免费档可用性不可控）。
+
+## 21. 相位敏感性：理论出处与我们的实测（0.32，2026-10-24）
+
+> **EN**: Section 21 records the origin of the "phase" axis (arXiv:2609.36322, read at source) and what we measured ourselves. 21.1 theory - chunked KV-cache compression introduces a new positional coordinate, *phase*, and retrieval accuracy varies with it; the causal axis is the compression kernel, not vendor lineage. 21.2 items that appear in second-hand retellings but **not** in the paper, so we do not cite them. 21.3 our own probes - inconclusive, and we say why. 21.4 what it changed in this project (a length-matched control arm, a `source_kv` field, optional injection-length alignment, injection position as an experiment variable). 21.5 apparatus lessons.
+
+### 21.1 理论出处（已读原文并核对，不引二手转述）
+
+**arXiv:2609.36322**《Periodic Weak Spots: Phase Sensitivity from Chunked KV-Cache Compression》（ByteDance Seed；2026-09-28，65 页，20 图）。
+
+核心结论（均为原文支持）：分块 KV-cache 压缩会引入一个新的位置坐标 —— **「相位」**（token 相对压缩窗口边界的位置）；长上下文检索精度随相位**周期性起伏**，出现"周期性弱区"。
+
+- 实验装置：NIAH，128,000 token 提示、16,000 组键值对，目标埋在 token ≈64,000 处，每个模型 2,048 条提示。
+- 跨相位最大落差（best−worst，Table 7）：Flash-Base **40.23pp**、Flash-0731 19.14、**Pro-Base 34.77**、Pro-0813 14.84、V4.1-Flash 6.09。
+- 周期 4 的确证：\|acc(r) − acc(r+4)\| 仅 1.07–1.95pp（DeepSeek-V4 的 CSA 核为 **W=8, S=4**；HCA 在奇数层、压缩率 128；V4.1-Flash 为 stride 2）。
+- **因果指向压缩核，而非厂商血统**：把 DeepSeek 的 CSA 核移植到 **Qwen3-0.6B 骨架并从头预训练**，周期性弱区**照样复现**。这是本项目把"族"定义在压缩方案上、而不是模型血统上的直接依据。
+- 层分化：key gate 的峰值早层在第 14 层、中层第 10、晚层第 9；value gate 整体晚一位。
+
+### 21.2 明确不引用的说法（二手转述越界，原文 grep 命中数 = 0）
+
+转述该文的文章里出现的以下条目，在**原文全文中 0 次出现**，本项目一律不引用：`CSA2`、`Harness`、`Kimi`、`KDA`、`MLA`、`QSA`、`Gated DeltaNet`。
+
+> 判断方法沿用 §19.1：**拿原文逐条 grep**，命中 0 即不写入；这条纪律在本节与 §19 同等适用。
+
+### 21.3 我们的实测（未闭合，既未证实也未证伪 —— 诚实标注）
+
+装置（`_rel0310/phase_probe*.mjs`）：双臂对照以隔离「相位」与「长度」—— **ArmP** 把填充放在目标**之前**、**ArmS** 放在目标**之后**，两臂的总长度、查询位置、内容完全相同。
+
+| 探针 | 结果 |
+|---|---|
+| top-1 检索（ND=20 / 200 / 1000） | 恒 **100%** ⇒ 天花板任务，无相位空间 ⇒ **无信号** |
+| logprob 探针（ND=200，值取单字母 24 选 1，n≈6/格，1.4K token）· `deepseek-v4-flash` | 可用性 100%；12 个 k 值里 3 个（k=6/7/11）准确率掉 16.7pp，金标 logprob 由 ≈−0.01 掉到 −2.4~−3.0；但 \|Δ4\|=1.127 **>** \|Δ1\|=0.819 ⇒ **周期 4 未确证** |
+| 同上 · `agnes-3.0-flash`（本机主脑） | 并发 3 时 49/144 被限流打掉；准确率各 k 恒 100%，logprob 平坦（−0.05~−0.56），Δ4≈Δ2≈Δ1，两臂差 0 ⇒ **无信号** |
+
+**为什么不下结论**：① 探针尺度比论文小约 **90×**，且目标位置太靠前（论文把目标放在上下文正中）；② 主脑跑在天花板与限流之下，"无信号"既不支持也不反对论文。**本机复现缺口（B-7）仍在，等有免费额度时再跑 —— 这是缺陷，不是结论。**
+
+### 21.4 落到机制（本项目的方法论修正，0.32 已实现）
+
+**C3 缺口（本轮最高价值发现）**：**注入块长度 mod 4 会平移整段对话的相位**。实测注入块 §11（两基因）≈140 token/次、§16（单基因）≈40 token/次 —— **两次都 ≡0 (mod 4) 纯属巧合**；而召回是动态 top-N ⇒ 注入长度随会话变化 ⇒ 相位偏移近似随机。⇒ **R1/R2 之差 = 语义效应 + 相位平移效应，此前未分离。**
+
+**修法与结果：加 R2-pad 等长中性对照臂**（同 token 数的非基因文本，二分搜索标定至 Δ=0）：
+
+| 臂 | 内容 | 结果（agnes-3.0-flash，n=10/臂，可用性 100%，长度 Δ=0，两臂同相位） |
+|---|---|---|
+| R1 | 无注入 | **0%**（8 `utf8-wrong` + 2 `rb-bypass`） |
+| R2 | 注入基因 | **100%**（10/10） |
+| R2-pad | 等长中性文本 | **0%**（签名分布与 R1 **完全相同**：8 `utf8-wrong` + 2 `rb-bypass`） |
+
+⇒ Δ(R2−R1) = **100.0pp**、Δ(R2pad−R1) = **0.0pp** ⇒ **语义增量 100.0pp、相位贡献 0.0pp**。这条把「继承增益 ≈−30pp」的结论从"可能含相位运气"里救了出来。
+
+DeepSeek 臂（R1 12.5% / R2 75% / R2-pad 62.5%）因 `reasoning-only` 计数伪影（三臂分布 7/1/2）与天花板效应，**判为不可靠、不予采信**（宁不报，不报假）。
+
+由此落地的四项：
+- **B-5/B-6 压缩方案族**：基因新增 `generation_meta.source_kv`（`none` / `csa-s4` / `stride2` / `unknown`；**闭源模型一律 `unknown`，不猜**），`scoreGene` 对已知同族加分（默认 +1.5，`EVOX_SAME_KV_WEIGHT` 调节，设 0 关闭；本机族未知时完全不加权，行为与 0.31 一致）。
+- **B-1 注入长度留痕与可选对齐**：`evolver-bridge.ts` 把 `chars`/`estTokens` 写入 sidecar；`EVOX_ALIGN_INJECT_MOD4=1` 把**估算** token 数补齐到 4 的倍数（估算值，非真实分词；180/180 用例收敛）。
+- **B-4 注入位置文档化为实验变量**：OpenClaw 钩子落在上下文**前部**（`openclaw-bootstrap-recall.js`）、Hermes 追加到当轮 user message、Pi 桥落在 system prompt **尾部**（`evolver-bridge.ts`）⇒ 同一条基因在三通道**不等价**。
+- **D-2 精确归因**：see §19.4 —— 溯源链路升级为 **env > `last_source.json`（7 天窗）> `source.json` > 空**，记录**实际服务的模型**而非配置里的 primary。
+
+### 21.5 装置教训（与 §19.3 同源）
+
+1. **任务难度必须落在中间区**：top-1 恒 100% 的天花板任务测不出相位差异 —— 先确认"准确率有下降空间"，再谈相位。
+2. **可用性与能力分轴**：并发 8 时主脑 88% 请求被限流，单发 200ms 正常 ⇒ **不可读成"模型不会做"**（§20.3 同一纪律）。
+3. **推理型模型必须留足 token 预算**：否则 `content` 为空、`finish_reason: length`，与 §19.3 完全同一类伪影（本轮在 logprob 探针上又遇到一次）。
+4. **等长对照的标定不能用固定系数外推**：重复字符的 BPE 密度非常数（≈7.6 字符/token 会漂移），固定系数外推连错三次（Δ=30 / −9 / 31）；正解是**二分搜索 + 宽松上界** ⇒ Δ=0。
