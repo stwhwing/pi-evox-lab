@@ -113,6 +113,16 @@ node code/light-cli.mjs starter         # ② 装起步包，立刻有东西可�
 node code/light-cli.mjs install-hooks   # ③ 演练接线（看清会做什么；加 --yes 才写入）
 ```
 
+**`install-hooks` 的两个常见疑问，答案直接给你（0.32 C-3：原在 FAQ Q10/Q12，内联于此，新手不必跳转）**：
+
+1. **它会改坏我的宿主配置吗？** 不会。默认是**演练模式**——只打印"将要做什么"，**不落盘**；
+   加 `--yes` 才真正写入，且写入前会备份。OpenClaw 改 handler 后需重启网关才生效；Hermes 只改脚本、
+   若启用 allowlist 需刷新，且脚本 mtime 必须是 ISO-8601 字符串。`install-hooks --auto` 会先自动探测
+   本机有哪些宿主，再给出**唯一一条**推荐命令，不用你自己选。
+2. **我的 Agent 既不是 OpenClaw 也不是 Hermes，怎么自动用？** 用规程粘贴：
+   `node code/light-cli.mjs snippet` 输出「五个触发点」操作规程，粘进你的 AGENTS.md / CLAUDE.md /
+   系统提示即可——这是没有钩子机制的宿主最可靠的接入方式。
+
 ### 自动审核开关（默认开）
 自己 `distill`/`draft` 沉淀的基因**默认自动通过**，立即可注入。`config --auto-approve off` 可改人工；此项**只作用于本地沉淀**，从共享池 `gene import` 仍按 `--tier` 判定。
 
@@ -190,6 +200,21 @@ wc -l experiments/hits.jsonl             # >1 条说明闭环闭合
 | 任意支持 system prompt 或钩子的宿主 | 薄适配层 | 只需调用 `evolver-recall.mjs` |
 
 > **诚实边界**：各宿主会话存储格式不一——结构化标志最可靠；只靠文本标记时召回率随宿主而异。bootstrap 类钩子可能**早于**当轮用户消息落库，此时该轮退化为「无查询 → top-N 封顶」。
+
+**注入位置是显式实验变量（0.32 B-4，源自 arXiv:2609.36322）**：同一条基因在不同通道落在上下文的**相反两端**，二者不等价——
+
+| 通道 | 代码位置 | 落在上下文 |
+|---|---|---|
+| OpenClaw 钩子 | `examples/hooks/openclaw-bootstrap-recall.js`（`bootstrapFiles.push`） | **前部**（虚拟引导文件） |
+| Hermes 钩子 | `hermes-pre-llm-recall.py`（`{"context": ...}`） | **追加到当轮 user message** |
+| Pi 扩展桥 | `code/evolver-bridge.ts`（`event.systemPrompt + block`） | **尾部**（system prompt 末端） |
+
+> **为什么要在意**：分块 KV 压缩（如 DeepSeek-V4 CSA 的 W=8,S=4）会引入「相位」这一位置坐标，
+> 同一信息在不同位置上可检索性可差数十个百分点（论文跨相位 best−worst 达 40.23pp）。
+> 又：**注入块的 token 数会平移其后所有内容的相位**，而召回是动态 top-N ⇒ 注入长度随会话变化
+> ⇒ 相位偏移近似随机。**做 A/B 时必须把「注入位置」和「注入长度」当作受控变量记录下来**
+> （`evolver-bridge.ts` 已在 sidecar 写入 `chars` / `estTokens`；`EVOX_ALIGN_INJECT_MOD4=1` 可把
+> 估算 token 数对齐到 4 的倍数）。⚠️ token 数为估算值，精确对齐需分词器。
 
 
 ## 基因签名与 provenance（明细，0.21）
