@@ -120,7 +120,20 @@ function readJsonl(p) {
  * 聚合 experiments/hits.jsonl 得 per-gene 命中计数（按 gene_id）。
  * P1④ 负载均衡偏置的数据基础（FlyLoRA / Switch Transformer 的 c_i）。
  */
-function aggregateHits() {
+// 0.32 B-6：本机压缩方案族（未知则空串 ⇒ scoreGene 完全不加权，行为与 0.31 一致）。
+// ⚠️ 必须用动态 import：本文件是 ESM（.mjs），require 未定义（实测踩过：用 require 会被
+//    try/catch 吞掉、localKv 恒空、加权静默失效）。
+async function localKvFamily() {
+	const explicit = (process.env.EVOX_KV_COMPRESSION || '').slice(0, 40);
+	if (explicit) return explicit === 'unknown' ? '' : explicit;
+	try {
+		const { kvCompressionOf } = await import('./engine/light/store.mjs');
+		const fam = kvCompressionOf(process.env.EVOX_SOURCE_MODEL || '');
+		return fam === 'unknown' ? '' : fam;
+	} catch { return ''; }
+}
+
+async function aggregateHits() {
 	const counts = new Map();
 	let total = 0;
 	for (const h of readJsonl(HITS_FILE)) {
@@ -130,7 +143,7 @@ function aggregateHits() {
 		total++;
 	}
 	const mean = counts.size ? total / counts.size : 0;
-	return { counts, mean };
+	return { counts, mean, localKv: await localKvFamily() };
 }
 
 function approvedAssetIds() {
@@ -175,6 +188,8 @@ function recallList() {
 			signals: Array.isArray(g.signals_match) ? g.signals_match : [],
 			antiPatterns: Array.isArray(g.anti_patterns) ? g.anti_patterns : [],
 			scope: g.scope || null,
+			// 0.32 B-5/B-6：压缩方案族（来自 generation_meta.source_kv；0.31 及以前入库的没有此字段 ⇒ undefined）
+			sourceKv: (g.generation_meta && g.generation_meta.source_kv) || '',
 		});
 	}
 	return out;
@@ -340,6 +355,18 @@ function scoreGene(item, qTokens, hitInfo) {
 		const d = c - hitInfo.mean;
 		score += -0.4 * Math.sign(d) * Math.min(Math.abs(d), 5);
 	}
+	// 0.32 B-6：**压缩方案族同族加权**（arXiv:2609.36322 的工程落地）。
+	// 论文因果证据：相位敏感性由压缩核决定（CSA 核移植到 Qwen 骨架仍复现），与厂商血统无关
+	// ⇒ 同一压缩方案族的模型，位置相关的失败模式可迁移；异族不可直接移植。
+	// 做法：仅对**已知同族**加分（未知族一律不奖不罚，宁缺毋滥）。
+	//   · 本机族未知（EVOX_KV_COMPRESSION 未设且 source_model 映射不出）⇒ 完全不加，行为与 0.31 一致
+	//   · 基因未记录 source_kv ⇒ 不加（不惩罚未知）
+	//   · 同族 ⇒ +w（默认 1.5，EVOX_SAME_KV_WEIGHT 可调；设为 0 则关闭）
+	// 阈值与语义匹配分（3/1）保持主导：加权只做**同分时的排序偏置**，不制造"低相关但同族"的注入。
+	if (hitInfo && hitInfo.localKv && item.sourceKv && item.sourceKv === hitInfo.localKv) {
+		const w = Number(process.env.EVOX_SAME_KV_WEIGHT ?? 1.5);
+		if (w > 0) score += w;
+	}
 	return score;
 }
 
@@ -434,7 +461,7 @@ async function selectList(all) {
 		// 不静默：别名展开失败会让"中文措辞命中英文 signals"失效（静默退化为字面匹配）
 		console.error('[pi-evox] ⚠ 召回别名展开不可用（退化为纯字面匹配）：' + String((e && e.message) || e));
 	}
-	const hitInfo = aggregateHits();
+	const hitInfo = await aggregateHits();
 	let picked;
 	if (qTokens.size > 0) {
 		const scoredArr = all
@@ -461,15 +488,32 @@ async function selectList(all) {
 /** 0.29 B-1 溯源：命中/否定登记时带上「是谁在什么模型上得出的结论」——同源沉积是单作危机的根因 */
 async function sourceOf() {
 	// 0.30 B-2：优先读 ~/.evomap/source.json（sourceInfo），env 仍可覆盖
+	// 0.32 D-2：中间加一层 last_source.json（最近一次实测服务模型），见 store.mjs sourceInfo 注释
+	// 0.32 B-5：sourceInfo 现额外返回 kv_compression（压缩方案族）
 	try {
 		const { sourceInfo } = await import('./engine/light/store.mjs');
 		const si = sourceInfo();
-		if (si.model || si.host) return { source_model: si.model, source_host: si.host };
+		if (si.model || si.host) return { source_model: si.model, source_host: si.host, source_kv: si.kv_compression || '' };
 	} catch { /* 回落 */ }
 	return {
 		source_model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
 		source_host: os.hostname().slice(0, 80),
+		source_kv: '',
 	};
+}
+
+/** 0.32 D-2：把钩子透传进来的「本轮实际服务模型」落盘成 last_source.json。
+ *  为什么需要：deposit / register-hit 是 **agent 自己调**的，钩子子进程的 env 到不了那些调用；
+ *  而召回（本脚本）是钩子调的 ⇒ 在这里当中转站，让后续 deposit/hit 也能拿到实测模型。
+ *  host 传空串，由 recordActualSource 走 EVOX_SOURCE_HOST > source.json > hostname 的兜底链。
+ *  无 env（直接手跑）时不做任何事，静默保持既有行为。 */
+async function persistActualSource() {
+	const m = (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80);
+	if (!m) return;
+	try {
+		const { recordActualSource } = await import('./engine/light/store.mjs');
+		recordActualSource(m, (process.env.EVOX_SOURCE_HOST || '').slice(0, 80));
+	} catch { /* 落盘失败不影响主流程 */ }
 }
 /** 0.29 B-4：否定原因受控词表（让"A 沉积 B 失效"可归类、可统计） */
 const NEGATE_CAUSES = ['model-diff', 'env-diff', 'scene-mismatch', 'fix-wrong', 'unknown'];
@@ -494,6 +538,7 @@ async function registerHit(n, note, geneRef) {
 		if (!item) fail(`登记失败：编号 #${n} 不存在（当前召回共 ${list.length} 条）`, { code: 1, hint: '多会话并发环境建议改用 --gene <asset_id>（位置编号可能漂移）' });
 	}
 	fs.mkdirSync(HITS_DIR, { recursive: true });
+	await persistActualSource();   // 0.32 D-2：钩子透传的实测模型 → last_source.json
 	const srcInfo = await sourceOf();
 	const rec = {
 		ts: new Date().toISOString(),
@@ -509,6 +554,7 @@ async function registerHit(n, note, geneRef) {
 }
 
 async function recall() {
+	await persistActualSource();   // 0.32 D-2：钩子透传的实测模型 → last_source.json
 	const all = readJsonl(EVO_GENES);
 	const approved = approvedAssetIds();
 	const full = recallList();
