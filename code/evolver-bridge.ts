@@ -163,21 +163,66 @@ function loadApprovedStrategies(): string[] {
 	return out;
 }
 
+/** 0.32 B-1：注入块长度留痕 + 可选 mod 4 对齐。
+ *
+ * 背景（arXiv:2609.36322「Periodic Weak Spots」）：分块 KV 压缩（如 DeepSeek-V4 CSA 的 W=8,S=4）
+ * 会引入「相位」这一新位置坐标，同一信息在不同相位上可检索性可差数十个百分点。
+ * 我们的注入块是**追加**在 system prompt 尾部的 ⇒ **注入块的 token 数会平移其后所有内容的相位**；
+ * 而召回是动态 top-N ⇒ 注入长度随会话变化 ⇒ 相位偏移近似随机，成了实验里的隐藏变量。
+ *
+ * 两件事：
+ *  ① **留痕**：把注入块长度（字符数 + 估算 token 数）写进 sidecar，供事后归因（默认开启，零风险）。
+ *  ② **对齐**（可选，EVOX_ALIGN_INJECT_MOD4=1）：用中性注释把估算 token 数补齐到 4 的倍数，
+ *     让「有注入」与「无注入」两种情况下其后内容的相位保持一致。
+ *
+ * ⚠️ 诚实边界：token 数是**估算**（混合中英文按 ~2.8 字符/token），非真实分词；
+ *    精确对齐需要捆绑分词器。估算对齐能把相位偏移从「随机」降到「≈0 的确定性偏差」，
+ *    但不能保证严格 ≡0。默认关闭，需要显式开。 */
+function injectMeta(block: string): { chars: number; estTokens: number } {
+	const chars = block.length;
+	// 混合中英文的粗估：CJK 约 1 字/token，ASCII 约 3.6 字符/token ⇒ 整体约 2.8 字符/token
+	const cjk = (block.match(/[\u4e00-\u9fa5]/g) || []).length;
+	const ascii = chars - cjk;
+	return { chars, estTokens: Math.round(cjk / 1.0 + ascii / 3.6) };
+}
+
+/** 0.32 B-1：把注入块补齐到估算 token 数 ≡ 0 (mod 4)。只在显式开启时生效。
+ *  实现要点：不能按「need*4 字符」线性外推——HTML 注释包装符自身就占约 4.4 token，
+ *  小 need 时会直接冲过目标（实测过：外推法对齐后 mod4=1）。故改为**迭代**：
+ *  每轮按「当前差几个 token 就补约几个 token 的字符量」调整，最多 8 轮；
+ *  收敛不了就放弃对齐（保持原块，不留半截补丁）。 */
+function alignMod4(block: string): { block: string; padChars: number } {
+	if (process.env.EVOX_ALIGN_INJECT_MOD4 !== "1") return { block, padChars: 0 };
+	if (injectMeta(block).estTokens % 4 === 0) return { block, padChars: 0 };
+	let n = 4;
+	for (let i = 0; i < 8; i++) {
+		const pad = `\n<!-- evox-align: ${"x".repeat(n)} -->`;
+		const total = injectMeta(block + pad).estTokens;
+		if (total % 4 === 0) return { block: block + pad, padChars: pad.length };
+		n += Math.max(1, Math.round(((4 - (total % 4)) % 4) * 3.6));
+	}
+	return { block, padChars: 0 };
+}
+
 export default function evolverBridge(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, _ctx) => {
 		const strategies = loadApprovedStrategies();
 		if (strategies.length === 0) return; // 空资产库 → 零注入（fail-open 优雅降级）
 
-		const block =
+		const raw =
 			"\n\n---\n[Evolver inherited fixes] The following validated fixes were injected from your experience store (evolver). Apply them when relevant. ---\n" +
 			strategies.join("\n");
+		const aligned = alignMod4(raw);
+		const block = aligned.block;
+		const meta = injectMeta(raw);
 
 		// 注入留痕（[A] 证据）：-p 模式下 TUI 不可见，落 sidecar 文件供实验核验
 		try {
 			fs.writeFileSync(
 				path.join(EVO_STORE, "bridge-last-inject.txt"),
-				// 隐私：仅时间戳 + 注入内容，不含 cwd / 项目路径（SkillSpector finding 修复）
-				`[${new Date().toISOString()}]\n${block}`,
+				// 隐私：仅时间戳 + 注入内容 + 长度元数据，不含 cwd / 项目路径（SkillSpector finding 修复）
+				`[${new Date().toISOString()}]\n${block}` +
+				`\n<!-- evox-inject-meta: chars=${meta.chars} estTokens=${meta.estTokens} alignPadChars=${aligned.padChars} align=${process.env.EVOX_ALIGN_INJECT_MOD4 === "1" ? "on" : "off"} -->`,
 			);
 		} catch {
 			/* 留痕失败不影响注入 */
