@@ -209,17 +209,85 @@ export function assetIdOf(geneId) {
 }
 
 /** 0.30 B-2：溯源自动归因——读本机 `~/.evomap/source.json`（{model, host}）。
- *  优先级：环境变量 EVOX_SOURCE_MODEL/EVOX_SOURCE_HOST > 本机 source.json > 空。
- *  目的：让 deposit / register-hit / negate **自动**带上"哪个模型/哪台机"，不必改钩子、不必重启服务。 */
+ *  0.32 D-2 精确归因：新增**中间层** `~/.evomap/last_source.json`——由召回钩子把
+ *  「本轮**实际**服务的模型」透传进来、经 evolver-recall 落盘。
+ *  为什么需要它：source.json 是**静态 per-host 默认值**（= 配置里的 primary），
+ *  但宿主有 fallback 链（191: primary=agnes-3.0-flash，fallbacks[0]=deepseek-v4-pro），
+ *  某轮若实际由 fallback 服务，静态默认会把它误记成 primary ⇒ 归因错误。
+ *  且 deposit / register-hit 是 **agent 自己调**的（不是钩子调的），
+ *  钩子子进程的 env 传不到那些后续调用 ⇒ 必须经状态文件中转。
+ *  优先级：环境变量 EVOX_SOURCE_MODEL/HOST > last_source.json（≤7 天）> source.json（静态默认）> 空。
+ *  ⚠️ 语义边界：last_source.json 是「最近一次观测到的服务模型」，不保证与
+ *    本次 deposit 所在轮次完全相同（同会话内通常相同；跨会话/空闲后可能过期，由 7 天窗控制）。 */
+const LAST_SOURCE_FILE = path.join(os.homedir(), '.evomap', 'last_source.json');
+const LAST_SOURCE_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+
+/** 0.32 D-2：把「本轮实际服务的模型」落盘（由 evolver-recall 在拿到 EVOX_SOURCE_MODEL 时调用）。
+ *  host 取值顺序：EVOX_SOURCE_HOST > source.json 里的 host > os.hostname()
+ *  （沿用运维在 source.json 里起的名字，避免与 hostname 不一致导致同宿主被算成两个桶） */
+export function recordActualSource(model, host) {
+  try {
+    const m = String(model || '').slice(0, 80);
+    if (!m) return false;
+    let h = String(host || '').slice(0, 80);
+    if (!h) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.evomap', 'source.json'), 'utf8'));
+        h = String(cfg.host || '').slice(0, 80);
+      } catch { /* 无静态默认 */ }
+    }
+    if (!h) h = os.hostname().slice(0, 80);
+    fs.mkdirSync(path.join(os.homedir(), '.evomap'), { recursive: true });
+    fs.writeFileSync(LAST_SOURCE_FILE, JSON.stringify({
+      model: m,
+      host: h,
+      ts: new Date().toISOString(),
+    }));
+    return true;
+  } catch { return false; }
+}
+
 export function sourceInfo() {
   const env = {
     model: (process.env.EVOX_SOURCE_MODEL || '').slice(0, 80),
     host: (process.env.EVOX_SOURCE_HOST || '').slice(0, 80),
   };
-  if (env.model && env.host) return env;
+  if (env.model && env.host) return withKv(env);
+  // 0.32 D-2：最近一次实测服务模型优先于静态默认（带 7 天新鲜窗）
+  try {
+    const cfg = JSON.parse(fs.readFileSync(LAST_SOURCE_FILE, 'utf8'));
+    if (cfg && cfg.model && (Date.now() - new Date(cfg.ts).getTime()) < LAST_SOURCE_MAX_AGE_MS) {
+      return withKv({ model: env.model || String(cfg.model).slice(0, 80), host: env.host || String(cfg.host || os.hostname()).slice(0, 80) });
+    }
+  } catch { /* 无或过期 → 走静态默认 */ }
   try {
     const p = path.join(os.homedir(), '.evomap', 'source.json');
     const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
-    return { model: env.model || String(cfg.model || '').slice(0, 80), host: env.host || String(cfg.host || '').slice(0, 80) };
-  } catch { return env; }
+    return withKv({ model: env.model || String(cfg.model || '').slice(0, 80), host: env.host || String(cfg.host || '').slice(0, 80) });
+  } catch { return withKv(env); }
+}
+
+/** 0.32 B-5：KV 压缩方案族（kv_compression）。
+ *  为什么是「压缩方案」而不是「模型血统」（arXiv:2609.36322 的因果证据）：
+ *  论文把 DeepSeek 的 CSA 压缩核**原样移植到 Qwen3-0.6B 骨架从头预训练**，仍然复现相位敏感性
+ *  ⇒ 决定「位置相关的检索失败」的是**压缩核**（分块 + 固定步长），不是厂商血统。
+ *  同族 = 同样式压缩核（步长/窗口相同）⇒ 失败模式可迁移；异族 = 不可直接移植。
+ *  取值：none / csa-s4（W=8,S=4，DeepSeek-V4）/ stride2（DeepSeek-V4.1-Flash）/ unknown。
+ *  ⚠️ 这是**启发式映射**：闭源/未公开架构的模型一律 unknown，不猜。 */
+const KV_COMPRESSION_MAP = [
+  [/deepseek-v4\.1|deepseek-v4-1/i, 'stride2'],
+  [/deepseek-v4/i, 'csa-s4'],
+];
+export function kvCompressionOf(model) {
+  const m = String(model || '');
+  if (!m) return 'unknown';
+  if (/unknown|^$/.test(m)) return 'unknown';
+  for (const [re, fam] of KV_COMPRESSION_MAP) if (re.test(m)) return fam;
+  return 'unknown';
+}
+
+/** 给 sourceInfo 的结果补上 kv_compression（env 可显式覆盖） */
+function withKv(si) {
+  const explicit = (process.env.EVOX_KV_COMPRESSION || '').slice(0, 40);
+  return { ...si, kv_compression: explicit || kvCompressionOf(si.model) };
 }
