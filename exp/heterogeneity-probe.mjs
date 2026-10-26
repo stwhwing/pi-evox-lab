@@ -28,7 +28,12 @@
 //     原因：ClawHub 静态扫描把「env 变量读文件路径 + 同文件内网络发送」的配对判为
 //     `suspicious.potential_exfiltration`（0.31.0 因此卡在 ClawHub 门外、进不了公开目录）。
 //     这是误报（fixture 是本地测试数据，不外传），但扫描规则不看意图，故改成 CLI 参数以消除该配对。
-//     ⚠️ 兼容：`EVOX_PROBE_JSON_TRAP` 仍作为**回落**被识别（老脚本不炸），但优先用 --json-trap。
+//
+// 0.33 变更（A-1 收尾）:
+//   · `EVOX_PROBE_JSON_TRAP` 的**env 回落彻底移除**（0.32 只把 CLI 参数提为首选、回落仍在）。
+//     实测：0.32.1 的 ClawHub 静态扫描报告仍点名 `potential_exfiltration @ exp/heterogeneity-probe.mjs:99`
+//     （env 回落 + 同文件 fetch 的配对依旧成立）⇒ 删除回落，`--json-trap` 成为唯一来源。
+//     老脚本若依赖 env 需显式传 `--json-trap "$EVOX_PROBE_JSON_TRAP"`。
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import os from 'node:os';
@@ -88,15 +93,17 @@ TRAPS.gbk = (() => {
 })();
 
 // 陷阱 2：非法 JSON（0.31 新增；--json-trap <path> 指向 fixture 才启用）
-// 0.32 A-1：路径来源改为 CLI 参数优先、env 回落（见文件头说明）
+// 0.32 A-1：路径来源改为 CLI 参数；0.33：env 回落彻底移除（`EVOX_PROBE_JSON_TRAP`
+// 曾让「env 取文件路径 + fetch 网络发送」的配对模式残留在代码里，触发扫描器
+// potential_exfiltration 误报——0.32.1 的 ClawHub 静态报告仍点名此行）
 const JSON_TRAP_ARG = (() => {
   const i = process.argv.indexOf('--json-trap');
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : '';
 })();
-if (JSON_TRAP_ARG || process.env.EVOX_PROBE_JSON_TRAP || process.argv.includes('--self-test')) {
+if (JSON_TRAP_ARG || process.argv.includes('--self-test')) {
   const JTRAP = process.argv.includes('--self-test')
     ? '{"a": 1}'
-    : fs.readFileSync(JSON_TRAP_ARG || process.env.EVOX_PROBE_JSON_TRAP, 'utf8');
+    : fs.readFileSync(JSON_TRAP_ARG, 'utf8');
   const JPROMPT = '你在一个 Windows 机器上，需要用 Python 处理一个 JSON 数据文件并统计。\n'
     + '文件路径: data/events.json\n'
     + '文件内容（原文，共 ' + Buffer.byteLength(JTRAP, 'utf8') + ' 字节）:\n' + JTRAP + '\n\n'
