@@ -5,9 +5,58 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.32.1
+version: 0.33.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - node
+    envVars:
+      - name: EVO_STORE_DIR
+        required: false
+        description: 基因库目录（默认 ~/.evomap/assets）；仅 evolver 引擎模式读取
+      - name: EVOX_HITS_DIR
+        required: false
+        description: 命中登记目录（默认与基因库同级）
+      - name: EVOX_TOPN
+        required: false
+        description: 召回 top-N 数量（默认由 skill 内部策略决定）
+      - name: EVOX_AUTO_APPROVE
+        required: false
+        description: 沉淀是否自动批准（默认按 TTY/非 TTY 规则）
+      - name: EVOX_SOURCE_MODEL
+        required: false
+        description: 覆盖溯源记录的服务模型名（默认从宿主会话读取）
+      - name: EVOX_SOURCE_HOST
+        required: false
+        description: 覆盖溯源记录的宿主名
+      - name: EVOX_HOME
+        required: false
+        description: evomap 根目录（默认 ~/.evomap）
+      - name: EVO_POOL_DIR
+        required: false
+        description: 共享基因池目录（跨实例同步）
+      - name: EVO_IDENTITY_DIR
+        required: false
+        description: 签名链身份目录（Ed25519 密钥对）
+      - name: EVOX_ALIGN_INJECT_MOD4
+        required: false
+        description: 注入块估算 token 数补齐到 4 的倍数（相位对齐实验开关）
+      - name: EVOX_KV_COMPRESSION
+        required: false
+        description: 标记本机模型的 kv 压缩族（none/csa-s4/stride2/unknown）
+      - name: EVOX_SAME_KV_WEIGHT
+        required: false
+        description: 同 kv 压缩族基因的加权分（默认 +1.5，设 0 关闭）
+      - name: EVOX_GENE_DECAY
+        required: false
+        description: 基因有效性衰减总开关（默认开；设 0 关闭，行为与此前版本一致）
+      - name: EVOX_GENE_DECAY_DAYS
+        required: false
+        description: 衰减半衰期天数（默认 90：距上次反馈每过一个半衰期，该基因排序分减半）
+
 ---
 
 # Pi × EvoX Loop — 智能体经验继承 Skill
@@ -169,8 +218,9 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **精确归因（0.32 D-2）**：此前 `~/.evomap/source.json` 只是**静态 per-host 默认值**，而宿主有 fallback 链——某轮实际由 fallback 服务时会被误记成 primary。现两个生产钩子把**本轮实际服务的模型**透传（OpenClaw 读 `transcript_events` 里最近一条 assistant 事件的 `model`；Hermes 读 `pre_llm_call` payload 的 `extra.model`），落成 `~/.evomap/last_source.json`。`sourceInfo()` 优先级：**env > last_source.json（7 天窗）> source.json > 空**。⚠️ 语义是「最近一次观测到的服务模型」，不保证与本次 deposit 同轮次；存量基因不回填。
 - **压缩方案族 `source_kv`（0.32 B-5/B-6）**：`generation_meta.source_kv` 记录基因出自哪种 **KV 压缩方案**（`none` / `csa-s4`（W=8,S=4）/ `stride2` / `unknown`；闭源或架构未公开一律 `unknown`，不猜）。召回打分对**已知同族**基因加分（`EVOX_SAME_KV_WEIGHT`，默认 1.5，设 0 关闭）；**本机族未知时完全不加权**，行为与此前一致。为什么按压缩方案而非模型血统：arXiv:2609.36322 把 DeepSeek 的 CSA 压缩核移植到 Qwen3-0.6B 骨架从头预训练仍复现「位置相关的检索失败」⇒ 决定因素是压缩核，不是厂商。
 - **注入长度留痕（0.32 B-1）**：注入块是追加在 system prompt 尾部的，其 token 数会**平移其后所有内容的相位**；召回是动态 top-N ⇒ 注入长度随会话变化。`evolver-bridge.ts` 现把 `chars`/`estTokens` 写入 sidecar；`EVOX_ALIGN_INJECT_MOD4=1` 可把**估算** token 数对齐到 4 的倍数（估算值，非真实分词）。
+- **基因有效性衰减（0.33 C-7）**：修法会过期——环境变了、依赖升级了，老基因的 FIX 可能已失效。召回打分现对**有反馈**（hit/negate 至少一条）的基因按两个信号乘性衰减：**时间半衰期**（距上次反馈每过 `EVOX_GENE_DECAY_DAYS` 天——默认 90——排序分减半）与**否定压力**（negate ≥ 2 且否定率 ≥ 50% ⇒ 再减半）。衰减后低于对靶阈值的自然落选；注入行对衰减中的基因带一眼标记（如 `⚠[衰减:49%·多次未奏效·2天前反馈]`）。**无反馈的基因不衰减**（unproven 由审核门控管，不双重惩罚）；**地板 0.25**——衰减永不单独杀死基因，硬过滤仍是审核门控 + 守卫；`EVOX_GENE_DECAY=0` 一键关闭（行为与此前版本完全一致）。
 
-> **EN**: 0.32 provenance & phase line - `~/.evomap/source.json` used to be only a static per-host default, so a turn actually served by a fallback was mis-recorded as the primary. The two production hooks now pass the **actually served model** (OpenClaw reads the most recent assistant event's `model` from `transcript_events`; Hermes reads `extra.model` from the `pre_llm_call` payload) into `~/.evomap/last_source.json`. `sourceInfo()` priority is **env > last_source.json (7-day window) > source.json > empty** - it means "most recently observed serving model", not guaranteed to be this deposit's turn; existing genes are not back-filled. Genes also carry `generation_meta.source_kv`, the **KV compression scheme** they came from (`none` / `csa-s4` (W=8,S=4) / `stride2` / `unknown`; closed or undisclosed architectures are always `unknown`, never guessed), and recall scoring bonus-boosts **known same-family** genes (`EVOX_SAME_KV_WEIGHT`, default 1.5, 0 disables; when the local family is unknown there is no weighting at all). The axis is the compression scheme rather than vendor lineage because arXiv:2609.36322 reproduces position-dependent retrieval failure by porting DeepSeek's CSA kernel onto a Qwen3-0.6B backbone. Finally, because the injected block is appended to the system prompt its token count **shifts the phase of everything after it**, and recall is dynamic top-N, so injection length varies per session: `evolver-bridge.ts` now logs `chars`/`estTokens` and `EVOX_ALIGN_INJECT_MOD4=1` aligns the **estimated** token count to a multiple of four (an estimate, not real tokenization).
+> **EN**: 0.32 provenance & phase line - `~/.evomap/source.json` used to be only a static per-host default, so a turn actually served by a fallback was mis-recorded as the primary. The two production hooks now pass the **actually served model** (OpenClaw reads the most recent assistant event's `model` from `transcript_events`; Hermes reads `extra.model` from the `pre_llm_call` payload) into `~/.evomap/last_source.json`. `sourceInfo()` priority is **env > last_source.json (7-day window) > source.json > empty** - it means "most recently observed serving model", not guaranteed to be this deposit's turn; existing genes are not back-filled. Genes also carry `generation_meta.source_kv`, the **KV compression scheme** they came from (`none` / `csa-s4` (W=8,S=4) / `stride2` / `unknown`; closed or undisclosed architectures are always `unknown`, never guessed), and recall scoring bonus-boosts **known same-family** genes (`EVOX_SAME_KV_WEIGHT`, default 1.5, 0 disables; when the local family is unknown there is no weighting at all). The axis is the compression scheme rather than vendor lineage because arXiv:2609.36322 reproduces position-dependent retrieval failure by porting DeepSeek's CSA kernel onto a Qwen3-0.6B backbone. Finally, because the injected block is appended to the system prompt its token count **shifts the phase of everything after it**, and recall is dynamic top-N, so injection length varies per session: `evolver-bridge.ts` now logs `chars`/`estTokens` and `EVOX_ALIGN_INJECT_MOD4=1` aligns the **estimated** token count to a multiple of four (an estimate, not real tokenization). 0.33 adds **gene validity decay (C-7)**: recall scoring applies a multiplicative decay to genes **with feedback**, from a time half-life (default 90 days, `EVOX_GENE_DECAY_DAYS`) plus negation pressure (≥2 negates and ≥50% negate rate halves again), floored at 0.25. Genes **without feedback are never decayed** (unproven is the review gate's job), decay alone never kills a gene, and `EVOX_GENE_DECAY=0` restores the old behaviour exactly; decayed injections carry a visible marker (e.g. `⚠[衰减:49%·多次未奏效·2天前反馈]`).
 
 ## 部署与分发（0.23）
 
@@ -220,15 +270,20 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
 
-> **EN**: Recall must be bound to concrete action nodes, never left to memory. Five trigger points: T1 task start (recall --query), T2 before actions, T3 on error (recall --error), T4 after fixing a pit (deposit immediately), T5 task end (register-hit/negate --gene). Integration: install-hooks for hooked hosts, install-snippet to paste the procedure into any agent instruction file.
+> **EN**: Recall must be bound to concrete action nodes, never left to memory. Five trigger points: T1 task start (recall --query), T2 before actions, T3 on error (recall --error), T4 after fixing a pit (deposit immediately), T5 task end (register-hit/negate --gene). Integration: install-hooks for hooked hosts, install-snippet to paste the procedure into any agent instruction file. T2 concretely: run recall before the FIRST side-effecting action in a task (e.g. before committing a cross-file change, before a deploy script that overwrites, before force-push) with the action phrase as the query; pure reads do not trigger. The trigger-word table below is an invocation hint for humans/agents, NOT the matching mechanism - any non-trivial task start takes T1 unconditionally, and Chinese phrasing maps to English canonicals via aliases.json.
 > 「装了技能但没人调用」是本项目最根本的失效模式——**连作者都会忘**（实测：相关基因能召回排 #1，却因为动手前没跑召回而重复踩坑）。所以不能指望"用户记得"，必须把召回**绑死在具体动作节点上**。
 
 | # | 触发点 | 时机 | 命令 | 没接会怎样 |
 |---|---|---|---|---|
 | **T1** | 任务开始 | 拿到非平凡任务、**规划之前** | `recall --query "<任务>"` | 预防失效：该避的坑照踩 |
 | **T2** | 行动前 | **即将执行第一次不可逆动作之前**（写文件/提交代码/部署/调外部接口/删改数据）；同一任务内同类动作**只触发一次**，后续沿用本次结论 | 同上（query=**将要做的具体动作**，如"用脚本批量改写文件"） | 贴身预防（可选） |
+| **T3** | **遇到报错** | 工具返回错误、**准备重试之前** | `recall --error "<报错原文>"` | **最可惜**：明明库里就有修法，却盲目重试 |
+| **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
+| **T5** | 任务结束 | 收尾 | `--register-hit --gene <id>` / `--negate --gene <id>` | 无法度量，失效修法发现不了 |
 
 > **T2 的判定口径（0.28 补明）**：①动作**尚未执行**（执行完就晚了）②动作**有副作用或不可逆**（写/提交/部署/外发/删除）③**本任务内首次**做这类动作时；纯读取/查询类动作不需要 T2。query 写**动作短语**（不是任务名）——召回按动作措辞对靶（如"批量改写文件"能命中对应修法）。
+
+> **T2 具体例子（0.33 补，3 个可直接对号的）**：① 刚要 `git commit -m` 一个跨多文件的改动 → query `"提交跨文件改动前检查"`；② 刚要跑一个会**覆盖**目标目录的部署脚本 → query `"部署前备份与干跑"`；③ 刚要把本地改动**强推到远端**（覆盖远端历史） → query `"force push 前确认远端状态"`。都不命中 ⇒ 直接执行（宁缺毋滥，T2 是可选增强，不添延迟负担）；命中 ⇒ 先读修法再动手。**反例（不必触发）**：读文件、搜代码、跑测试、查看状态——纯读取无副作用。
 
 **多宿主同时召回会发生什么（0.28 补明）**：
 | 情形 | 行为 | 依据 |
@@ -237,9 +292,8 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | 同一宿主多会话并发召回 | 各自独立选出 top-N，**不共享选择快照**（0.18 起按 gene_id 寻址，不再有位置漂移） | `selectList` 每次现算 |
 | 同一基因被多台机器同时沉淀 | `asset_id` 去重（内容哈希）→ 只落一条；**不同内容则各落一条**（不同 asset_id） | store.appendGene |
 | 审核状态跨机冲突 | 各自台账 **LWW**（最后一个状态生效）——quarantine 可撤销 approve | review.jsonl |
-| **T3** | **遇到报错** | 工具返回错误、**准备重试之前** | `recall --error "<报错原文>"` | **最可惜**：明明库里就有修法，却盲目重试 |
-| **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
-| **T5** | 任务结束 | 收尾 | `--register-hit --gene <id>` / `--negate --gene <id>` | 无法度量，失效修法发现不了 |
+| 一个宿主钩子重复触发（心跳/重连） | 召回幂等：重复注入不重复计命中（hits 只在 `--register-hit` 时记） | 埋点口径 |
+| 钩子 env 到不了 agent 自调命令 | `persistActualSource` 把钩子透传的实测模型落 `last_source.json`，后续 deposit/hit 经它取到 | 0.32 D-2 |
 
 ### T3：报错自动触发（最容易被忽略、但收益最高的一个点）
 
@@ -267,6 +321,8 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 | **签名类** | **签名** | 验签 / 篡改 / provenance / identity | 跨机协作前 | `node code/light-cli.mjs verify <gene_id>` |
 
 > 术语不确定时（signals_match / anti_patterns / LWW / depositionGate / sig_v 等）查 [`docs/glossary.md`](docs/glossary.md)（一页纸，每个词配一个最小例子）。
+
+> **触发词覆盖范围说明（0.33 补明）**：① 上表是**人/agent 的调用提示**，不是召回匹配机制——召回命中靠 `signals_match × query-token 重叠`（确定性对靶），触发词只是告诉你"什么时候该跑一次"；② **覆盖不到所有说法是正常的**：任务开始只要判定为"非平凡"就走 T1，不需要措辞命中任何一组（触发词表服务的是"用户明确提到某功能"的场景）；③ 中文措辞走 `aliases.json` 概念别名映射到英文 canonical（0.28），两种措辞都能命中；④ 报错类（T3）不需要触发词——**报错本身就是触发**，见下节。
 
 **接入方式**：有钩子的宿主（OpenClaw/Hermes）用 `install-hooks`；任何有 AGENTS.md/CLAUDE.md 的宿主用 `install-snippet` 把五触发点规程写进指令文件。完整接入契约（三步+模板）见 `docs/advanced.md`。
 
