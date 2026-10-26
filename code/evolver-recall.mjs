@@ -143,7 +143,52 @@ async function aggregateHits() {
 		total++;
 	}
 	const mean = counts.size ? total / counts.size : 0;
-	return { counts, mean, localKv: await localKvFamily() };
+	return { counts, mean, localKv: await localKvFamily(), decay: geneDecay() };
+}
+
+/**
+ * 0.33 C-7：基因有效性衰减——skillhub 0.31 评测建议③的落地（"基因有效性衰减机制"）。
+ * 对每个**有反馈**（hit/negate 至少一条）的基因算一个 [0.25, 1] 的乘性衰减因子：
+ *   · 时间半衰期：0.5^(距上次反馈天数 / 半衰期)，半衰期默认 90 天（EVOX_GENE_DECAY_DAYS）
+ *   · 否定压力：negate ≥ 2 且否定率 ≥ 0.5 ⇒ 再乘 0.5（"该修法已多次未奏效"）
+ *   · 地板 0.25：衰减永不单独杀死基因（硬过滤仍是审核门控 + 守卫，职责不混）
+ * 设计纪律（宁缺毋滥，三条都不破）：
+ *   · **无反馈的基因不衰减**——unproven 由审核门控管，不双重惩罚（否则新基因永无出头日）
+ *   · 只做排序偏置：与 kv 同族加权同性质，阈值（MIN_MATCH_SCORE）与语义匹配分保持主导
+ *   · 默认开但可一键关：EVOX_GENE_DECAY=0 ⇒ 返回空 Map，行为与 0.32 完全一致
+ */
+function geneDecay() {
+	if (process.env.EVOX_GENE_DECAY === '0') return new Map();
+	const halfLife = Number(process.env.EVOX_GENE_DECAY_DAYS || 90);
+	if (!Number.isFinite(halfLife) || halfLife <= 0) {
+		console.error(`[pi-evox] ⚠ EVOX_GENE_DECAY_DAYS=${process.env.EVOX_GENE_DECAY_DAYS} 非法，本次不衰减（需正数）`);
+		return new Map();
+	}
+	const agg = new Map();	// id -> { hit, neg, lastTs }
+	for (const h of readJsonl(HITS_FILE)) {
+		const id = h && h.gene_id;
+		if (!id) continue;
+		const ts = typeof h.ts === 'string' ? Date.parse(h.ts) : NaN;
+		const cur = agg.get(id) || { hit: 0, neg: 0, lastTs: 0 };
+		if (h.outcome === 'negated') cur.neg++; else cur.hit++;
+		if (Number.isFinite(ts) && ts > cur.lastTs) cur.lastTs = ts;
+		agg.set(id, cur);
+	}
+	const now = Date.now();
+	const out = new Map();
+	for (const [id, a] of agg) {
+		if (a.hit + a.neg === 0) continue;	// 无反馈不衰减
+		let factor = 1;
+		let days = 0;
+		if (a.lastTs > 0) {
+			days = Math.max(0, (now - a.lastTs) / 86400000);
+			factor *= Math.pow(0.5, days / halfLife);
+		}
+		const negPress = a.neg >= 2 && a.neg / (a.hit + a.neg) >= 0.5;
+		if (negPress) factor *= 0.5;
+		out.set(id, { factor: Math.max(0.25, factor), days: Math.round(days), negPress });
+	}
+	return out;
 }
 
 function approvedAssetIds() {
@@ -367,6 +412,13 @@ function scoreGene(item, qTokens, hitInfo) {
 		const w = Number(process.env.EVOX_SAME_KV_WEIGHT ?? 1.5);
 		if (w > 0) score += w;
 	}
+	// 0.33 C-7：基因有效性衰减（乘性，地板 0.25；无反馈基因不衰减）。
+	// 与 kv 加权同性质：只做同分段排序偏置；阈值与语义匹配分保持主导。
+	// 衰减后低于 MIN_MATCH_SCORE 的自然落选——这正是"久未验证的修法不再优先注入"的语义。
+	if (hitInfo && hitInfo.decay) {
+		const d = hitInfo.decay.get(item.id);
+		if (d && d.factor < 1) score *= d.factor;
+	}
 	return score;
 }
 
@@ -482,7 +534,7 @@ async function selectList(all) {
 		fs.writeFileSync(SELECTION_FILE, JSON.stringify({ ts: new Date().toISOString(), query: QUERY, taskText: TASK_TEXT, ids: picked.map((p) => p.id) }));
 	} catch { /* 留痕失败不影响召回 */ }
 	// targeted 现在等价于"有任务意图"（即使未命中基因，语义上仍是对靶查询）
-	return { picked, total: all.length, targeted: qTokens.size > 0 };
+	return { picked, total: all.length, targeted: qTokens.size > 0, hitInfo };
 }
 
 /** 0.29 B-1 溯源：命中/否定登记时带上「是谁在什么模型上得出的结论」——同源沉积是单作危机的根因 */
@@ -558,7 +610,7 @@ async function recall() {
 	const all = readJsonl(EVO_GENES);
 	const approved = approvedAssetIds();
 	const full = recallList();
-	const { picked, total, targeted } = await selectList(full);
+	const { picked, total, targeted, hitInfo } = await selectList(full);
 	recordRecallCall({ targeted, injected: picked.length, query: QUERY, taskText: TASK_TEXT, noise: !TASK_TEXT });
 	recordPending(picked);
 	console.log(
@@ -594,7 +646,17 @@ async function recall() {
 	console.log('  （回填才能量化"注入→有效"转化率；不回的注入不计入效果统计）');
 	console.log('');
 	picked.forEach((it, i) => {
-		console.log(`[#${i + 1}|${it.id}] [${it.category}] ${it.text}`);
+		// 0.33 C-7：衰减标记——因子 <0.7 或踩过否定压力的基因，在注入行内带一眼可辨的记号。
+		// 位置在 [#N|id] 行内（钩子 extractFixes 只认 [#\d+| 前缀，标记不破坏解析），
+		// 且不写进 strategy 正文（守卫与注入扫描只审策略文本，记号不进策略）。
+		let mark = '';
+		if (hitInfo && hitInfo.decay) {
+			const d = hitInfo.decay.get(it.id);
+			if (d && (d.factor < 0.7 || d.negPress)) {
+				mark = ` ⚠[衰减:${Math.round(d.factor * 100)}%${d.negPress ? '·多次未奏效' : ''}·${d.days}天前反馈]`;
+			}
+		}
+		console.log(`[#${i + 1}|${it.id}] [${it.category}]${mark} ${it.text}`);
 	});
 	// 0.25：--record "<结论>" —— 把隔离测试/验证结论回填生产账本（A5：狗粮证据落隔离目录即丢失）。
 	 const ri = process.argv.indexOf('--record');
