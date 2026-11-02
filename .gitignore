@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 experiments/
 hits.jsonl
+# 本地私有配置：仅本机使用、绝不发布（含 redline 红线词表等）
+redline.local.json
+*.local.json
