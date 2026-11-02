@@ -230,9 +230,27 @@ light-cli resign [--yes]      # 0.31：把存量 v1 签名升级为 v2（v2 覆�
 
 **签名规范化 v1 / v2（0.31）**：v1 用 `JSON.stringify(rest, Object.keys(rest).sort())`，replacer 数组作用于**每一层** ⇒ 嵌套字段被静默丢弃、不在签名域内（改嵌套内容仍验签 `verified`，实测确认）。v2 改为递归规范化，嵌套内容全部纳入。为不让存量已签名基因集体变 `tampered`，按 `sig_v` 分派：v1 基因继续按 v1 验（验签通过但会提示可升级），新签名一律 v2。
 
-## IO 重试与截止（0.21，stability）
+## IO 重试、熔断与截止（0.21 重试 / 0.34 熔断，stability）
 
-> **EN**: `retryIo` (store.mjs): bounded retries on TRANSIENT errors only (EBUSY/EPERM/EACCES/ETIMEDOUT - Windows file-in-use / AV-scan typical), max 3 attempts with 50/100ms backoff, hard deadline 3s, then the error propagates. Non-transient errors (ENOENT/EISDIR) never retried. Retry is an optimization, not a gate - it must never block the caller indefinitely (consistent with the fail-open philosophy).
+**中文·重试（0.21）**：`retryIo`（store.mjs）只对**瞬态**错误（EBUSY/EPERM/EACCES/ETIMEDOUT——Windows 上文件被占用/实时扫描的典型表现）重试：最多 3 次、50/100ms 退避、硬截止 3s，到期即把错误交还调用方。非瞬态错误（ENOENT/EISDIR）从不重试。
+
+**中文·熔断与降级（0.34）**：连续 `EVOX_IO_CB_THRESHOLD`（默认 5）次瞬态失败 ⇒ 打开熔断；其后 `EVOX_IO_CB_COOLDOWN_MS`（默认 10s）内**只尝试 1 次**（跳过重试与退避），失败立即交还调用方 ⇒ 长时间故障下不再持续无谓重试。冷却期内任一次成功即闭合（半开自动恢复）。非瞬态失败（如首次运行的空库 ENOENT）**不计入**熔断，避免误触发。打开时输出一次中文可执行指引（限频，不刷屏）。
+
+> **EN**: `retryIo` (store.mjs): bounded retries on TRANSIENT errors only (EBUSY/EPERM/EACCES/ETIMEDOUT - Windows file-in-use / AV-scan typical), max 3 attempts with 50/100ms backoff, hard deadline 3s, then the error propagates. Non-transient errors (ENOENT/EISDIR) never retried. **0.34 circuit breaker**: after `EVOX_IO_CB_THRESHOLD` (default 5) consecutive transient failures the breaker opens, and for `EVOX_IO_CB_COOLDOWN_MS` (default 10s) each call gets a single attempt (no retry, no backoff) before falling through - so a prolonged outage no longer causes repeated useless retries. Any success inside the cooldown closes the breaker again (half-open auto-recovery). Non-transient failures (e.g. ENOENT on a first-run empty store) do not count toward the breaker. Opening it prints one rate-limited actionable hint. Retry is an optimization, not a gate - it must never block the caller indefinitely (consistent with the fail-open philosophy).
+
+## 显式错误码（0.34，errorHandling）
+
+**中文**：所有 `fail()` 失败路径在**保留退出码**（0=成功 / 1=运行期失败 / 2=用法错误）以兼容既有调用方的同时，附加**具名错误码** `[E_XXX]`——脚本与宿主可据此精确区分失败类型，无需解析人类可读文案。
+
+| 错误码 | 退出码 | 含义 | 典型触发 |
+|---|---|---|---|
+| `E_USAGE` | 2 | 用法错误：缺参数 / 未知命令 | `light-cli.mjs zzz-unknown`、`approve`（缺 `<gene_id>`） |
+| `E_ARGS` | 2 | 参数值不合法：取值不在允许集合内 | `config --auto-approve bogus` |
+| `E_GUARD` | 1 | 质量守卫拒绝：沉淀质检未通过 | `distill` / `draft --commit` 提交占位符或日志复述 |
+| `E_NOTFOUND` | 1 | 目标不存在：基因 / 文件 / 编号未找到 | `verify <不存在的 gene_id>`、起步包缺失 |
+| `E_INTERNAL` | 1 | 未预期的内部错误（详见原始错误） | 未捕获异常 / 未处理的 Promise 拒绝 |
+
+> **EN**: every `fail()` path keeps the exit codes (0 = ok, 1 = runtime failure, 2 = usage error) for backward compatibility and additionally prints a **named error code** `[E_XXX]`, so scripts and hosts can tell failure types apart without parsing human-readable text. See the table above.
 
 ## 已知边界
 
@@ -240,17 +258,28 @@ light-cli resign [--yes]      # 0.31：把存量 v1 签名升级为 v2（v2 覆�
 - `tool_result` 失败点教学（扩展桥内）只在「策略注入后仍踩坑」时提供增量，价值在长时运行场景；
 - 并发锁覆盖 JSONL 台账与池 staging 写入；其他文件操作的原子性仍在 0.21 评估范围（stability 评测点名）。
 
-## 模块调用关系图（0.27）
+## 模块调用关系图（0.27，0.34 更新：命令分域下沉）
 
 ```
    宿主钩子/手工 →  evolver-recall.mjs（召回+回填）
                           │ import
-   用户 CLI     →  light-cli.mjs（唯一入口，子命令 switch）
-                          │
+   用户 CLI     →  light-cli.mjs（唯一入口：解析 argv → 派发；0.34 起仅 65 行）
+                          │ 按命令域动态 import
                           ▼
+              ┌─────────────────────────────────┐
+              │  engine/light/commands/*.mjs    │  ← 命令实现层（0.34 新增）
+              │  deposit.mjs     distill / fix-signals / draft
+              │  review.mjs      approve / quarantine / list / feedback
+              │  provenance.mjs  shareable / identity / verify / resign / gene-pull-trust
+              │  forensics.mjs   timeline / evidence / harvest / session / report / export-evidence / stats
+              │  setup.mjs       doctor / info / snippet / license / install* / config / starter / gene / demo
+              │  _shared.mjs     共享 helpers（fail / usage / doctor / 路径常量…）
+              └───────────────┬─────────────────┘
+                              │ 复用
+                              ▼
               ┌───────────────────────────┐
               │      engine/light/*      │  ← 引擎层（零依赖）
-              │  store.mjs   账本读写（withLock/重试/埋点落点）
+              │  store.mjs   账本读写（withLock/重试/熔断/埋点落点）
               │  distill.mjs 基因构造 + 四道守卫
               │  guards.mjs  注入前 ABF 扫描
               │  identity.mjs Ed25519 签名/验签 + license token
@@ -262,3 +291,5 @@ light-cli resign [--yes]      # 0.31：把存量 v1 签名升级为 v2（v2 覆�
 ```
 
 **读图要点**：用户只经 `light-cli.mjs` / `evolver-recall.mjs` 进入；引擎层是唯一实现——**改引擎行为只需改一处，所有入口同时生效**；`code/engine/light/store.mjs` 是账本与埋点的唯一落点（0.27 起 timeline 默认落在技能根 `experiments/`）。
+
+**0.34 重构（P0-2）**：主入口 1299 行 → **65 行**，30 个命令按域分到 `engine/light/commands/` 五个文件，共享 helpers 下沉到 `_shared.mjs`。命令块为机械搬运（块级作用域与派发语义不变），**行为等价性由 `_rel0330/_smoke_matrix.mjs` 的 57 项基线保证（57 passed / 0 failed）**。迁移期两个坑：`path.dirname` 拼接需按层数改写为 `__CODE_DIR`/`__SKILL_ROOT`；命令模块需自行 import 守卫（如 `depositionGate`），共享层不会自动 re-export。
