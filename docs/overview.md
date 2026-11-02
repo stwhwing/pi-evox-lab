@@ -30,6 +30,10 @@
 见 [`examples/quickstart.md`](../examples/quickstart.md)。Node ≥22，无其他依赖。
 
 ## 已知局限
+
+> **0.34 起**：本节的量化边界与「不适用场景」已**同步收敛至 [`docs/boundary-and-triggers.md`](boundary-and-triggers.md)**（统一入口，另含触发方式 T1–T5、多宿主并发矩阵与三类接入方式）。此处保留简版供一页纸速读；两者若冲突，**以速查表为准**。
+> **EN**: From 0.34, the quantified boundaries and "when not to rely on it" have been consolidated into [`docs/boundary-and-triggers.md`](boundary-and-triggers.md) — the single entry point, also covering triggers T1-T5, the multi-host concurrency matrix and the three integration modes. This page keeps the short version for one-pager speed; if the two conflict, the quick-reference table wins.
+
 - 修法注入是**软提示**——遵从度随模型而异，不承诺 100% 避坑；
 - 库的价值随使用复利增长，冷启动需要先沉淀几条；
 - 共享池是自建 opt-in 机制，不是中心化服务。
@@ -45,7 +49,7 @@
 | 溯源覆盖 | deposit/register-hit/negate 自动记录 `source_model` + `source_host`（0.29 起；0.30 起自动读 `~/.evomap/source.json`） | `report` 的 L4 出「跨源率」——单源占比高 = 修法只被一个（模型｜宿主）验证过，换环境可能失效 |
 
 > **EN**: Not a fit for: (1) several machines writing **one shared library** at the same time - no cross-machine locking; (2) anything requiring a **100% avoidance guarantee** - injection is a soft prompt and compliance varies by model (measured: 0/5 vs 5/5 on the same trap); (3) **real-time** library sync - the pool is a Git snapshot; (4) one-off tasks with no follow-up - the value only amortises on reuse; (5) using the gene library as an **authoritative knowledge base** - genes are *fixes*, not knowledge entries; (6) applying one fix across **different architectures** without independent reproduction - check the L4 cross-source rate first.
-### **不适用场景**（0.30 补：明确说"什么时候别指望它"）
+### **不适用场景**（0.30 补：明确说"什么时候别指望它"；完整 6 类 + 量化边界 + 触发方式见 [`docs/boundary-and-triggers.md`](boundary-and-triggers.md) §1）
 | 场景 | 为什么不适合 | 改用什么 |
 |---|---|---|
 | **多台机器同时写同一个基因库** | 跨机不共享文件锁，只能靠"各自写 + Git 合并 + LWW 裁定" | 各自维护本地库，用池做单向分发 |
