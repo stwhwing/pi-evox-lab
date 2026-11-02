@@ -5,10 +5,10 @@
 **Q1：召回输出「无可召回修法」是坏了吗？**
 不是。经验库从零开始，首次运行必然为空。想**立刻有东西可召回**，装起步包最快：
 ```bash
-node code/light-cli.mjs starter      # 装载 10 条通用教训（编码/JSON/权限/文件/语法/类型/网络）
+node code/light-cli.mjs starter      # 装载 20 条通用教训（编码/JSON/权限/文件/语法/类型/网络）
 node code/evolver-recall.mjs --query "读取中文日志报 UnicodeDecodeError"   # 立刻能命中
 ```
-**EN A1**: Normal - the store starts empty. Fastest way to get something recallable: `starter` loads 10 curated general lessons.
+**EN A1**: Normal - the store starts empty. Fastest way to get something recallable: `starter` loads 20 curated general lessons.
 
 
 **Q2：models.json 里配 `$ENV` 环境变量不生效？**
