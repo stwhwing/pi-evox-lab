@@ -73,20 +73,66 @@ function ensureDir() {
  *   - 总截止 RETRY_DEADLINE_MS（默认 3s）内有限次重试（RETRY_MAX 次），**到点即放行**：
  *     重试是优化不是门——绝不让 IO 因重试机制无限期阻塞调用方；
  *   - 非瞬态错误（ENOENT/EISDIR 等）立即交还原逻辑，不重试。
+ *
+ * 0.34 熔断/降级（stability 评测 0.33.0 点名「缺少熔断/降级机制，长时间故障时可能持续重试」）：
+ *   - 连续 CB_THRESHOLD 次**瞬态**失败 ⇒ 打开熔断：其后 CB_COOLDOWN_MS 内**只尝试 1 次**
+ *     （跳过重试与退避），失败即交还调用方 ⇒ 长时间故障下不再无谓重试、响应不被拖慢；
+ *   - 冷却期内任一次成功 ⇒ 立即闭合（半开试探自动恢复）；
+ *   - 非瞬态失败（ENOENT 等，首次运行的空库场景）**不计入熔断**，避免误触发；
+ *   - 打开时输出一次中文可执行指引（限频，不刷屏）。
  */
 const RETRY_MAX = Math.max(1, parseInt(process.env.EVOX_IO_RETRY || '3', 10) || 3);
 const RETRY_DEADLINE_MS = Math.max(0, parseInt(process.env.EVOX_IO_DEADLINE_MS || '3000', 10) || 3000);
 const TRANSIENT = new Set(['EBUSY', 'EPERM', 'EACCES', 'ETIMEDOUT']);
+const CB_THRESHOLD = Math.max(2, parseInt(process.env.EVOX_IO_CB_THRESHOLD || '5', 10) || 5);
+const CB_COOLDOWN_MS = Math.max(0, parseInt(process.env.EVOX_IO_CB_COOLDOWN_MS || '10000', 10) || 10000);
+
+let cbFailures = 0;
+let cbOpenUntil = 0;
+let cbGuidanceShown = false;
+
+/** 记录瞬态失败；达到阈值则打开熔断并输出一次可执行指引（非瞬态不计，避免误熔断） */
+function noteIoFailure(e) {
+  const code = e && e.code;
+  if (!TRANSIENT.has(code)) return;
+  cbFailures++;
+  if (cbFailures >= CB_THRESHOLD) {
+    cbOpenUntil = Date.now() + CB_COOLDOWN_MS;
+    if (!cbGuidanceShown) {
+      cbGuidanceShown = true;
+      console.warn(
+        `[pi-evox] IO 持续失败（${code}）——已停止重试以保障响应速度（连续 ${CB_THRESHOLD} 次失败触发熔断，冷却 ${CB_COOLDOWN_MS}ms）。` +
+        `可执行指引：确认目标文件未被其他程序占用（编辑器/实时扫描），或检查读写权限（EPERM/EACCES）；若存放在网络盘或同步盘，等待同步结束后再试。`
+      );
+    }
+  }
+}
 
 export function retryIo(fn, label = 'io') {
+  // 熔断打开 ⇒ 降级路径：单次尝试、不重试、不退避（快速失败）
+  if (Date.now() < cbOpenUntil) {
+    try {
+      const r = fn();
+      cbFailures = 0; cbOpenUntil = 0; cbGuidanceShown = false; // 半开试探成功 ⇒ 闭合
+      return r;
+    } catch (e) {
+      noteIoFailure(e);
+      throw e;
+    }
+  }
   const start = Date.now();
-  let lastErr = null;
   for (let attempt = 1; ; attempt++) {
-    try { return fn(); } catch (e) {
-      lastErr = e;
+    try {
+      const r = fn();
+      cbFailures = 0; cbOpenUntil = 0; cbGuidanceShown = false; // 成功 ⇒ 闭合
+      return r;
+    } catch (e) {
       const code = e && e.code;
       const outOfTime = Date.now() - start >= RETRY_DEADLINE_MS;
-      if (!TRANSIENT.has(code) || outOfTime || attempt >= RETRY_MAX) throw e;
+      if (!TRANSIENT.has(code) || outOfTime || attempt >= RETRY_MAX) {
+        noteIoFailure(e);
+        throw e;
+      }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * attempt); // 50/100ms 退避
     }
   }
@@ -103,8 +149,14 @@ export function retryIo(fn, label = 'io') {
  *     任何情况下都不能因锁让写入失败（fail-closed 的反面：这里 fail-open 保可用）。
  * Python 侧（evox_errcap.py hook）用同一协议（os.open O_CREAT|O_EXCL）。
  */
-const LOCK_TIMEOUT_MS = 5000;
+const LOCK_TIMEOUT_MS = Math.max(0, parseInt(process.env.EVOX_LOCK_TIMEOUT_MS || '5000', 10) || 5000);
 const LOCK_STALE_MS = 15000;
+
+// 0.34 P1-3 单写者告警：锁的 fail-open 原先**完全静默**（评测点名"缺分布式锁"的可见性缺口）。
+// 锁仍然 fail-open（可用性优先，绝不因锁让写入失败），但**必须显式告知**本次未持锁——
+// 否则并发写造成的更新丢失对用户是完全不可见的。
+let lastLockFailReason = '';
+const lockWarned = new Set(); // 按目录限频一次，避免每次写入刷屏
 
 function acquireLock(dir) {
   const lockPath = path.join(dir, '.evox.lock');
@@ -117,12 +169,12 @@ function acquireLock(dir) {
       fs.closeSync(fd);
       return lockPath;
     } catch (e) {
-      if (e && e.code !== 'EEXIST') return null; // 锁不可用（只读目录等）→ fail-open
+      if (e && e.code !== 'EEXIST') { lastLockFailReason = '锁文件无法创建（目录只读或权限不足）'; return null; }
       try {
         const st = fs.statSync(lockPath);
         if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { try { fs.unlinkSync(lockPath); } catch { /* 他人先夺 */ } continue; }
       } catch { continue; } // 锁刚好消失 → 重试
-      if (Date.now() - start > LOCK_TIMEOUT_MS) return null; // 超时 → fail-open
+      if (Date.now() - start > LOCK_TIMEOUT_MS) { lastLockFailReason = `等待写锁超过 ${LOCK_TIMEOUT_MS}ms（可能有其他进程正在写）`; return null; }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25); // 同步睡眠 25ms
     }
   }
@@ -133,9 +185,18 @@ function releaseLock(lockPath) {
   try { fs.unlinkSync(lockPath); } catch { /* 已被 stale 夺取者删除 */ }
 }
 
-/** 持锁执行 fn（返回 fn 的返回值）；锁不可用时退化为直接执行（fail-open） */
+/** 持锁执行 fn（返回 fn 的返回值）；锁不可用时退化为直接执行（fail-open），但会告警一次 */
 export function withLock(dir, fn) {
+  lastLockFailReason = '';
   const lp = acquireLock(dir);
+  if (!lp && !lockWarned.has(dir)) {
+    lockWarned.add(dir);
+    console.warn(
+      `[pi-evox] 警告：本次写入未取得写锁（${lastLockFailReason || '锁不可用'}）——` +
+      `若多进程或多机器并发写同一个经验库，可能出现更新丢失（台账回滚、标记丢失）。` +
+      `可执行指引：确保同一库只由单个写入者写入；或设 EVOX_LOCK_TIMEOUT_MS 调整等待上限。`
+    );
+  }
   try { return fn(); } finally { releaseLock(lp); }
 }
 
@@ -212,7 +273,7 @@ export function assetIdOf(geneId) {
  *  0.32 D-2 精确归因：新增**中间层** `~/.evomap/last_source.json`——由召回钩子把
  *  「本轮**实际**服务的模型」透传进来、经 evolver-recall 落盘。
  *  为什么需要它：source.json 是**静态 per-host 默认值**（= 配置里的 primary），
- *  但宿主有 fallback 链（191: primary=agnes-3.0-flash，fallbacks[0]=deepseek-v4-pro），
+ *  但宿主有 fallback 链（如 primary=agnes-3.0-flash，fallbacks[0]=deepseek-v4-pro），
  *  某轮若实际由 fallback 服务，静态默认会把它误记成 primary ⇒ 归因错误。
  *  且 deposit / register-hit 是 **agent 自己调**的（不是钩子调的），
  *  钩子子进程的 env 传不到那些后续调用 ⇒ 必须经状态文件中转。
