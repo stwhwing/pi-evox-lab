@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.33.0
+version: 0.34.0
 platforms: [linux, macos, windows]
 homepage: https://github.com/stwhwing/pi-evox-lab
 metadata:
@@ -127,6 +127,9 @@ node code/light-cli.mjs doctor   # 30 秒自检——通过即可用，无需任
 
 > **EN**: Flow A - recall at task start. `--query` with the task text does targeted recall (unrelated experience is never injected - injection is gated by signals_match x query-token overlap, below threshold = no injection). On error (T3), the raw error text IS the query. Multiple matches: geneConflicts drops anti_patterns-mutual low scorers; no targeted hit = no injection. Register the hit at task end with `--register-hit --gene <id>` (id-addressed, concurrency-safe).
 ```bash
+# 国内高频场景（中文 Windows 日志 / CSV 默认 GBK，按 utf-8 读必炸）——空库跑 starter 后先试这条最易见效
+node code/evolver-recall.mjs --query "读取中文日志报 UnicodeDecodeError" --top 5
+
 # 推荐：带上任务文本做「对靶」召回（与任务无关的经验不会注入）
 node code/evolver-recall.mjs --query "<当前任务的一句话/关键信号>" --top 5
 
@@ -230,7 +233,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **宿主接入**：`light-cli.mjs install <claude-code|cursor|codex|agents-md>`（自动定位配置文件写入规程，`--yes` 落盘）；OpenClaw/Hermes 用 `install-hooks`；
 - **基因池协作**：`gene pull --pool https://zyx.pink/pool/genes.jsonl --tier official` 从官方镜像拉取全池（签名验证，66+ 条策划基因）；`gene submit --bundle <file>` 产出提交包回传维护者（PR / issue 附件 / 文件交换）；导入默认隔离+验签；池仓库贡献条款见 CONTRIBUTING.md（CC-BY-4.0）；
 - **场景拉取**（0.24）：`gene pull --pool <URL> --scene <场景>` 只拉该场景子集；受控场景词表：`ops-deploy`（部署/服务器）/ `coding-debug`（编码/解析）/ `release-publish`（发布/版本）/ `api-integration`（API/webhook）/ `git-workflow`（git/仓库）/ `agent-runtime`（宿主/钩子/管线）；`gene list --scene <名>` 本地同粒度过滤；
-- **并发语义**（三层，**完整行为表见「五个触发点」节的"多宿主同时召回会发生什么"**）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。多宿主并行时按 gene_id 寻址（0.18 起），不用位置序号。
+- **并发语义**（三层，**完整行为表见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §5**）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。多宿主并行时按 gene_id 寻址（0.18 起），不用位置序号。
 - **召回打分与阈值（公开数值，0.28 补）**：每条候选基因的得分 = **signals 精确命中 +3/个** + **与基因正文 token 交集 +1/个** + 负载均衡偏置 **±2**（冷门基因上抬、热门下压；命中全 0 时不生效）；**低于阈值 2 分即不注入**（宁缺毋滥：只注入不对靶内容比不注入更差，实测 +36pp）。命中判定用与召回同一套分词：ASCII token（≥3 字符）+ 中文 **2 字二元词**（CJK bigram）——因此**多字中文短语写进 signals 是无效的**（见 `fix-signals`）。`--top` 默认注入条数见 `evolver-recall.mjs --help`。
 - **命名池（0.25）**：`~/.evomap/pools.json` 定义命名池源（`{"pools":{"official":"<url>","team":"<git-url>"}}`），`gene pull official` 按名拉取；已拉池缓存在 `~/.evomap/pool-cache/`。
 - **会话围栏（0.27）**：`light-cli.mjs session open "<任务名>"` 一步完成「T1 召回 + 记账」（落生产账本）；`session close "<本轮结论>"` 收尾记结论；`session` 查看围栏记录。**围栏让召回与沉淀可审计**：跳过召回或收尾沉淀，账本里没有配对的 open/close，外部构建门禁会拒绝构建。配套：`doctor` 检查埋点落点漂移。
@@ -241,6 +244,8 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **效果量化（0.25）**：`light-cli.mjs report` 周报（L1 活性/L2 回填率/L3 错误家族复发，`--json` 可机读）；`recall --record "<结论>"` 把验证结论回填生产账本；`draft/distill --commit` 自动写 deposit 事件。
 - **许可验证（0.25）**：`light-cli.mjs license verify <token>` 验证 Ed25519 签名许可（发行方公钥随包 `assets/issuer-pub.txt（ClawHub/GitHub 0.25.0 首发的 .pem 版同样兼容）`）；许可机制本身开源，便于任何发行方接入。
 - **IO 重试语义**：文件读写对瞬态错误（EBUSY/EPERM/EACCES/ETIMEDOUT）自动重试（默认 3 次/截止 3s，`EVOX_IO_RETRY`/`EVOX_IO_DEADLINE_MS` 可调）；非瞬态错误不重试；重试是优化不是门——绝不因重试机制阻塞调用方（fail-open）。
+- **IO 熔断与降级（0.34）**：连续 5 次瞬态失败打开熔断，其后 10s 内只尝试 1 次（不重试、不退避）并输出一次可执行指引（`EVOX_IO_CB_THRESHOLD`/`EVOX_IO_CB_COOLDOWN_MS` 可调）；IO 一旦恢复即自动闭合；非瞬态失败（如空库的 ENOENT）不触发熔断。
+- **显式错误码（0.34）**：所有失败输出在保留退出码（0/1/2）的同时附加具名错误码 `[E_USAGE]`/`[E_ARGS]`/`[E_GUARD]`/`[E_NOTFOUND]`/`[E_INTERNAL]`，便于脚本精确区分失败类型；完整错误码表见 `docs/advanced.md`。
 
 ## 安全：四道门（0.16.0）
 
@@ -268,9 +273,14 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 守卫模块缺失时 fail-closed（导出/导入拒绝执行；召回侧跳过注入门但其余三门照常——只读不阻断、写入必须 closed）。
 
+## 能力边界速查（什么时候别指望它）
+
+> 不适用场景 6 类（多机同写一库 / 100% 避坑保证 / 实时同步库 / 一次性任务 / 当权威知识库 / 跨架构直接复用）与量化边界（注入默认 5 条、库规模上限**未实测**、跨机无分布式锁、Node ≥22）**统一见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §1–§2**。
+> **EN**: Capability limits ("when NOT to use") and quantitative bounds: `docs/boundary-and-triggers.md` §1–§2.
+
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
 
-> **EN**: Recall must be bound to concrete action nodes, never left to memory. Five trigger points: T1 task start (recall --query), T2 before actions, T3 on error (recall --error), T4 after fixing a pit (deposit immediately), T5 task end (register-hit/negate --gene). Integration: install-hooks for hooked hosts, install-snippet to paste the procedure into any agent instruction file. T2 concretely: run recall before the FIRST side-effecting action in a task (e.g. before committing a cross-file change, before a deploy script that overwrites, before force-push) with the action phrase as the query; pure reads do not trigger. The trigger-word table below is an invocation hint for humans/agents, NOT the matching mechanism - any non-trivial task start takes T1 unconditionally, and Chinese phrasing maps to English canonicals via aliases.json.
+> **EN**: Recall must be bound to concrete action nodes, never left to memory. Five trigger points: T1 task start (recall --query), T2 before actions, T3 on error (recall --error), T4 after fixing a pit (deposit immediately), T5 task end (register-hit/negate --gene). Integration: install-hooks for hooked hosts, install-snippet to paste the procedure into any agent instruction file. T2 concretely: run recall before the FIRST side-effecting action in a task (e.g. before committing a cross-file change, before a deploy script that overwrites, before force-push) with the action phrase as the query; pure reads do not trigger. The trigger-word table now lives in `docs/boundary-and-triggers.md` §4; trigger words are an invocation hint for humans/agents, NOT the matching mechanism - any non-trivial task start takes T1 unconditionally, and Chinese phrasing maps to English canonicals via aliases.json.
 > 「装了技能但没人调用」是本项目最根本的失效模式——**连作者都会忘**（实测：相关基因能召回排 #1，却因为动手前没跑召回而重复踩坑）。所以不能指望"用户记得"，必须把召回**绑死在具体动作节点上**。
 
 | # | 触发点 | 时机 | 命令 | 没接会怎样 |
@@ -281,27 +291,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | **T4** | 修好坑后 | 修复了一个不显而易见的坑 | `draft --error ...`（沉淀） | 经验流失，下台机器再踩 |
 | **T5** | 任务结束 | 收尾 | `--register-hit --gene <id>` / `--negate --gene <id>` | 无法度量，失效修法发现不了 |
 
-> **T2 的判定口径（0.28 补明）**：①动作**尚未执行**（执行完就晚了）②动作**有副作用或不可逆**（写/提交/部署/外发/删除）③**本任务内首次**做这类动作时；纯读取/查询类动作不需要 T2。query 写**动作短语**（不是任务名）——召回按动作措辞对靶（如"批量改写文件"能命中对应修法）。
-
-> **T2 具体例子（0.33 补，3 个可直接对号的）**：① 刚要 `git commit -m` 一个跨多文件的改动 → query `"提交跨文件改动前检查"`；② 刚要跑一个会**覆盖**目标目录的部署脚本 → query `"部署前备份与干跑"`；③ 刚要把本地改动**强推到远端**（覆盖远端历史） → query `"force push 前确认远端状态"`。都不命中 ⇒ 直接执行（宁缺毋滥，T2 是可选增强，不添延迟负担）；命中 ⇒ 先读修法再动手。**反例（不必触发）**：读文件、搜代码、跑测试、查看状态——纯读取无副作用。
-
-**多宿主同时召回会发生什么（0.28 补明）**：
-| 情形 | 行为 | 依据 |
-|---|---|---|
-| 两个宿主同时召回同一基因 | **各自独立注入**（软提示按宿主上下文渲染，不共享状态） | 召回无跨进程状态 |
-| 同一宿主多会话并发召回 | 各自独立选出 top-N，**不共享选择快照**（0.18 起按 gene_id 寻址，不再有位置漂移） | `selectList` 每次现算 |
-| 同一基因被多台机器同时沉淀 | `asset_id` 去重（内容哈希）→ 只落一条；**不同内容则各落一条**（不同 asset_id） | store.appendGene |
-| 审核状态跨机冲突 | 各自台账 **LWW**（最后一个状态生效）——quarantine 可撤销 approve | review.jsonl |
-| 一个宿主钩子重复触发（心跳/重连） | 召回幂等：重复注入不重复计命中（hits 只在 `--register-hit` 时记） | 埋点口径 |
-| 钩子 env 到不了 agent 自调命令 | `persistActualSource` 把钩子透传的实测模型落 `last_source.json`，后续 deposit/hit 经它取到 | 0.32 D-2 |
-
-### T3：报错自动触发（最容易被忽略、但收益最高的一个点）
-
-> **EN**: T3 is the highest-yield trigger: when a tool returns an error, run recall with the raw error text **before retrying**. Without it you re-derive a fix your own store already holds.
-
-**为什么单独拎出来**：T3 是唯一「**不用你记得**」的触发点——报错本身就是提醒。实测里最可惜的失效形态正是「库里明明有修法，却盲目重试」。
-
-**口径**：工具返回错误、**准备重试之前**，把**报错原文**直接当查询（不要自己概括）：
+**T3 单独拎出来（收益最高、却最容易被忽略）**：它是唯一「**不用你记得**」的触发点——**报错本身就是提醒**。工具返回错误、**准备重试之前**，把报错原文直接当查询（不要自己概括）：
 
 ```bash
 node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xd5 in position 0"
@@ -309,24 +299,8 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 
 命中后按修法重试；仍失败 → 走 T4 沉淀这条新坑。
 
-**触发词 ↔ 命令映射（0.31 补全：每组主词给到可直接复制的命令）**
-
-| 组 | 主词（记这一个就够） | 同义词（说了也算） | 触发点 | 具体命令（可直接复制） |
-|---|---|---|---|---|
-| **召回类** | **召回** | 经验召回 / 错题本 / 避坑 / recall / lessons | T1 任务开始 | `node code/evolver-recall.mjs --query "<任务一句话>"` |
-| **召回类（报错）** | **报错了** | 失败了 / 又挂了 / 重试 / 修一下 / error / traceback | T3 遇到报错 | `node code/evolver-recall.mjs --error "<报错原文>"` |
-| **沉淀类** | **沉淀** | 记一笔 / 入库 / deposit / distill / 存起来 | T4 修好坑后 | `node code/light-cli.mjs draft --error "<报错原文>"` |
-| **进化类** | **继承** | 自进化 / 经验继承 / evolver / pi-evox | T1 + T4 | 先 T1 召回，修好后 T4 沉淀 |
-| **体检类** | **体检** | 自检 / 健康度 / 有没有失效 / doctor / info | 随时 | `node code/light-cli.mjs info` |
-| **签名类** | **签名** | 验签 / 篡改 / provenance / identity | 跨机协作前 | `node code/light-cli.mjs verify <gene_id>` |
-
-> 术语不确定时（signals_match / anti_patterns / LWW / depositionGate / sig_v 等）查 [`docs/glossary.md`](docs/glossary.md)（一页纸，每个词配一个最小例子）。
-
-> **触发词覆盖范围说明（0.33 补明）**：① 上表是**人/agent 的调用提示**，不是召回匹配机制——召回命中靠 `signals_match × query-token 重叠`（确定性对靶），触发词只是告诉你"什么时候该跑一次"；② **覆盖不到所有说法是正常的**：任务开始只要判定为"非平凡"就走 T1，不需要措辞命中任何一组（触发词表服务的是"用户明确提到某功能"的场景）；③ 中文措辞走 `aliases.json` 概念别名映射到英文 canonical（0.28），两种措辞都能命中；④ 报错类（T3）不需要触发词——**报错本身就是触发**，见下节。
-
-**接入方式**：有钩子的宿主（OpenClaw/Hermes）用 `install-hooks`；任何有 AGENTS.md/CLAUDE.md 的宿主用 `install-snippet` 把五触发点规程写进指令文件。完整接入契约（三步+模板）见 `docs/advanced.md`。
-
-> **进阶阅读（按需，不必通读）**：宿主接入三步模板 → `docs/advanced.md`「宿主接入」节；回填寻址与并发锁 → 同文「回填与并发」；模块调用关系图 → 同文「模块调用关系图」；跨机/命名池 → `docs/cross-machine.md`。
+> **完整触发规格统一见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md)**——含 T2 判定口径与 3 个例子、多宿主并发矩阵、触发词↔命令映射、三类宿主接入方式、国内镜像、「装了没生效」自检。**本文件只保留上面这张核心表**，两处不再各自漂移。
+> 触发词只是**调用提示**，不是召回匹配机制（命中靠 `signals_match × query-token` 对靶）；任务开始只要判定为"非平凡"就走 T1，不需措辞命中任何一组。
 
 ## 常见错误用法（反模式速查）
 
@@ -345,12 +319,15 @@ node code/evolver-recall.mjs --error "UnicodeDecodeError: 'utf-8' codec can't de
 
 > **EN**: All CLI calls are direct argv (no shell). The only egress is `--llm-refine` (disabled by default, needs explicit endpoint config). `--fresh` is destructive (auto-backed-up). Injected blocks are transparently marked; global output is redacted. Full text: `docs/security-and-license.md`.
 全文见 [`docs/security-and-license.md`](docs/security-and-license.md)。要点：全部 CLI 调用为 **argv 直调**（无 shell、无拼接）；外发仅 `--llm-refine`（默认禁用、需显式配置端点）；`--fresh` 有破坏性（自动备份）；注入块透明标注、全局输出脱敏（密钥不出现在任何 stdout）。
+- **`traps/` 是本地测试夹具，不参与运行时**：该目录的 6 个陷阱生成器只用于在流程 C 受控实验里制造「环境必然失败」的场景（GBK 解码、非法 JSON 等）以量化继承收益；它们**不在召回 / 沉淀 / 注入的任何运行时路径上**，也不会被默认安装的钩子调用。保留是为了实验可复现——0.33 已实证：删除或隐藏不会改变静态扫描结论，反而损失可信度。
+> **EN**: `traps/` holds LOCAL TEST FIXTURES ONLY - six generators used solely by flow-C controlled experiments to produce "environment-certain-failure" scenarios (GBK decode, invalid JSON) for measuring inheritance gains. They are NOT on any runtime path (recall / deposit / injection) and are never invoked by the installed hooks. Kept for reproducibility: removing or hiding them does not change static-scanner verdicts (verified in 0.33) and would only cost credibility.
 
 ## 目录与文档导航
 
 | 路径 | 作用 | 何时看 |
 |------|------|--------|
-| `SKILL.md`（本文件） | 日常用法：流程 A/B、触发点、安全摘要、反模式速查 | 首次使用与日常 |
+| `SKILL.md`（本文件） | 日常用法：流程 A/B、触发点核心表、能力边界入口、安全摘要、反模式速查 | 首次使用与日常 |
+| **`docs/boundary-and-triggers.md`**（0.34 新增） | **能力边界 + 触发方式速查表（统一入口）**：不适用场景 6 类、量化边界、T1–T5 全量规格、多宿主并发矩阵、三类接入方式 | 判断该不该用 / 不确定什么时候跑一次 |
 | `code/evolver-recall.mjs` | 流程 A：召回 + 命中登记（**唯一召回实现**） | 接智能体 / 排查召回为空 |
 | `code/light-cli.mjs` | 流程 B：沉淀/审核/取证 + timeline/harvest/gene 池 | 沉淀修法、审核基因 |
 | `code/pi_evolve.mjs` · `code/engine/light/` | 流程 C 编排器 · 轻量引擎三件套 | 研究用 / 理解引擎 |
