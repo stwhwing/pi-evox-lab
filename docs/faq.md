@@ -65,6 +65,9 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 不会擅自改。它**默认只演练**：打印将要复制的文件、目标路径、需手工确认的注册步骤，**不落盘**。确认后加 `--yes` 才写入（写入前自动备份）。回滚 = 删除钩子目录。
 **EN A10**: It never writes without consent - dry-run by default, `--yes` applies after confirmation, with automatic backup. Rollback = delete the hook directory.
 
+> 接入方式**完整矩阵**（有钩子宿主 / 有指令文件的宿主 / 补写侧 last mile / 国内镜像 / 自检）见 [`docs/boundary-and-triggers.md`](boundary-and-triggers.md) §6。
+> **EN**: For the full integration matrix (hook-capable hosts / hosts with instruction files / write-side last mile / China mirror / self-check), see [`docs/boundary-and-triggers.md`](boundary-and-triggers.md) §6。
+
 
 **Q11：起步包里的基因是哪来的？安全吗？**
 是策展过的**通用工程教训**，来源为实际踩坑并人工筛选；装载时同样**过脱敏闸门 + 注入扫描**两道门；不收集、不上传任何数据，纯本地文件。
@@ -74,6 +77,9 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 **Q12：我的 Agent 既不是 OpenClaw 也不是 Hermes，怎么让它自动用？**
 用规程粘贴：`node code/light-cli.mjs snippet` 输出「五个触发点」操作规程，粘进你的 AGENTS.md / CLAUDE.md / 系统提示即可。这是没有钩子机制的宿主最可靠的接入方式。
 **EN A12**: Use the procedure paste: `snippet` outputs the five-trigger-point protocol; paste it into AGENTS.md / CLAUDE.md / system prompt. The most reliable integration for hosts without hooks.
+
+> 接入方式**完整矩阵**（含 OpenClaw/Hermes 钩子路径对比、多宿主并发行为、国内镜像、自检）见 [`docs/boundary-and-triggers.md`](boundary-and-triggers.md) §5–§6。
+> **EN**: For the full integration matrix (OpenClaw/Hermes hook-path comparison, multi-host concurrency behavior, China mirror, self-check), see [`docs/boundary-and-triggers.md`](boundary-and-triggers.md) §5-§6.
 
 
 **Q13：为什么我的 agent 修完坑从来不自动沉淀？**
