@@ -10,7 +10,7 @@ node code/light-cli.mjs doctor
 # 期望：✓ 全部就绪，可正常使用 recall / 沉淀
 ```
 
-## 2. 装起步包（10 条通用教训）
+## 2. 装起步包（20 条通用教训）
 ```bash
 node code/light-cli.mjs starter
 ```
