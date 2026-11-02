@@ -97,14 +97,14 @@ node code/light-cli.mjs install-snippet --file <项目>/AGENTS.md --yes  # 写�
 
 ## 让经验真正生效：四个静默失败与对策（0.16.0）
 
-> **EN**: The most common failure is SILENT: genes deposited but never recalled, or deposited but never approved (never injected). Counters: info shows loop health, own deposits are auto-approved by default, install-hooks auto-wires hosts, starter loads 10 curated genes so the first query hits.
+> **EN**: The most common failure is SILENT: genes deposited but never recalled, or deposited but never approved (never injected). Counters: info shows loop health, own deposits are auto-approved by default, install-hooks auto-wires hosts, starter loads 20 curated genes so the first query hits.
 
 | 静默失败 | 症状 | 对策 |
 |---|---|---|
 | **① 从未召回** | 沉淀了很多，却从没被用过 | `info` 显示「召回次数 0」并给命令；`install-hooks` 帮你接上宿主 |
 | **② 沉淀未审核** | 基因入库却被隔离，**永不注入** | 默认自动通过；`info` 列出待审并给 approve 命令 |
 | **③ 宿主没接** | 装了但 agent 从不会自动召回 | `install-hooks`（演练 → 确认后才写入） |
-| **④ 冷启动没手感** | 库里没几条，召回也不命中 | `starter` 一键装载 10 条通用教训 |
+| **④ 冷启动没手感** | 库里没几条，召回也不命中 | `starter` 一键装载 20 条通用教训 |
 
 ### 三条命令解决 90% 的「没生效」
 ```bash
