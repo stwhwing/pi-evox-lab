@@ -25,11 +25,16 @@ import { REPAIR_SIGNAL_RE, NARRATION_RE, RETRY_LOG_RE } from './engine/light/gua
 
 // 0.16.0 Q3-1：注入守卫。静态导入（同目录，无网络）；外层 try 保证**模块缺失也不能让召回崩掉**
 // ——宁可降级为「不加这道守卫」，也绝不能因守卫失败导致宿主 bootstrap 失败。
+// 0.36 B-2（aig 0.35 加固建议①落地）：降级不再静默——显式一次性中文告警到 stderr，
+// 与安全声明「召回侧跳过注入门」的语义对齐，doctor 可据此汇总守卫降级状态。
 let injectionScan = null;
 try {
   ({ injectionScan } = await import(new URL('./injection_scan.mjs', import.meta.url).href));
-} catch {
+} catch (e) {
   injectionScan = null;
+  console.error('[pi-evox] ⚠ 注入守卫降级：injection_scan.mjs 缺失或加载失败（' + (e?.code || e?.message || e) + '）');
+  console.error('         → 本次召回**不经过注入守卫**（修法/叙述/脱敏三门照常；导出/导入仍 fail-closed）。');
+  console.error('         → 修正：恢复 code/injection_scan.mjs 后重跑，或用 `node code/tests/injection-regression.mjs` 自检。');
 }
 
 // ── 统一错误输出（0.14.7，回应 skillhub errorHandling 4.3「缺统一错误码 / 中英文混杂 / 生硬退出」）──
