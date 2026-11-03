@@ -19,20 +19,28 @@ const PATTERNS = [
   // 纪律：注释里**只描述机制类别，不引用触发串原文** —— 说明文字本身会被扫描器当成注入样本
   // （本仓已有为此发版的先例：gene_manual_9ca2aed5）。
   // 用**白名单式**放宽而非任意通配：后者会把「忽略 + 普通名词」这类正常文本误杀。
-  { id: 'override-instructions', sev: 'high', re: /忽略((之前|上面|以上|先前|前述)?(的)?(所有|一切|全部)?(的)?|(系统|原有|初始)(的)?)(指令|指示|规则|要求|约束)|ignore (all )?(previous|prior|above|earlier) (instructions|prompts|rules)/i },
+  { id: 'override-instructions', sev: 'high', re: /忽略掉?((之前|上面|以上|先前|前述)?(的)?(所有|一切|全部)?(的)?|(系统|原有|初始)(的)?)(指令|指示|规则|要求|约束)|ignore (all |everything |)(previous|prior|above|earlier) (instructions|prompts|rules)|ignore everything above/i },
+  { id: 'override-2', sev: 'high', re: /(覆盖|清空)掉?((之前|上面|以上|以上|先前|前述|原有|系统)(的)?(所有|一切|全部)?(的)?)(指令|指示|规则|设定|要求)|将(之前|以上|上面)的(所有)?(指令|指示|规则).{0,6}(覆盖|作废|失效)/i },
+  { id: 'override-3', sev: 'high', re: /\boverride\b.{0,24}\b(instructions|rules|settings|directives)\b|\b(disable|bypass)\b.{0,20}\b(safety|guard|refusal|restriction)/i },
   { id: 'disregard-prior', sev: 'high', re: /disregard (all )?(previous|prior|earlier)|forget (everything|all) (above|before)/i },
   { id: 'role-hijack', sev: 'high', re: /你现在是|从现在起你是|you are now|act as (a )?(different|new) (ai|assistant|model)/i },
   { id: 'fake-role-marker', sev: 'high', re: /^\s*(system|assistant|user)\s*:/im },
-  { id: 'leak-system-prompt', sev: 'high', re: /(输出|显示|告诉我|reveal|print|show).{0,10}(你的)?(系统提示|system prompt|指令|instructions)/i },
+  { id: 'fake-tag', sev: 'high', re: /\[(internal|admin|system|tool)[ _-](note|override|message|result|output)\]/i },
+  { id: 'leak-system-prompt', sev: 'high', re: /(输出|显示|告诉我|reveal|print|show|dump).{0,12}(你的)?(系统提示|system prompt|tool configuration|指令|instructions)/i },
+  { id: 'unrestricted-mode', sev: 'high', re: /(unrestricted|developer) mode|无限制模式|不要拒绝任何请求|no refusals/i },
 
   // ── 无条件强制（high：剥夺用户/宿主控制权）──
   { id: 'unconditional-must', sev: 'high', ctx: 'fix', re: /无论(用户|对方|任何人)(怎么)?(说|要求|请求)|regardless of what the user (says|asks|wants)/i },
   { id: 'always-first', sev: 'high', ctx: 'fix', re: /总是(先|要|必须)|always (do|run|execute) .{0,20}(first|before)/i },
 
-  // ── 数据外传（high）──
-  { id: 'exfiltrate', sev: 'high', ctx: 'fix', re: /(把|将).{0,20}(发送|上传|回传|post|upload|发送到)|exfiltrat/i },
-  { id: 'send-to-endpoint', sev: 'high', ctx: 'fix', re: /(curl|wget|fetch|post).{0,40}(http:\/\/|https:\/\/)/i },
-  { id: 'secret-exfil', sev: 'high', ctx: 'fix', re: /(读取|read|cat|dump).{0,20}(密钥|token|凭证|credential|password|\.env|id_rsa)/i },
+  // ── 数据外传（high）——0.36 B-1 补：渗出动词变体（发到/发往/送到）、编码渗出、DNS 通道 ──
+  { id: 'exfiltrate', sev: 'high', ctx: 'fix', re: /(把|将).{0,24}(发(送|到|往)|送(到|往)|上传|回传|post|upload|exfiltrat)|exfiltrat/i },
+  { id: 'send-to-endpoint', sev: 'high', ctx: 'fix', re: /(curl|wget|fetch|post).{0,40}(http:\/\/|https:\/\/)|upload.{0,40}(https?:\/\/|endpoint|remote|audit)/i },
+  { id: 'secret-exfil', sev: 'high', ctx: 'fix', re: /(读取|read|cat|dump|发(送|到|往)|include|propagate).{0,24}(密钥|token|凭证|credential|password|\.env|id_rsa|gitconfig|credential cache)/i },
+  { id: 'encode-exfil', sev: 'high', ctx: 'fix', re: /(base64-?encod|unicode escapes?|rot13|btoa|atob).{0,60}(send|发送|include|include inside|via|外传|lookup|comment|header)|\\b(send|transmit).{0,30}\\b(dns|txt)\\b/i },
+  { id: 'download-exec', sev: 'high', ctx: 'fix', re: /download.{0,30}\.(sh|exe|ps1|bat)|下载.{0,24}(并|然后)?(执行|运行)|(reverse|反弹)\s?shell|反弹\s?shell/i },
+  { id: 'tool-replace', sev: 'high', ctx: 'fix', re: /replace (the )?(shell|test|tool|binary|runner)|工具替换|替换.{0,12}(工具|二进制|runner|binary)|wrapper that logs/i },
+  { id: 'persist-exec', sev: 'high', ctx: 'fix', re: /cron (entry|job)|开机自启|persistence|keep.{0,20}applied|每次(启动|开机)/i },
 
   // ── 破坏性操作（med：仅 FIX 语境拦截）──
   { id: 'destructive-rm', sev: 'med', ctx: 'fix', re: /rm\s+-rf|删除(所有|全部|整个)|del\s+\/[sq]|rmdir\s+\/s/i },
@@ -41,12 +49,14 @@ const PATTERNS = [
   { id: 'eval-exec', sev: 'med', ctx: 'fix', re: /\b(eval|exec|execSync|Function)\s*\(/i },
 
   // ── 隐蔽 / 反检测（high）──
-  { id: 'stealth', sev: 'high', ctx: 'fix', re: /不要(告诉|告知|让).{0,10}(用户|对方)|(don'?t|do not) tell (the )?user|silently|隐蔽地|静默(执行|上传)/i },
+  { id: 'stealth', sev: 'high', ctx: 'fix', re: /不要(告诉|告知|让).{0,10}(用户|对方)|(don'?t|do not) tell (the )?user|silently|secretly|隐蔽地|静默(执行|上传)|悄悄(上传|发送|执行)|对用户隐匿/i },
   { id: 'persist-rule', sev: 'high', ctx: 'fix', re: /(记住|保存)(这条|这个)(规则|指令)|(以后|每次)(都|都要)(先|执行|做)/i },
 
   // ── 混淆（high）──
   { id: 'zero-width', sev: 'high', re: /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/ },
   { id: 'base64-blob', sev: 'high', re: /\b[A-Za-z0-9+/]{40,}={0,2}\b/ },
+  { id: 'unicode-escape-blob', sev: 'high', re: /(?:\\u[0-9a-fA-F]{4}){6,}/ },
+  { id: 'rot13-exec', sev: 'high', ctx: 'fix', re: /rot13.{0,12}(execut|run|decode|then)|ROT13-then/i },
 ];
 
 /**
