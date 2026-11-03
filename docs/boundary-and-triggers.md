@@ -143,7 +143,8 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 | 首次运行就该有东西可召回 | 库从零开始，物理上无可注入修法 | `light-cli starter` 装 20 条策展教训（装载时同样过脱敏 + 注入两道门），立刻可命中 |
 | 注入后必定不踩坑 | 软提示把「多次试错」压成「最多一次教训」，**不承诺 100%** | 关键修法额外写进项目文档/规范 |
 | 沉淀了很多却从没被用过 | 多半是召回没跑（次数 0）或卡在待审 | 见 §6.5 `info` 自检 |
-| 自己的沉淀还要人工审核 | 0.16.0 起**默认自动通过**（召回侧守卫仍兜底） | 想改回人工：`config --auto-approve off`；注意**共享池 `gene import` 不受此项影响**，仍按 `--tier` 判定 |
+| 自己的沉淀还要人工审核 | 审核语义统一见 SKILL.md「审核状态机」（召回侧守卫仍兜底） | 改人工：`config --auto-approve off`（共享池 `gene import` 仍按 `--tier` 判定） |
+> **EN**: Review semantics live in the SKILL.md review-state-machine section (single source of truth); recall-side guards still backstop. Switch to manual via `config --auto-approve off`; pool imports still follow `--tier`.
 
 ## 相关指针
 
