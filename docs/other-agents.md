@@ -77,7 +77,7 @@ Task: $TASK_TEXT"
 ```markdown
 ## 流程 A：任务开始 — 召回经验
 运行 `node <repo>/code/evolver-recall.mjs`，输出为编号修法列表；
-与本任务相关时优先采用；结束时实际采用了某条则 `--register-hit <N> --note "<任务>"`。
+与本任务相关时优先采用；结束时实际采用了某条则 `--register-hit --gene <asset_id> --note "<任务>"`（0.18 起按 id 寻址，多会话并发不漂移）。**EN**: address by `--gene <asset_id>` (concurrency-safe since 0.18).
 
 ## 流程 B：失败修复后 — 沉淀经验
 判定标准（任一满足即值得沉淀）：查文档/试错≥2次；依赖环境特性；报错反直觉；同一坑第二次出现。
