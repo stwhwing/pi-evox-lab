@@ -51,7 +51,8 @@ node code/evolver-recall.mjs --query "读取中文日志报 UnicodeDecodeError" 
 tail -5 experiments/recall_calls.jsonl
 
 # 3) 任务结束时回填（把 #N 换成实际编号）
-node code/evolver-recall.mjs --register-hit 1 --note "按 gbk 读取，成功"
+node code/evolver-recall.mjs --register-hit --gene <asset_id> --note "按 gbk 读取，成功"
+> **EN**: address hits by `--gene <asset_id>` (id-based since 0.18).
 node code/evolver-recall.mjs --negate 1 --note "仍超时"
 
 # 4) 看命中是否开始积累（>1 条说明闭环闭合）
