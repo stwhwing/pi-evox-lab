@@ -102,7 +102,7 @@ node code/light-cli.mjs install-snippet --file <项目>/AGENTS.md --yes  # 写�
 | 静默失败 | 症状 | 对策 |
 |---|---|---|
 | **① 从未召回** | 沉淀了很多，却从没被用过 | `info` 显示「召回次数 0」并给命令；`install-hooks` 帮你接上宿主 |
-| **② 沉淀未审核** | 基因入库却被隔离，**永不注入** | 默认自动通过；`info` 列出待审并给 approve 命令 |
+| **② 沉淀未审核** | 基因入库却被隔离，**永不注入** | 审核语义统一见 SKILL.md「审核状态机」（`info` 列出待审并给 approve 命令） |
 | **③ 宿主没接** | 装了但 agent 从不会自动召回 | `install-hooks`（演练 → 确认后才写入） |
 | **④ 冷启动没手感** | 库里没几条，召回也不命中 | `starter` 一键装载 20 条通用教训 |
 
@@ -124,7 +124,7 @@ node code/light-cli.mjs install-hooks   # ③ 演练接线（看清会做什么�
    系统提示即可——这是没有钩子机制的宿主最可靠的接入方式。
 
 ### 自动审核开关（默认开）
-自己 `distill`/`draft` 沉淀的基因**默认自动通过**，立即可注入。`config --auto-approve off` 可改人工；此项**只作用于本地沉淀**，从共享池 `gene import` 仍按 `--tier` 判定。
+本地沉淀的审核默认行为、非交互隔离、approve 取证绑死与池 tier 语义：**统一见 SKILL.md「审核状态机」**（单一事实源，0.36 收敛），此处不再复述；共享池 `gene import` 按 `--tier` 判定。
 
 ## 宿主接入契约（0.15.0 融入实际应用的关键）
 
@@ -293,3 +293,43 @@ light-cli resign [--yes]      # 0.31：把存量 v1 签名升级为 v2（v2 覆�
 **读图要点**：用户只经 `light-cli.mjs` / `evolver-recall.mjs` 进入；引擎层是唯一实现——**改引擎行为只需改一处，所有入口同时生效**；`code/engine/light/store.mjs` 是账本与埋点的唯一落点（0.27 起 timeline 默认落在技能根 `experiments/`）。
 
 **0.34 重构（P0-2）**：主入口 1299 行 → **65 行**，30 个命令按域分到 `engine/light/commands/` 五个文件，共享 helpers 下沉到 `_shared.mjs`。命令块为机械搬运（块级作用域与派发语义不变），**行为等价性由 `_rel0330/_smoke_matrix.mjs` 的 57 项基线保证（57 passed / 0 failed）**。迁移期两个坑：`path.dirname` 拼接需按层数改写为 `__CODE_DIR`/`__SKILL_ROOT`；命令模块需自行 import 守卫（如 `depositionGate`），共享层不会自动 re-export。
+
+## §Provenance 与部署明细（0.36 自 SKILL.md 收敛）
+
+> **EN**: Version-by-version details moved here from SKILL.md in 0.36 (single-source-of-truth slimming); SKILL.md keeps the summary and points here.
+
+## 基因签名与 provenance（0.21）
+
+> **EN**: Provenance signing (0.21, one of the last 1.0 criteria): every deposit is signed with this machine's Ed25519 identity (`~/.evomap/identity/`, private key 0600, never leaves the machine); genes carry {sig, keyid, pubkey}. Pool imports verify signatures - tampered content is REJECTED, unsigned/legacy genes pass with a note. `light-cli identity` shows your keyid; `light-cli verify <gene_id>` verifies.
+
+- 沉淀自动签、入池随行、导入验签：**内容被篡改 → 拒绝导入**；无签名的老基因原样接受（legacy）；
+- 私钥不出本机；公钥随基因出入池供他机验签——信任模型是“按 keyid 溯源”，不是中心化 CA；
+- **签名规范化 v2（0.31）**：v1 的签名域**不含嵌套字段**（ replacer 数组作用于每一层，嵌套内容被静默丢弃）；v2 递归规范化，把嵌套内容全部纳入。新签名一律 v2，存量 v1 仍有效（验签通过但会提示可升级）；升级用 `light-cli resign --yes`（默认只演练不落盘）。
+- **精确归因（0.32 D-2）**：此前 `~/.evomap/source.json` 只是**静态 per-host 默认值**，而宿主有 fallback 链——某轮实际由 fallback 服务时会被误记成 primary。现两个生产钩子把**本轮实际服务的模型**透传（OpenClaw 读 `transcript_events` 里最近一条 assistant 事件的 `model`；Hermes 读 `pre_llm_call` payload 的 `extra.model`），落成 `~/.evomap/last_source.json`。`sourceInfo()` 优先级：**env > last_source.json（7 天窗）> source.json > 空**。⚠️ 语义是「最近一次观测到的服务模型」，不保证与本次 deposit 同轮次；存量基因不回填。
+- **压缩方案族 `source_kv`（0.32 B-5/B-6）**：`generation_meta.source_kv` 记录基因出自哪种 **KV 压缩方案**（`none` / `csa-s4`（W=8,S=4）/ `stride2` / `unknown`；闭源或架构未公开一律 `unknown`，不猜）。召回打分对**已知同族**基因加分（`EVOX_SAME_KV_WEIGHT`，默认 1.5，设 0 关闭）；**本机族未知时完全不加权**，行为与此前一致。为什么按压缩方案而非模型血统：arXiv:2609.36322 把 DeepSeek 的 CSA 压缩核移植到 Qwen3-0.6B 骨架从头预训练仍复现「位置相关的检索失败」⇒ 决定因素是压缩核，不是厂商。
+- **注入长度留痕（0.32 B-1）**：注入块是追加在 system prompt 尾部的，其 token 数会**平移其后所有内容的相位**；召回是动态 top-N ⇒ 注入长度随会话变化。`evolver-bridge.ts` 现把 `chars`/`estTokens` 写入 sidecar；`EVOX_ALIGN_INJECT_MOD4=1` 可把**估算** token 数对齐到 4 的倍数（估算值，非真实分词）。
+- **基因有效性衰减（0.33 C-7）**：修法会过期——环境变了、依赖升级了，老基因的 FIX 可能已失效。召回打分现对**有反馈**（hit/negate 至少一条）的基因按两个信号乘性衰减：**时间半衰期**（距上次反馈每过 `EVOX_GENE_DECAY_DAYS` 天——默认 90——排序分减半）与**否定压力**（negate ≥ 2 且否定率 ≥ 50% ⇒ 再减半）。衰减后低于对靶阈值的自然落选；注入行对衰减中的基因带一眼标记（如 `⚠[衰减:49%·多次未奏效·2天前反馈]`）。**无反馈的基因不衰减**（unproven 由审核门控管，不双重惩罚）；**地板 0.25**——衰减永不单独杀死基因，硬过滤仍是审核门控 + 守卫；`EVOX_GENE_DECAY=0` 一键关闭（行为与此前版本完全一致）。
+
+> **EN**: 0.32 provenance & phase line - `~/.evomap/source.json` used to be only a static per-host default, so a turn actually served by a fallback was mis-recorded as the primary. The two production hooks now pass the **actually served model** (OpenClaw reads the most recent assistant event's `model` from `transcript_events`; Hermes reads `extra.model` from the `pre_llm_call` payload) into `~/.evomap/last_source.json`. `sourceInfo()` priority is **env > last_source.json (7-day window) > source.json > empty** - it means "most recently observed serving model", not guaranteed to be this deposit's turn; existing genes are not back-filled. Genes also carry `generation_meta.source_kv`, the **KV compression scheme** they came from (`none` / `csa-s4` (W=8,S=4) / `stride2` / `unknown`; closed or undisclosed architectures are always `unknown`, never guessed), and recall scoring bonus-boosts **known same-family** genes (`EVOX_SAME_KV_WEIGHT`, default 1.5, 0 disables; when the local family is unknown there is no weighting at all). The axis is the compression scheme rather than vendor lineage because arXiv:2609.36322 reproduces position-dependent retrieval failure by porting DeepSeek's CSA kernel onto a Qwen3-0.6B backbone. Finally, because the injected block is appended to the system prompt its token count **shifts the phase of everything after it**, and recall is dynamic top-N, so injection length varies per session: `evolver-bridge.ts` now logs `chars`/`estTokens` and `EVOX_ALIGN_INJECT_MOD4=1` aligns the **estimated** token count to a multiple of four (an estimate, not real tokenization). 0.33 adds **gene validity decay (C-7)**: recall scoring applies a multiplicative decay to genes **with feedback**, from a time half-life (default 90 days, `EVOX_GENE_DECAY_DAYS`) plus negation pressure (≥2 negates and ≥50% negate rate halves again), floored at 0.25. Genes **without feedback are never decayed** (unproven is the review gate's job), decay alone never kills a gene, and `EVOX_GENE_DECAY=0` restores the old behaviour exactly; decayed injections carry a visible marker (e.g. `⚠[衰减:49%·多次未奏效·2天前反馈]`).
+
+## 部署与分发（0.23）
+
+> **EN**: Download paths (GitHub / npm / restricted-network mirror), host integration one-command, and concurrency semantics for shared deployments.
+
+- **下载**：GitHub Release zip / npm（`npm config set registry https://registry.npmmirror.com`）；网络受限环境用国内镜像 zip（附 sha256 校验，见 FAQ Q7）；
+- **宿主接入**：`light-cli.mjs install <claude-code|cursor|codex|agents-md>`（自动定位配置文件写入规程，`--yes` 落盘）；OpenClaw/Hermes 用 `install-hooks`；
+- **基因池协作**：`gene pull --pool https://zyx.pink/pool/genes.jsonl --tier official` 从官方镜像拉取全池（签名验证，66+ 条策划基因）；`gene submit --bundle <file>` 产出提交包回传维护者（PR / issue 附件 / 文件交换）；导入默认隔离+验签；池仓库贡献条款见 CONTRIBUTING.md（CC-BY-4.0）；
+- **场景拉取**（0.24）：`gene pull --pool <URL> --scene <场景>` 只拉该场景子集；受控场景词表：`ops-deploy`（部署/服务器）/ `coding-debug`（编码/解析）/ `release-publish`（发布/版本）/ `api-integration`（API/webhook）/ `git-workflow`（git/仓库）/ `agent-runtime`（宿主/钩子/管线）；`gene list --scene <名>` 本地同粒度过滤；
+- **并发语义**（三层，**完整行为表见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §5**）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（提交→审核→合并，LWW 台账裁定冲突）；多宿主召回幂等（重复召回同一基因不重复计数）。多宿主并行时按 gene_id 寻址（0.18 起），不用位置序号。
+- **召回打分与阈值（公开数值，0.28 补）**：每条候选基因的得分 = **signals 精确命中 +3/个** + **与基因正文 token 交集 +1/个** + 负载均衡偏置 **±2**（冷门基因上抬、热门下压；命中全 0 时不生效）；**低于阈值 2 分即不注入**（宁缺毋滥：只注入不对靶内容比不注入更差，实测 +36pp）。命中判定用与召回同一套分词：ASCII token（≥3 字符）+ 中文 **2 字二元词**（CJK bigram）——因此**多字中文短语写进 signals 是无效的**（见 `fix-signals`）。`--top` 默认注入条数见 `evolver-recall.mjs --help`。
+- **命名池（0.25）**：`~/.evomap/pools.json` 定义命名池源（`{"pools":{"official":"<url>","team":"<git-url>"}}`），`gene pull official` 按名拉取；已拉池缓存在 `~/.evomap/pool-cache/`。
+- **会话围栏（0.27）**：`light-cli.mjs session open "<任务名>"` 一步完成「T1 召回 + 记账」（落生产账本）；`session close "<本轮结论>"` 收尾记结论；`session` 查看围栏记录。**围栏让召回与沉淀可审计**：跳过召回或收尾沉淀，账本里没有配对的 open/close，外部构建门禁会拒绝构建。配套：`doctor` 检查埋点落点漂移。
+- **召回别名与触发词（0.28）**：`code/engine/light/aliases.json` 是概念别名表（concept → 英文 canonical + 中文别名短语）；①`draft --trigger "<动手前的措辞>"` 把触发短语展开成 signals（英文 canonical + 中文二元词**双写**）——预防型经验因此能在**动手前**被召回；②召回时中文 query 也会映射到英文 canonical（两种措辞都能命中）；③`light-cli.mjs fix-signals` 体检并展开存量基因里的**无效中文 signal**（>2 字在二元分词下永远匹配不上）。**打分公式与阈值不变**——语义只扩召回面，注入仍由确定性门决定。
+- **溯源与异构验证（0.29）**：deposit / `--register-hit` / `--negate` 都记录 `source_model` + `source_host`（环境变量 `EVOX_SOURCE_MODEL` 可显式指定模型）；`report` 新增 **L4 异源复现率**（同一基因被 ≥2 个不同「模型｜宿主」复现过才算 cross-source）与 **negate 根因分布**（`--because model-diff|env-diff|scene-mismatch|fix-wrong`）；`gene export` 给基因打 `trust` 标签（single-source / unknown-source）。**动机**：基因库是单点，防污染的三道门是同源代码——「单作危机」的直接指标就是跨源率，单源占比高说明该修法只被一个环境验证过。
+> **EN**: Our "heterogeneous verification" question comes from arXiv:2512.05117 (models of the same architecture share a low-dimensional weight subspace, and may therefore **inherit shared biases and failure modes**; the paper leaves "is that lack of diversity a bottleneck" as an **open question** and notes cross-architecture comparison has no method yet). What we do is a **response-level measurement** (failure-signature agreement across models on one deterministic trap) - not a port of its weight-space results.
+- **理论出处（0.30）**：本项目的「异构验证」问题意识来自 arXiv:2512.05117《The Universal Weight Subspace Hypothesis》（同架构模型共享低维参数子空间 → 可能**继承共同偏差与失败模式**；该文把"是否构成瓶颈"列为**开放问题**，跨架构比较尚无方法）。我们据此做的是**响应级实测**（不同模型在同一确定性陷阱上的失败签名一致率），**不是**权重空间结论的移植——详见 README 致谢区与 `docs/research.md`。
+- **效果量化（0.25）**：`light-cli.mjs report` 周报（L1 活性/L2 回填率/L3 错误家族复发，`--json` 可机读）；`recall --record "<结论>"` 把验证结论回填生产账本；`draft/distill --commit` 自动写 deposit 事件。
+- **许可验证（0.25）**：`light-cli.mjs license verify <token>` 验证 Ed25519 签名许可（发行方公钥随包 `assets/issuer-pub.txt（ClawHub/GitHub 0.25.0 首发的 .pem 版同样兼容）`）；许可机制本身开源，便于任何发行方接入。
+- **IO 重试语义**：文件读写对瞬态错误（EBUSY/EPERM/EACCES/ETIMEDOUT）自动重试（默认 3 次/截止 3s，`EVOX_IO_RETRY`/`EVOX_IO_DEADLINE_MS` 可调）；非瞬态错误不重试；重试是优化不是门——绝不因重试机制阻塞调用方（fail-open）。
+- **IO 熔断与降级（0.34）**：连续 5 次瞬态失败打开熔断，其后 10s 内只尝试 1 次（不重试、不退避）并输出一次可执行指引（`EVOX_IO_CB_THRESHOLD`/`EVOX_IO_CB_COOLDOWN_MS` 可调）；IO 一旦恢复即自动闭合；非瞬态失败（如空库的 ENOENT）不触发熔断。
+- **显式错误码（0.34）**：所有失败输出在保留退出码（0/1/2）的同时附加具名错误码 `[E_USAGE]`/`[E_ARGS]`/`[E_GUARD]`/`[E_NOTFOUND]`/`[E_INTERNAL]`，便于脚本精确区分失败类型；完整错误码表见 `docs/advanced.md`。
