@@ -1,0 +1,33 @@
+# CI 门禁（0.36 beta，roadmap P0-4）：push/PR 触发——只跑**无平台凭证依赖**的确定性子集。
+# 完整 49 条门禁仍在本地发布流程跑（含 dry-run/对抗/围栏，需要凭据与生产账本）；
+# 本 workflow 保证"语法 / 注入回归 / 并发写入 / doctor 自检"在每次改动后自动复跑。
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 语法检查（全部 .mjs）
+        run: |
+          fails=0
+          while IFS= read -r f; do
+            node --check "$f" || fails=$((fails+1))
+          done < <(find code -name '*.mjs' -not -path '*node_modules*')
+          echo "语法失败数: $fails"
+          test "$fails" -eq 0
+      - name: 注入守卫回归（C38：哨兵自检 + 恶意全拦 + 合法零误杀）
+        run: node code/tests/injection-regression.mjs
+      - name: 并发写入（双进程 × 10 条，隔离库）
+        run: node code/tests/concurrent-deposit.mjs
+      - name: doctor（Linux 形态自检；经验库写点失败不阻塞 CI，只留痕）
+        run: node code/light-cli.mjs doctor 2>&1 | head -30 || true
