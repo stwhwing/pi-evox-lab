@@ -63,7 +63,7 @@ def main():
     sys.stdout.write(HEADER + "\n".join(fixes) + "\n")
     # 提示宿主/使用者在任务结束时回填效果（第 2 步）：
     sys.stdout.write(
-        "\n（任务结束时请回填：采用了 → `--register-hit <N> --note \"...\"`；"
+        "\n（任务结束时请回填：采用了 → `--register-hit --gene <asset_id> --note \"...\"`；"
         "没起作用 → `--negate <N> --note \"...\"`）\n"
     )
 
