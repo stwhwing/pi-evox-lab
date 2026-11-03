@@ -16,8 +16,7 @@
 - **`--llm-refine` 涉及数据外发**：会把会话 transcript（截 9000 字符）发送到 `EVOLVER_REFINE_URL` 指定的外部端点。**未配置该变量时此功能自动禁用**，不存在默认外发。请在了解外发范围后启用，或使用本地/自有端点；
 - **`--fresh` 有破坏性**：备份后清空全局经验库 `~/.evomap/assets/`——执行前确认，恢复用备份目录；
 - **实验产物含会话内容**：`--root` 目录下的 sessions/transcript/inject-*.txt 包含任务文本、代码与工具输出，注意保管；
-- **审核门默认值（0.31 修订，与代码对齐）**：**交互式沉淀（有 TTY）默认 approved**（`autoApprove` 缺省 true，0.16.0 起"自己的库自己负责"），**非交互式（脚本 / cron / 宿主自动管道，无 TTY）默认 quarantined**——后者须显式传 `--auto-approve` 才生效。显式 `--no-auto-approve` / `--manual-review` 一律 quarantined。旧文档表述为"默认人工审核门"，**只对非交互路径成立**，已按实际行为修订（ClawHub clawscan 于 0.30.0 指出该不一致）；
-  > **EN**: Review-gate defaults (0.31, aligned with the code): **interactive deposits (TTY) default to approved** (`autoApprove` defaults to true), while **non-interactive deposits (scripts / cron / host pipelines, no TTY) default to quarantined** and need an explicit `--auto-approve`. `--no-auto-approve` / `--manual-review` always quarantine. The older "manual review by default" wording only held for the non-interactive path and has been corrected (ClawHub clawscan flagged the mismatch on 0.30.0).
+- **审核门默认值**：全部审核语义（交互/非交互/取证绑死/池 tier）**统一见 SKILL.md「审核状态机」单节（单一事实源，0.36 收敛）**——历史修订记录：0.31 曾按代码实际行为修订过"默认人工审核门"的旧表述（ClawHub clawscan 于 0.30.0 指出该不一致）；
 - **注入块透明标注**：所有注入内容均带 `[Evolver inherited fixes]` 明示来源，无隐蔽指令；扩展留痕文件 `bridge-last-inject.txt` 仅含时间戳与注入内容（不含路径）；
 - **adapter 默认脱敏 cwd**：transcript 头部的 env_fingerprint 默认不含工作目录（可泄露项目/客户身份），实验确需时显式传 `--include-cwd`；
 - **全局输出脱敏（0.10.0）**：编排器的所有 stdout/stderr 输出统一做密钥掩码（已注册的 API key 与 sk-/Bearer 形态），密钥不出现在任何输出；
@@ -51,3 +50,18 @@
 **原则**：扫描器 verdict（suspicious / DO_NOT_INSTALL）是**线索**，不是判决。我们只对"亲读源码 + 本地复现"成立的条目改设计；对噪声记录但不为其发版；对误报改写法以消除触发条件。每次发布后复拉扫描报告，与上一版**逐条对比**确认非回归。
 
 > **EN**: Scanner verdicts are leads, not verdicts. We only change design for findings we can reproduce by reading our own source and running it locally; we record noise without shipping for it; for false positives we change the code pattern that triggers the heuristic (e.g. 0.32 moved a fixture path from an env var to a CLI argument). Every release re-pulls the scan report and diffs it against the previous version.
+
+## §Gates 四道门明细（0.36 自 SKILL.md 收敛至此）
+
+> **EN**: Per-gate details (moved here from SKILL.md in 0.36 so the main doc stays short); SKILL.md keeps the 4-row summary.
+
+| 门 | 具体扫什么 | 命中后的行为 |
+|---|---|---|
+| 修法守卫 | strategy 里是否有**可执行成分**（具体参数/命令/编码/路径等）；空话、"运行正确"式总结、只有结论没有动作 | **该基因不进入注入列表**（宁缺毋滥）；沉淀侧另有 depositionGate 在入库前就拒收同类内容 |
+| 叙述守卫 | 是否为**旁白/流水账**（"我先打开文件，然后……"式叙述、复述日志） | 同样**不注入**；软提示里的旁白对智能体是零信息（实测等效噪声 +36pp，比不注入更差） |
+| 注入守卫 | 是否含**提示词注入特征**（覆盖先前指令、对用户隐匿操作、伪装角色标记等，中英文变体；具体特征表见 `docs/advanced.md`，此处不复述以免文档本身触发扫描） | **不注入 + 导入/导出时拦截**；这是对抗"基因内容反过来操纵宿主"的主防线 |
+| 脱敏闸门 | 是否含**私有内容**（内网 IP、绝对家目录、密钥/令牌、凭据、内部代号） | **导出/导入拦截，不出网**；沉淀时保留语义但中性化表述 |
+
+- 门模块缺失时的降级：**导出/导入 fail-closed（拒绝执行）**；`evolver-recall.mjs` 侧只跳过注入门、其余三门照常（宿主 bootstrap 路径不能因守卫失败而阻断使用者）。**例外**：Pi 扩展桥（`evolver-bridge.ts`）内置**精简版**注入守卫（单文件拷贝部署，无法 import 完整扫描器），编排器 `pi_evolve.mjs` 则用完整扫描器且不降级。
+- **0.31 修复（实测确认的两个漏检）**：① 注入扫描器原先把 `FIX:` **之前**的文本整体丢弃、不进任何扫描区 ⇒ 「指令覆盖类前缀 + `FIX:` 修法后缀」可绕过；② 中文「指令覆盖」正则对动词与指令类名词之间的修饰词限制过死，仅插入一个常见程度副词即不命中。两者均已修复并纳入回归用例。**纪律**：注释与文档里只描述机制类别、不引用触发串原文——说明文字本身会被扫描器当成注入样本（本仓有为此发版的先例）。
+- 回归基线：恶意样本 16/16 拦截、合法样本 7/7 零误杀（0.36 计划扩容至 30+，见 roadmap）。
