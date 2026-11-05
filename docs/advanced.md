@@ -79,7 +79,8 @@ node code/light-cli.mjs gene import <自建池文件> --tier official   # 自建
 
 | 沉淀方式 | 默认行为 |
 |---|---|
-| **交互式**（人在终端敲命令） | 自动通过（0.16.0 便利保持） |
+| **交互式**（人在终端敲命令） | 见 SKILL.md「审核状态机」 |
+> **EN**: Interactive deposits follow the SKILL.md review-state-machine section (single source of truth).
 | **非交互**（脚本/cron/宿主自动管道，无 TTY） | **默认隔离**——显式 `--auto-approve` 才通过 |
 | `--no-auto-approve` / `config --auto-approve off` | 始终人工审 |
 
