@@ -37,8 +37,8 @@ node code/light-cli.mjs list      # 查看台账
 
 
 **Q6：approve 能全自动吗？**
-**0.16.0 起默认就是自动的**——自己沉淀的基因自动通过、立即可注入（召回侧守卫仍兜底）。想改回人工：`config --auto-approve off` 或单次 `--no-auto-approve`。注意：**从共享池 `gene import` 不受此项影响**，仍按 `--tier` 判定。
-**EN A6**: Automatic since 0.16.0 - your own deposits are approved immediately (recall-side guards still apply). Change with `config --auto-approve off`. Pool imports are unaffected (still `--tier` gated).
+审核语义**统一见 SKILL.md「审核状态机」（单一事实源）**：四种场景（交互/非交互本地沉淀、approve 取证、池导入 tier）各有默认行为；召回侧守卫仍兜底。想改人工：`config --auto-approve off`；共享池 `gene import` 按 `--tier` 判定。
+**EN A6**: All review semantics live in the SKILL.md review-state-machine section (single source of truth): interactive / non-interactive deposits, approve-with-evidence and pool tiers each have their own default; recall-side guards still backstop. Switch to manual with `config --auto-approve off`; pool imports follow `--tier`.
 
 
 **Q7：国内网络 npm/GitHub 慢？**
