@@ -83,7 +83,7 @@ node code/light-cli.mjs gene submit --bundle my-submission.jsonl
 | git 拉取失败 | 网络/权限 | 手动 `git clone` 到 `~/.evomap/pool-cache/` 后用本地路径 `gene pull <path>` |
 
 ## 7. 安全边界（不可协商）
-- 沉淀事件默认隔离（非 TTY），交互式自动通过；**审核永远不绕过**；
+- 沉淀审核语义统一见 SKILL.md「审核状态机」；**审核永远不绕过**；**EN**: review semantics live in the SKILL.md review-state-machine section; approval is never bypassed.
 - 导入验签：篡改基因 BLOCKED；无签名标 unsigned（不拒收但标注）；
 - 私有内容（内部主机名/凭据/绝对路径）**零容忍**：提交前自查，池维护方红线扫描拦回。
 ## 8. 多宿主兼容性矩阵（0.26）
