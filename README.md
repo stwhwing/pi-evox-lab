@@ -26,7 +26,7 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
 4. **token 指标必须配对解读**（重复执行基线 ≈ -22%）；
 5. **守卫把继承从「运气」变「机制」**。
 
-> 完整论证、数据与逐条出处见 [`SKILL.md`](SKILL.md) 与 [`docs/experiment-report.md`](docs/experiment-report.md)（避免两处维护重复内容）。
+> 完整论证、数据与逐条出处见 [`SKILL.md`](SKILL.md) 与 实验报告（GitHub 仓库 `docs/` 目录，默认包不含）（避免两处维护重复内容）。
 
 ## 诚实边界（先说清楚，避免误读）
 
@@ -67,7 +67,7 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
 ├── examples/                    # 任务文本样例
 ├── exp/                         # 陷阱模板与回归用 fixture
 └── docs/
-    ├── experiment-report.md     # 完整实测报告（含每一步的失败与排查）
+    ├── (experiment-report.md 已移出默认包，见在线仓库 docs/)
     ├── (adapter-design.md 已于 0.36 移出包 → 归档；历史草案已被现实实现取代)
     ├── other-agents.md          # 其他 Agent 宿主接入指南
     ├── providers.md             # Provider 配置
@@ -115,7 +115,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 - 其他 Agent 宿主接入指南：[docs/other-agents.md](docs/other-agents.md)（Claude Code / IDE / 自建智能体的注入模式）
 
-- 完整实验过程（包括踩过的坑：注入缺口、BOM 陷阱失效、蒸馏质量方差、官方 cycle 路线 fail-closed）：[`docs/experiment-report.md`](docs/experiment-report.md)
+- 完整实验过程（包括踩过的坑：注入缺口、BOM 陷阱失效、蒸馏质量方差、官方 cycle 路线 fail-closed）：实验报告（GitHub 仓库 `docs/` 目录，默认包不含）
 - Pi Extensions API 预研与适配器设计：历史草案已于 0.36 移出包（归档），现行集成方式以 SKILL.md 与 `docs/advanced.md` 为准
 
 ## 致谢（Acknowledgements）
@@ -177,7 +177,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.36.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0） |
+| 当前版本 | 0.37.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因自动过审（语义见 SKILL.md「审核状态机」）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 20 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -205,6 +205,9 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.37.0（基座打通版）**：
+  **中文**：① 修复 CI——gate.yml 不再引用不进主仓的回归目录（0.36 发布时 12 次全红），改跑仓库内真实检查并加 paths 过滤，注入回归由本地 C38 承担；② C37(d) 判据泛化为状态机语义一致性，修正 FAQ Q6 残留表述并纳入对抗变异；③ 新增 C39 条款校验 WorkBuddy 适配包（两层结构/双展示名/三件套/CRC）；④ 池快照 43 条无签基因补签，签名率 100% 入审计台账；⑤ 最新私有词表红线复核并生成池四态台账；⑥ 实验报告（在线仓库 docs/ 目录） 移出默认包，包内 md 总量 ≤200k，构建与漂移排除同源；⑦ C37(c) 支持同日多版本发布（防回退即可）；⑧ 拟发布态专有目录按平台分设，全部不发布。
+  **EN**: ① CI fix: gate.yml no longer references the regression directory excluded from the repo (12 red runs during 0.36 release); it now runs checks that exist, with a push paths filter, while injection regression stays in the local C38 gate; ② C37(d) generalized to state-machine semantic consistency; FAQ Q6 residue fixed and added as an adversarial variant; ③ New C39 gate validates the WorkBuddy adapter package (two-level structure / both display names / installer-adapter trio / CRC); ④ 43 unsigned genes in the pool snapshot signed, 100% signature rate recorded; ⑤ Redline re-check with the latest private word list plus a four-state pool ledger; ⑥ 实验报告（在线仓库 docs/ 目录） moved out of the default package, in-package md <= 200k, build and drift exclusions kept in sync; ⑦ C37(c) allows same-day releases (rollback prevention); ⑧ Staging-only per-platform layout, nothing published.
 - **0.36.0（一致性 + 安全回归 + 自动化验证版）**：
   **中文**：① 审核状态机单节化——四种审核语义（交互自动过/非交互隔离/approve 取证绑死/池 tier）收敛到 SKILL.md 单一事实源，全库改指针（C37(d) 判据防再散布）；② 注入守卫回归套件固化（31 恶意 + 11 合法 + 3 哨兵，tests/ 不进包）——首跑即抓 19 个漏判形态并全部补强，新增门禁 C38（哨兵自检防"扫描器改空"假通过）；③ recall 注入门降级不再静默（显式中文告警，aig 加固建议①）；④ 主文档瘦身：四道门明细/provenance 逐版明细/部署分发明细收敛至专项文档，SKILL.md 352→334 行，包内 md 总量 232.9k→221.1k，废弃的 adapter-design.md 清退归档；⑤ 回填示例统一 `--gene <id>` 形态（C37(e)，walkthrough 真实运行记录豁免）；⑥ 并发写入自动化测试（双进程 20/20 落库零损坏）与 GitHub Actions CI（语法/回归/并发/doctor）；⑦ C21 新增 `.github/` 平台专属豁免、verify_stages 漂移规则与构建排除同源化；⑧ 版本管理规范：0.36 起独立发布目录（历史版本目录冻结可回溯）；⑨ 无需数据迁移，30 个命令与退出码语义完全兼容。
   **EN**: ① Review state machine consolidated into a single source of truth in SKILL.md (four semantics: interactive auto-approve / non-interactive quarantine / approve-with-evidence / pool tiers), all other docs now point there (new gate C37(d) prevents re-scattering); ② Injection-guard regression suite committed (31 malicious + 11 legitimate + 3 sentinels, tests/ excluded from the package) - first run caught 19 miss shapes, all hardened; new gate C38 (sentinel self-check prevents "emptied scanner" false passes); ③ recall guard degradation is no longer silent (explicit Chinese warning; aig hardening #1); ④ Main-doc slimming: per-gate / provenance / deployment details moved to topic docs, SKILL.md 352 → 334 lines, in-package md 232.9k → 221.1k chars, deprecated adapter-design.md retired to archive; ⑤ Feedback examples unified to `--gene <id>` (C37(e); walkthrough live-run records exempt); ⑥ Automated concurrency test (dual-process 20/20, zero corruption) and GitHub Actions CI (syntax / regression / concurrency / doctor); ⑦ C21 `.github/` platform-specific exemption + verify_stages drift rule aligned with build exclusions; ⑧ Version-management rule: 0.36 onward each release gets its own release directory (historical dirs frozen for traceability); ⑨ No data migration; all 30 commands and exit-code semantics unchanged.
