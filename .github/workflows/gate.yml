@@ -38,7 +38,7 @@ jobs:
           import json, re, io
           v = json.load(open('package.json', encoding='utf-8'))['version']
           s = re.search(r'^version:\s*(\S+)', io.open('SKILL.md', encoding='utf-8').read(), re.M).group(1)
-          r = re.search(r'\| 当前版本 \| (\S+)', io.open('README.md', encoding='utf-8').read()).group(1)
+          r = re.search(r'\| 当前版本 \| (\d+\.\d+\.\d+)', io.open('README.md', encoding='utf-8').read()).group(1)
           assert v == s == r, f'版本不一致: pkg={v} SKILL={s} README={r}'
           print('CI 版本三处一致:', v)
           PY
