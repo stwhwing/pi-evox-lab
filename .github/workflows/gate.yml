@@ -1,17 +1,24 @@
-# CI 门禁（0.36 beta，roadmap P0-4）：push/PR 触发——只跑**无平台凭证依赖**的确定性子集。
-# 完整 49 条门禁仍在本地发布流程跑（含 dry-run/对抗/围栏，需要凭据与生产账本）；
-# 本 workflow 保证"语法 / 注入回归 / 并发写入 / doctor 自检"在每次改动后自动复跑。
+# CI 门禁（0.37 修订）——只跑仓库内真实存在的确定性检查。
+# 0.36 的 gate.yml 引用 code/tests/（该目录按"样本原文不进平台扫描面"的既定决策被 build 排除，
+# 主仓不存在），导致发布时 12 次 push 全部 failure。注入回归（C38）由本地发布门禁承担，CI 不复跑。
 name: gate
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'code/**'
+      - 'SKILL.md'
+      - 'README.md'
+      - 'package.json'
+      - 'docs/**'
+      - '.github/workflows/gate.yml'
   pull_request:
 
 jobs:
   gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,9 +32,23 @@ jobs:
           done < <(find code -name '*.mjs' -not -path '*node_modules*')
           echo "语法失败数: $fails"
           test "$fails" -eq 0
-      - name: 注入守卫回归（C38：哨兵自检 + 恶意全拦 + 合法零误杀）
-        run: node code/tests/injection-regression.mjs
-      - name: 并发写入（双进程 × 10 条，隔离库）
-        run: node code/tests/concurrent-deposit.mjs
-      - name: doctor（Linux 形态自检；经验库写点失败不阻塞 CI，只留痕）
+      - name: 版本三处一致（CI 侧最小校验）
+        run: |
+          python3 - <<'PY'
+          import json, re, io
+          v = json.load(open('package.json', encoding='utf-8'))['version']
+          s = re.search(r'^version:\s*(\S+)', io.open('SKILL.md', encoding='utf-8').read(), re.M).group(1)
+          r = re.search(r'\| 当前版本 \| (\S+)', io.open('README.md', encoding='utf-8').read()).group(1)
+          assert v == s == r, f'版本不一致: pkg={v} SKILL={s} README={r}'
+          print('CI 版本三处一致:', v)
+          PY
+      - name: FAQ 编号连续（CI 侧最小一致性）
+        run: |
+          python3 - <<'PY'
+          import re, io
+          q = [int(x) for x in re.findall(r'^\*\*Q(\d+)：', io.open('docs/faq.md', encoding='utf-8').read(), re.M)]
+          assert q == list(range(1, len(q)+1)), f'FAQ 编号不连续: {q}'
+          print('CI FAQ 编号连续:', len(q), '条')
+          PY
+      - name: doctor 自检（Linux 形态；经验库写点失败不阻塞，只留痕）
         run: node code/light-cli.mjs doctor 2>&1 | head -30 || true
