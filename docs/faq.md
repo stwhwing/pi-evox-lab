@@ -33,6 +33,8 @@ node code/light-cli.mjs doctor    # 环境自检
 node code/light-cli.mjs list      # 查看台账
 ```
 只有在用 evolver 集成（`--engine evolver`）时才需先 `npm install`。
+**Q8 补充（0.38）**：可选集成的最低运行版本为 pi-coding-agent 1.5.0 → Node ≥22.19.0、evolver 2.0.49 → Node ^22.13.0 或 ≥23.4.0；默认 light 后端仍只需 Node ≥22。**EN**: Optional integrations require Node >=22.19.0 (pi 1.5.0) or ^22.13.0/>=23.4.0 (evolver 2.0.49); the default light backend needs only Node >=22.
+
 **EN A5**: The default light backend has zero external dependencies - Node >= 22 suffices. `doctor` for environment self-check. npm install only needed for the evolver integration.
 
 

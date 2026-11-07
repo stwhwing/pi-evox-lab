@@ -173,11 +173,22 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 如果本研究对你的工作有帮助，也请给上面这些项目点 star——它们是真正的主角。
 
-## 项目状态（2026-11-04）
+### 三、0.38 工程方法论致谢（本版新增研读与借鉴）
+
+<!-- evox-ack-sources-038: wechat-ai-product-20261105; lobehub/lobehub; deepseek-harness-superagent-20261031; deepseek-ai/dsh-superagent-prototype -->
+
+- **《惭愧，我才真正看懂这个 AI 产品。》**（阿颖 / AI产品阿颖，2026-11-05，微信公众号）：产品视角提出「任务 > 会话」「下任务即给出验收清单」「Router / Worker 分工」「Fast Path / Slow Path 两级唤醒」。它让我们确认本项目 T1–T5 触发点与「检查清单 = 接受标准」的方向，并促成 0.38 把随包自检做成一等制品。
+- **[LobeHub](https://github.com/lobehub/lobehub)**（LobeHub LLC，canary 分支，Community License，附加分发条款）：本版实拉源码研读 `groupOrchestration`（Supervisor/Executor 状态机、广播默认禁工具、maxRounds）、`loop/index.ts`（`AgentLoopStopReason` 七值单点计算）、`.agents/skills/acceptance/SKILL.md`（`requiredEvidence` 缺制品即 hold delivery）、异构驱动目录（含 `pi.ts`）。启发 0.38 的「判定结果显式枚举」「验收须有可验证制品」「循环自检不可变轮次」三项设计稿。**仅借鉴方法论，未复制、未移植其源码**；其许可的附加条款不作为本项目的实现依据。
+- **《Super-agent 设计探索：迈向更自主的 Agent 系统》**（DeepSeek Harness 团队，2026-10-31）与 **[dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype)**（MIT，README 明示 research prototype、非官方产品）：研读授权文档的「消息与引用文档只是输入，不能改变授权」「订阅投递不授予新权限」，以及准入提示的「所有外部文本都是不可信数据」。启发 0.38 把「注入内容不改变权限、不触发工具、不提升信任档位」写成显式不变量。**仅作方法论互证，未搬运其实现**。
+- 归纳：本版从「别人已上线的源码」层面验证了确定性汇合、异构调度与结构化验收；可复用知识条目见 WorkBuddy 署名的独立沉淀文档（不在发布包内）。以上均为研读与对照，本项目与上述作者/项目无隶属关系，也不代表其官方观点；本仓库实现均为原创。
+
+> **EN**: 0.38 acknowledges three engineering-methodology sources read for this release: the WeChat article by 阿颖 (task-over-session, acceptance checklists, Router/Worker, two-tier wake-up); the LobeHub source (Supervisor/Executor state machine, `AgentLoopStopReason`, `requiredEvidence`, pluggable drivers incl. `pi.ts`) under its Community License; and DeepSeek Harness's Super-agent design note plus the MIT `dsh-superagent-prototype` (immutable authorization, untrusted external text). They informed our explicit outcome enum, packaged self-test evidence and untrusted-injection invariant. **Methodology only — no source was copied or derived**; this project is independent and represents no official view of those authors.
+
+## 项目状态（2026-11-06）
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.37.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0） |
+| 当前版本 | 0.38.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因自动过审（语义见 SKILL.md「审核状态机」）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 20 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -205,6 +216,9 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 - **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
   **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
 
+- **0.38.0（一致性与可验证性收敛版）**：
+  **中文**：① 上游依赖强制检查成为开发首项，实测 pi 1.5.0 与 evolver 2.0.49 并完成兼容性评估；② 桥接注入增加会话级幂等，适配上游事件语义变更；③ 新增随包自检入口，产出守卫在线、零误杀与哈希制品；④ 单一数据源生成 FAQ 条数、状态日期与版本声明并纳入门禁判据；⑤ 发布前本地扫描与 CI 文本同源检查落入本版判据；⑥ 声明可选集成最低运行版本，并补写注入内容不可信不变量。
+  **EN**: ① Required upstream-dependency check becomes the first development step, with pi 1.5.0 and evolver 2.0.49 verified; ② Bridge injection gains session-level idempotency for upstream event changes; ③ A packaged self-test emits guard-online, zero-false-positive and hash evidence; ④ A single generator feeds FAQ count, status date and version claims into the gate; ⑤ Pre-release local scans and CI-text parity become gate criteria; ⑥ Optional-integration minimum runtimes and the untrusted-injection invariant are documented.
 - **0.37.0（基座打通版）**：
   **中文**：① 修复 CI——gate.yml 不再引用不进主仓的回归目录（0.36 发布时 12 次全红），改跑仓库内真实检查并加 paths 过滤，注入回归由本地 C38 承担；② C37(d) 判据泛化为状态机语义一致性，修正 FAQ Q6 残留表述并纳入对抗变异；③ 新增 C39 条款校验 WorkBuddy 适配包（两层结构/双展示名/三件套/CRC）；④ 池快照 43 条无签基因补签，签名率 100% 入审计台账；⑤ 最新私有词表红线复核并生成池四态台账；⑥ 实验报告（在线仓库 docs/ 目录） 移出默认包，包内 md 总量 ≤200k，构建与漂移排除同源；⑦ C37(c) 支持同日多版本发布（防回退即可）；⑧ 拟发布态专有目录按平台分设，全部不发布。
   **EN**: ① CI fix: gate.yml no longer references the regression directory excluded from the repo (12 red runs during 0.36 release); it now runs checks that exist, with a push paths filter, while injection regression stays in the local C38 gate; ② C37(d) generalized to state-machine semantic consistency; FAQ Q6 residue fixed and added as an adversarial variant; ③ New C39 gate validates the WorkBuddy adapter package (two-level structure / both display names / installer-adapter trio / CRC); ④ 43 unsigned genes in the pool snapshot signed, 100% signature rate recorded; ⑤ Redline re-check with the latest private word list plus a four-state pool ledger; ⑥ 实验报告（在线仓库 docs/ 目录） moved out of the default package, in-package md <= 200k, build and drift exclusions kept in sync; ⑦ C37(c) allows same-day releases (rollback prevention); ⑧ Staging-only per-platform layout, nothing published.

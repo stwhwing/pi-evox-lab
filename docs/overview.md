@@ -61,3 +61,10 @@
 
 ## 致谢
 方法论受 [numbat](https://github.com/perplexityai/numbat)（Perplexity，Apache-2.0，取证重建）与 [FlyLoRA](https://arxiv.org/abs/2510.08396)（NeurIPS 2025，负载均衡/免训练合并不干扰）启发；上游引擎 [pi-coding-agent](https://github.com/earendil-works/pi)（MIT）/ [@evomap/evolver](https://github.com/EvoMap/evolver)（GPL，可选集成）。
+
+## 发布态单一数据源声明（0.38 生成）
+
+<!-- evox-038-meta: upstream=pi@1.5.0,evolver@2.0.49; scan=baseline-ok; selftest=shipped; version=0.38.0 -->
+
+本版上游实测、扫描基线与随包自检状态由生成器统一写入；判据 C40/C41/C42 直接读取本行，防止文档与实现漂移。
+**EN**: Upstream versions, scan baseline and packaged self-test status are emitted from one generator; gates C40/C41/C42 read this marker to prevent drift.

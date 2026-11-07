@@ -5,9 +5,9 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.37.0
+version: 0.38.0
 platforms: [linux, macos, windows]
-allowed-tools: Bash,Read,Write,Edit,Glob,Grep,env
+allowed-tools: Bash,Read,Write,Edit,Glob,Grep,env,network
 homepage: https://github.com/stwhwing/pi-evox-lab
 metadata:
   openclaw:
@@ -77,6 +77,8 @@ metadata:
 
 > **EN**: Requires Node >= 22. Optional `@evomap/evolver` integration is GPL-3.0-or-later (only if you install and use `--engine evolver`); the default light backend is MIT, zero-dependency, zero-exfiltration. Three things only: **A recall** validated fixes at task start, **B deposit** after fixing a non-obvious failure, **C (optional, research) controlled experiments**. Daily use = A/B only.
 > ⚠️ **前置要求：Node ≥ 22**（`node -v` 检查；旧版不支持，需先升级）。可选集成 `@evomap/evolver` 为 **GPL-3.0-or-later**——仅在你主动安装并使用 `--engine evolver` 时涉及，默认 light 后端为 MIT、零依赖零外发。
+> **可选集成的最低运行版本（0.38 上游复检）**：`@earendil-works/pi-coding-agent` 1.5.0 要求 Node ≥22.19.0；`@evomap/evolver` 2.0.49 要求 Node ^22.13.0 或 ≥23.4.0。默认 light 后端仍只需 Node ≥22。
+> **EN**: Optional integrations: pi-coding-agent 1.5.0 needs Node >=22.19.0; evolver 2.0.49 needs ^22.13.0 or >=23.4.0; the default zero-dependency light backend still needs only Node >=22.
 >
 > 本 Skill 只做三件事：**A 任务开始召回**已验证修法、**B 修复失败后背沉淀**、**C（可选，研究用）受控实验量化收益**。日常只用 A/B，C 默认全关，请勿用于生产。
 
@@ -330,5 +332,11 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **[Periodic Weak Spots: Phase Sensitivity from Chunked KV-Cache Compression](https://arxiv.org/abs/2609.36322)**（ByteDance Seed）—— **相位轴**与**等长对照臂**这两项的来源（0.32）：分块 KV-cache 压缩引入「相位」这一新位置坐标，长上下文检索精度随其周期性起伏。本项目据此补上 R2-pad 等长中性对照臂，把继承增益从相位运气里分离出来（实测 n=10/臂、长度 Δ=0：语义 +100pp、相位 0pp）；并因论文把 CSA 核移植到 Qwen3-0.6B 骨架仍复现，把基因族字段定在**压缩方案**（`source_kv`）而非模型血统上。**论文自身结论本机未复现**（既未证实也未证伪），已在 `docs/research.md` §21.3 诚实标注；转述中越界的条目（`CSA2`、`Kimi`、`MLA` 等，原文 0 出现）本项目不引用。
 
 > **EN**: **[Periodic Weak Spots](https://arxiv.org/abs/2609.36322)** (ByteDance Seed) - source of the *phase* axis and of the length-matched control arm (0.32): chunked KV-cache compression introduces a new positional coordinate, phase, and long-context retrieval accuracy rises and falls with it. It is why we added the R2-pad control arm that separates the inheritance gain from phase luck (measured n=10/arm, length Δ=0: semantic +100pp, phase 0pp), and why the gene-family field is the **compression scheme** (`source_kv`) rather than vendor lineage - the paper reproduces the effect by porting the CSA kernel onto a Qwen3-0.6B backbone.
+
+**0.38 工程方法论致谢（完整列表见 README）**：
+- 微信公众号文章《惭愧，我才真正看懂这个 AI 产品。》（阿颖，2026-11-05）—— 任务优先、验收清单、Router/Worker 分工的产品视角。
+- [LobeHub](https://github.com/lobehub/lobehub)（Community License，canary）—— 确定性编排状态机、显式停止原因、`requiredEvidence` 验收制品、可插拔异构驱动；仅借鉴方法论、未复制源码。
+- DeepSeek Harness《Super-agent 设计探索》（2026-10-31）与 [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype)（MIT，research prototype）—— 不可变授权与「外部文本不可信」，启发本版注入内容不变量。
+> **EN**: 0.38 also credits the WeChat article by 阿颖, LobeHub's orchestration sources, and DeepSeek Harness's Super-agent note/prototype; methodology only, no source copied, full list in README.
 
 > 以上均为**研读与对照**：本项目与它们均无隶属关系，也不代表其观点；本仓库实现均为原创，默认后端是 MIT 的内置引擎。完整方法论清单（Palantir Ontology 等）见 README 致谢节。

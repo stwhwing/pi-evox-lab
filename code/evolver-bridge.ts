@@ -9,7 +9,7 @@
  * 部署：放入 ~/.pi/agent/extensions/（全局）或 .pi/extensions/（项目本地）即自动发现；
  *   pi -e ./evolver-bridge.ts 仅快速测试。留痕：~/.evomap/assets/bridge-last-inject.txt（时间戳+内容，无路径）。
  *
- * 对应 API（pi 0.74.2 包内 docs/extensions.md）：
+ * 对应 API（pi 1.5.0 包内 dist/core/extensions/loader.js、runner.js；0.38 复检）：
  *   pi.on("before_agent_start") → return { systemPrompt } 链式修改 / { message } 注入持久化消息
  *   pi.on("tool_call") 可拦截、pi.on("tool_result") 可改写 —— 硬约束通道（本次未启用）
  */
@@ -205,7 +205,14 @@ function alignMod4(block: string): { block: string; padChars: number } {
 }
 
 export default function evolverBridge(pi: ExtensionAPI) {
+	// 0.38 上游同步：pi 1.2.0 起 before_agent_start 也会为 extension-triggered runs 触发，
+	// BeforeAgentStartEvent 变为 union。按「会话+消息」幂等，避免同一轮重复注入；字段读取兼容两种形态。
+	const injectedKeys = new Set<string>();
 	pi.on("before_agent_start", async (event, _ctx) => {
+		const ev = event as { sessionId?: string; message?: { id?: string }; systemPrompt?: string };
+		const key = `${ev?.sessionId ?? 'default'}:${ev?.message?.id ?? 'na'}`;
+		if (injectedKeys.has(key)) return;
+		const basePrompt = typeof ev?.systemPrompt === 'string' ? ev.systemPrompt : '';
 		const strategies = loadApprovedStrategies();
 		if (strategies.length === 0) return; // 空资产库 → 零注入（fail-open 优雅降级）
 
@@ -229,7 +236,8 @@ export default function evolverBridge(pi: ExtensionAPI) {
 		}
 
 		// 链式修改 system prompt（软提示通道；与 --append-system-prompt 等价但每轮动态、无需编排器）
-		return { systemPrompt: event.systemPrompt + block };
+		injectedKeys.add(key);
+		return { systemPrompt: basePrompt + block };
 
 		// TODO(Route A.3 硬约束通道，设计决策待定)：
 		//   pi.on("tool_call") 拦截 + 改写（如对 data/*.jsonl 的读自动加 encoding）

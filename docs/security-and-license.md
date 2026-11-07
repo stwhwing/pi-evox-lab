@@ -65,3 +65,8 @@
 - 门模块缺失时的降级：**导出/导入 fail-closed（拒绝执行）**；`evolver-recall.mjs` 侧只跳过注入门、其余三门照常（宿主 bootstrap 路径不能因守卫失败而阻断使用者）。**例外**：Pi 扩展桥（`evolver-bridge.ts`）内置**精简版**注入守卫（单文件拷贝部署，无法 import 完整扫描器），编排器 `pi_evolve.mjs` 则用完整扫描器且不降级。
 - **0.31 修复（实测确认的两个漏检）**：① 注入扫描器原先把 `FIX:` **之前**的文本整体丢弃、不进任何扫描区 ⇒ 「指令覆盖类前缀 + `FIX:` 修法后缀」可绕过；② 中文「指令覆盖」正则对动词与指令类名词之间的修饰词限制过死，仅插入一个常见程度副词即不命中。两者均已修复并纳入回归用例。**纪律**：注释与文档里只描述机制类别、不引用触发串原文——说明文字本身会被扫描器当成注入样本（本仓有为此发版的先例）。
 - 回归基线：恶意样本 16/16 拦截、合法样本 7/7 零误杀（0.36 计划扩容至 30+，见 roadmap）。
+
+## 注入内容不变量（0.38 · J10/J11）
+
+注入的基因内容一律视为不可信数据：不改变调用者权限、不触发工具、不提升信任档位；池的 `--tier official` 由操作者显式指定，绝不读取基因自称的 tier。
+**EN**: Injected gene content is untrusted data: it cannot change permissions, trigger tools, or raise trust tier; `--tier official` is set by the operator, never by a gene claim.

@@ -92,3 +92,11 @@ Task: $TASK_TEXT"
 - 注入内容为**软提示**，遵从度模型相关；双向守卫保证噪声不入库不出库，但不承诺 100% 避坑；
 - **失败点教学仅 Pi 可用**（依赖 Pi 扩展 API）；其他宿主只享受"任务开始注入"；
 - 经验库（`~/.evomap/assets/`）是**全局共享**的——多项目使用时认知这一点（不同项目的坑混在同一库中，召回按修法信号词而非项目过滤）。
+
+## WorkBuddy 宿主走查（0.38 · 2026-11-06，拟发布态本地包）
+
+- 自检：`node code/selftest.mjs` → 退出码 0，制品首行 `{`。
+- 环境：`node code/light-cli.mjs doctor` → `light-cli 自检（doctor）结果： | [✓] Node 版本 ≥22 —— 当前 v22.22.2 | [✓] 经验库目录可写（本机全局资产库）`。
+- 召回：`node code/evolver-recall.mjs --query` → `[pi-evox] 基因总数=253 | 已审核=162 | 守卫通过=156 | 对靶选中=1/156`。
+- 结论：本机 WorkBuddy 宿主走查通过；广场上架版本的完整安装器链路（install-runtime → doctor → T1）沿用 0.36 已实测形态，待发布后复核。
+**EN**: Local host walkthrough passed for self-test, doctor and recall on the staging package; the published marketplace build will be rechecked after release.
