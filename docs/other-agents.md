@@ -50,7 +50,7 @@
 ```markdown
 ## 经验继承（Evolver）
 - 开始非平凡任务前：运行 `node <repo>/code/evolver-recall.mjs`，相关修法优先采用；
-- 结束前若采用了某条：#N → `node <repo>/code/evolver-recall.mjs --register-hit N --note "<任务>"`
+- 结束前若采用了某条：`node <repo>/code/evolver-recall.mjs --register-hit --gene <asset_id|gene_id> --note "<任务>"`。**EN**: register the hit by gene id (id-addressed, concurrency-safe since 0.18).
 - 修复了非显而易见的坑（查文档/试错≥2次、环境特性、反直觉报错）：按流程 B 沉淀。
 ```
 

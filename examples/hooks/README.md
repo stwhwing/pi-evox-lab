@@ -50,10 +50,10 @@ node code/evolver-recall.mjs --query "读取中文日志报 UnicodeDecodeError" 
 # 2) 看埋点：确认拿到了任务意图（noise=true 表示宿主传的是噪声、没拿到正文）
 tail -5 experiments/recall_calls.jsonl
 
-# 3) 任务结束时回填（把 #N 换成实际编号）
+# 3) 任务结束时回填（把 <asset_id|gene_id> 换成实际基因 ID）
 node code/evolver-recall.mjs --register-hit --gene <asset_id> --note "按 gbk 读取，成功"
 > **EN**: address hits by `--gene <asset_id>` (id-based since 0.18).
-node code/evolver-recall.mjs --negate 1 --note "仍超时"
+node code/evolver-recall.mjs --negate --gene <asset_id|gene_id> --note "仍超时"
 
 # 4) 看命中是否开始积累（>1 条说明闭环闭合）
 wc -l experiments/hits.jsonl
@@ -73,3 +73,4 @@ wc -l experiments/hits.jsonl
 | 命中率突然变好/变差 | 运行时版本漂移 | 确认部署的是最新版召回脚本 |
 | 改了钩子没生效 | OpenClaw 需重启网关 / Hermes 需刷新 allowlist | 按宿主机制操作 |
 | 子代理会话被污染 | 未跳过 `:subagent:` 会话 | 模板里已跳过，保留该判断 |
+> **EN**: Replace `<asset_id|gene_id>` with the actual gene id; id-based addressing is concurrency-safe since 0.18.

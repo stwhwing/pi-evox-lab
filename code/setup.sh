@@ -4,7 +4,7 @@
 #   bash code/setup.sh          安装 + 全量自检（含依赖可用性、召回冒烟）
 #   bash code/setup.sh --demo   额外跑一次「隔离演示」：用临时经验库演示召回/沉淀闭环（不触碰真实库）
 # 说明：流程 A/B（召回/沉淀）零 npm 依赖即可运行（内置 light 引擎）；
-#       可选集成最低：pi 1.5.0 → Node >=22.19.0；evolver 2.0.49 → ^22.13.0 || >=23.4.0。
+#       可选集成最低：pi 1.5.0 → Node >=22.19.0；evolver 2.0.50 → ^22.13.0 || >=23.4.0。
 #       `npm install` 只为可选集成（evolver）与流程 C（实验，需 pi CLI）准备。
 set -u
 DEMO=0

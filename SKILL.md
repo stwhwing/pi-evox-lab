@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.38.0
+version: 0.39.0
 platforms: [linux, macos, windows]
 allowed-tools: Bash,Read,Write,Edit,Glob,Grep,env,network
 homepage: https://github.com/stwhwing/pi-evox-lab
@@ -77,8 +77,8 @@ metadata:
 
 > **EN**: Requires Node >= 22. Optional `@evomap/evolver` integration is GPL-3.0-or-later (only if you install and use `--engine evolver`); the default light backend is MIT, zero-dependency, zero-exfiltration. Three things only: **A recall** validated fixes at task start, **B deposit** after fixing a non-obvious failure, **C (optional, research) controlled experiments**. Daily use = A/B only.
 > ⚠️ **前置要求：Node ≥ 22**（`node -v` 检查；旧版不支持，需先升级）。可选集成 `@evomap/evolver` 为 **GPL-3.0-or-later**——仅在你主动安装并使用 `--engine evolver` 时涉及，默认 light 后端为 MIT、零依赖零外发。
-> **可选集成的最低运行版本（0.38 上游复检）**：`@earendil-works/pi-coding-agent` 1.5.0 要求 Node ≥22.19.0；`@evomap/evolver` 2.0.49 要求 Node ^22.13.0 或 ≥23.4.0。默认 light 后端仍只需 Node ≥22。
-> **EN**: Optional integrations: pi-coding-agent 1.5.0 needs Node >=22.19.0; evolver 2.0.49 needs ^22.13.0 or >=23.4.0; the default zero-dependency light backend still needs only Node >=22.
+> **版本语义（0.39 单一数据源生成）**：`package.json` 的 `optionalDependencies` 是**锁定依赖版本**（pi 0.74.2 / evolver 2.0.30，可选集成的兼容基线，A/B 流程零 npm 依赖即可运行）；下面的 1.5.0 / 2.0.50 是 **C42 上游实测版本**（仅用于兼容性评估，不是本项目安装的版本）。`@earendil-works/pi-coding-agent` 1.5.0 要求 Node ≥22.19.0；`@evomap/evolver` 2.0.50 要求 Node ^22.13.0 或 ≥23.4.0。默认 light 后端仍只需 Node ≥22。
+> **EN**: Optional integrations: pi-coding-agent 1.5.0 needs Node >=22.19.0; evolver 2.0.50 needs ^22.13.0 or >=23.4.0; the default zero-dependency light backend still needs only Node >=22.
 >
 > 本 Skill 只做三件事：**A 任务开始召回**已验证修法、**B 修复失败后背沉淀**、**C（可选，研究用）受控实验量化收益**。日常只用 A/B，C 默认全关，请勿用于生产。
 
@@ -323,6 +323,9 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | `examples/walkthrough-*.md` · `traps/make_*_trap.py` | 端到端走查（GBK/JSON/流程 C）· 6 种陷阱生成器 | 第一次照着跑 / 流程 C |
 
 ## 致谢与上游
+
+**平台主文档口径（0.39）**：skillhub 分发包按平台约定**不含根 README.md**，本文件 `SKILL.md` 即该平台的主文档与权威入口；GitHub / ClawHub 包仍带根 README.md。三平台差异由发布清单唯一真源生成，不属缺失文件。
+> **EN**: On skillhub the package intentionally ships no root README.md; SKILL.md is the primary document and authoritative entry there. GitHub/ClawHub builds still include README.md. This difference is generated from the single manifest source, not a missing file.
 
 **上游引擎与宿主**：基于 [pi-coding-agent](https://github.com/earendil-works/pi) 与 [@evomap/evolver](https://github.com/EvoMap/evolver)。实测发现的 4+1 项上游缺口已提交官方 issue（evolver#624-#627、pi#9258），详见 README。
 
