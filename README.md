@@ -80,8 +80,8 @@ Agent 自进化（self-evolving agents）领域概念多、实证少。本项目
 
 依赖：**Node ≥ 22**（召回/沉淀零 npm 依赖）；流程 C 实验另需一个 OpenAI 兼容 LLM key、Pi CLI（随 `npm install` 可选安装）与 Python 3（陷阱生成器）。
 
-> **版本语义（0.39 单一数据源生成）**：`package.json` 的 `optionalDependencies` 是**锁定依赖版本**（pi 0.74.2 / evolver 2.0.30，可选集成的兼容基线；A/B 流程零 npm 依赖）；C42 开发前复检得到的是**上游实测版本**（pi 1.5.0 / evolver 2.0.50），只用于兼容性评估与最低运行版本说明，**不是本项目安装的版本**。两者语义不同、互不覆盖，由 `_gen_docs_0390.py` 统一写入。
-> **EN**: Locked dependency versions (pi 0.74.2 / evolver 2.0.30) are pinned optional integrations in package.json; upstream-checked versions (pi 1.5.0 / evolver 2.0.50) come from the C42 pre-development check only, are used for compatibility assessment, and are never installed. Both are emitted from one generator.
+> **版本语义（0.40 单一数据源生成）**：`package.json` 的 `optionalDependencies` 是**锁定依赖版本**（pi 0.74.2 / evolver 2.0.30，可选集成的兼容基线；A/B 流程零 npm 依赖）；C42 开发前复检得到的是**上游实测版本**（pi 1.5.1 / evolver 2.0.50），只用于兼容性评估与最低运行版本说明，**不是本项目安装的版本**。两者语义不同、互不覆盖，由 `_gen_docs_0400.py` 统一写入。
+> **EN**: Locked dependency versions (pi 0.74.2 / evolver 2.0.30) are pinned optional integrations in package.json; upstream-checked versions (pi 1.5.1 / evolver 2.0.50) come from the C42 pre-development check only, are used for compatibility assessment, and are never installed. Both are emitted from one generator.
 
 ```bash
 # 0.（可选）安装上游依赖——仅流程 C 实验（Pi CLI）或启用 evolver 集成时需要；A/B 流程可跳过
@@ -178,7 +178,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 ### 三、0.38 工程方法论致谢（本版新增研读与借鉴）
 
-<!-- evox-ack-sources-039: wechat-ai-product-20261105; lobehub/lobehub; deepseek-harness-superagent-20261031; deepseek-ai/dsh-superagent-prototype -->
+<!-- evox-ack-sources-040: wechat-ai-product-20261105; lobehub/lobehub; deepseek-harness-superagent-20261031; deepseek-ai/dsh-superagent-prototype -->
 
 - **《惭愧，我才真正看懂这个 AI 产品。》**（阿颖 / AI产品阿颖，2026-11-05，微信公众号）：产品视角提出「任务 > 会话」「下任务即给出验收清单」「Router / Worker 分工」「Fast Path / Slow Path 两级唤醒」。它让我们确认本项目 T1–T5 触发点与「检查清单 = 接受标准」的方向，并促成 0.38 把随包自检做成一等制品。
 - **[LobeHub](https://github.com/lobehub/lobehub)**（LobeHub LLC，canary 分支，Community License，附加分发条款）：本版实拉源码研读 `groupOrchestration`（Supervisor/Executor 状态机、广播默认禁工具、maxRounds）、`loop/index.ts`（`AgentLoopStopReason` 七值单点计算）、`.agents/skills/acceptance/SKILL.md`（`requiredEvidence` 缺制品即 hold delivery）、异构驱动目录（含 `pi.ts`）。启发 0.38 的「判定结果显式枚举」「验收须有可验证制品」「循环自检不可变轮次」三项设计稿。**仅借鉴方法论，未复制、未移植其源码**；其许可的附加条款不作为本项目的实现依据。
@@ -187,11 +187,11 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 > **EN**: 0.38 acknowledges three engineering-methodology sources read for this release: the WeChat article by 阿颖 (task-over-session, acceptance checklists, Router/Worker, two-tier wake-up); the LobeHub source (Supervisor/Executor state machine, `AgentLoopStopReason`, `requiredEvidence`, pluggable drivers incl. `pi.ts`) under its Community License; and DeepSeek Harness's Super-agent design note plus the MIT `dsh-superagent-prototype` (immutable authorization, untrusted external text). They informed our explicit outcome enum, packaged self-test evidence and untrusted-injection invariant. **Methodology only — no source was copied or derived**; this project is independent and represents no official view of those authors.
 
-## 项目状态（2026-11-08）
+## 项目状态（2026-11-10）
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.39.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0） |
+| 当前版本 | 0.40.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0 → 0.35.0 → 0.36.0 → 0.37.0 → 0.38.0 → 0.39.0 → 0.40.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因自动过审（语义见 SKILL.md「审核状态机」）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 20 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -205,20 +205,10 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 | skillhub | 评测均值 ≈4.54（15 维，0.14.7 版本）；errorHandling / stability / docQuality 均 4.5、usability 4.8；科恩实验室 **benign**；云鼎 suspicious 为 LLM 工具普遍特征（中立声明见下） |
 | 上游 | 4+1 项缺口已提交官方 issue（evolver #624-#627、pi #9258）；核心运行时不依赖其回应 |
 
-**0.14.4 本版要点**：① 新增**引导式沉淀** `light-cli draft --error`（自动抽 signals + 预填 AVOID + 写入 `anti_patterns`，未补 FIX 的占位符草稿被守卫拒绝落库）② `anti_patterns` 改为**单 token 字面量**（方案A 词汇对齐），使**注入冲突守卫**真正可触发 ③ 召回新增**负载均衡偏置**（借鉴 FlyLoRA / Switch Transformer 形式，冷门基因不再被热门长期霸榜）④ 新增**按宿主的注入观测**（`recall_calls.jsonl` 记录 `agent` / `targeted` / `injected` / `query`）⑤ **审核语义 last-write-wins 补齐**（`pi_evolve` / `light/store` / `metrics_collect` 三处此前遗漏的读取侧——此前被 quarantine 的基因在部分路径仍会被注入）⑥ 生产蒸馏只信**权威错误标志**（消除 9 例把成功命令误判为失败的噪声）。
 
-**0.14.3 本版要点**：① 召回侧修复「**隔离（quarantine）无法撤销已批准**」——台账改为按 assetId 的**最后一条状态**判定（last-write-wins）② 新增**叙述守卫**，把会话旁白/推理流水式文本挡在注入之外 ③ `distill_sessions.mjs` 由「诊断脚本」升级为**真实蒸馏适配器**（失败/重试的**参数差异**抽取 + 两级门 + 候选报告）④ `light-cli distill` 增加**内容去重**（重复沉淀不再堆积，也不会把已批准资产的审核状态打回）⑤ 召回新增**对靶 top-N**（与任务无关即不注入）。
-
-**0.14.5 / 0.14.6 / 0.14.7 / 0.14.8 本版要点**：
-- **0.14.5**：拉升 progressive / antiPatternFaq / boundary 等分项的评测分。
-  **EN**: Evaluation-score lift pass (progressive / antiPatternFaq / boundary).
-- **0.14.6（内容/UX 版）**：新增 `light-cli doctor` 首次运行自检 + SKILL.md「3 步就绪」；坏行警告补「如何修正」；实验 preflight（Node≥22 / pi≥0.85.1）；新增「何时该沉淀」决策框。
-  **EN**: Content/UX release: `light-cli doctor` first-run self-check + SKILL.md 3-step onboarding; bad-line warnings with how-to-fix; experiment preflight (Node>=22 / pi>=0.85.1); deposition decision box.
-- **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
-  **EN**: Quality release: unified error output (`[pi-evox]` prefix + fix hints + consistent exit codes 0/1/2); bad-line content preview; configurable subprocess timeout (`EVOX_CLI_TIMEOUT_MS`); trap generator Python>=3.8 check; GBK end-to-end walkthrough.
-- **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
-  **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
-
+- **0.40.0（贡献通道与一致性收敛版）**：
+  **中文**：① C42 上游复检确认 pi 1.5.1 扩展钩子契约保持、无需改集成代码，并同步上游实测版本声明；② 用户推送方向定为推送至服务器，服务器仅接收并留存、不纳入现有数据池、不设衔接通道；③ 服务器侧单独划分目录统一收纳用户推送基因、用户邮箱台账与后期项目预留需求；④ 邮箱字段选填、keyid 保持唯一必填技术身份，邮箱不进基因本体或任何公开产物；⑤ 广场适配包改从本版 publish_clean 生成 13 文件，新增 C39 内容同步判据；⑥ 修复 0.39 遗留的 FAQ 标题、代码层版本字面量、Q8 标记与历史示例包名，并新增零公开与阴性对照判据。
+  **EN**: ① C42 recheck confirmed pi 1.5.1 extension hooks are intact (no integration code change) and synced the upstream-checked version; ② submissions go to a server that only receives and retains, with no merge or bridge into the existing data pool; ③ a dedicated server-side directory collects submitted genes, the contributor email ledger and future project placeholders; ④ contributor email is optional while keyid stays the only required technical identity, and email never enters gene bodies or public artifacts; ⑤ the WorkBuddy adapter package is now generated from this version's publish_clean with a new C39 content-sync judgement; ⑥ fixed 0.39 leftovers (FAQ title, code-level version literal, Q8 label, historical example package name) and added zero-publication and negative-control judgements.
 - **0.39.0（一致性与门禁可信度收敛版）**：
   **中文**：① 上游依赖强制复检发现 evolver 2.0.50 新发布，实测 CLI 与存储契约保持，确认无需改集成代码；② 明确区分「锁定依赖版本」与「上游实测版本」，由全量单一数据源统一生成全部版本声明；③ FAQ 补齐 Q16 并统一全角冒号，C37 判据正则改为全角/半角都认，根治假绿；④ 新增 C43 版本语义一致性与 C44 单一数据源覆盖两条判据及阴性对照变异；⑤ 示例命令统一按 gene_id 寻址，skillhub 根 README 的平台口径在 SKILL.md 显式说明；⑥ 新增示例自动校验、阴性对照总闸、平台口径台账与广场审核跟踪四项基座检查。
   **EN**: ① C42 recheck found evolver 2.0.50 newly released; its CLI and store contracts are intact, so no integration code change is needed; ② pinned dependency versions and upstream-checked versions are now explicitly distinguished and emitted from one full data source; ③ FAQ Q16 added with fullwidth colons, and the C37 regex now accepts both colon forms, removing a false green; ④ added C43 version-semantics and C44 single-source coverage judgements with negative-control mutations; ⑤ examples use gene-id addressing and the skillhub root-README convention is documented in SKILL.md; ⑥ added four base checks: example auto-validation, negative-control gate, platform-convention ledger and marketplace review tracking.
@@ -300,6 +290,29 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 - **0.14.9（共享基因库版）**：新增跨实例/跨用户基因共享——`distill/draft --shareable` 标记可共享（默认不外发）→ `gene submit` 过**脱敏闸门**写入自建共享池（幂等）→ 其他实例 `gene import` 拉取合并。**闸门 fail-closed**：基因离开本机前扫全部文本字段，命中私有IP/绝对本地路径/密钥即拦截不出网；项目私有词由使用者本地 `redline.local.json` 补充（不随包发布）。**审核门控不被绕过**：导入默认 community→待审，仅对自建策展池显式 `--tier official` 才自动通过（tier 由操作者指定的池决定，不信基因自称）。新增 `code/gene_share.mjs`；底座路径改为按模块自身位置解析（跨平台）。
   **EN**: Shared gene pool (opt-in `--shareable` + `gene submit/import`, redaction gate fail-closed, idempotent merge by asset_id).
+
+
+### 早期版本要点（0.14.3–0.14.8，历史归档 · 严格降序）
+
+> **EN**: Early release highlights (0.14.3–0.14.8, archived; strictly descending order). 历史正文逐字保留，仅补缺少的 EN 摘要。
+
+- **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
+  **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
+
+- **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
+  **EN**: Quality release: unified error output (`[pi-evox]` prefix + fix hints + consistent exit codes 0/1/2); bad-line content preview; configurable subprocess timeout (`EVOX_CLI_TIMEOUT_MS`); trap generator Python>=3.8 check; GBK end-to-end walkthrough.
+
+- **0.14.6（内容/UX 版）**：新增 `light-cli doctor` 首次运行自检 + SKILL.md「3 步就绪」；坏行警告补「如何修正」；实验 preflight（Node≥22 / pi≥0.85.1）；新增「何时该沉淀」决策框。
+  **EN**: Content/UX release: `light-cli doctor` first-run self-check + SKILL.md 3-step onboarding; bad-line warnings with how-to-fix; experiment preflight (Node>=22 / pi>=0.85.1); deposition decision box.
+
+- **0.14.5**：拉升 progressive / antiPatternFaq / boundary 等分项的评测分。
+  **EN**: Evaluation-score lift pass (progressive / antiPatternFaq / boundary).
+
+- **0.14.4 本版要点**：① 新增**引导式沉淀** `light-cli draft --error`（自动抽 signals + 预填 AVOID + 写入 `anti_patterns`，未补 FIX 的占位符草稿被守卫拒绝落库）② `anti_patterns` 改为**单 token 字面量**（方案A 词汇对齐），使**注入冲突守卫**真正可触发 ③ 召回新增**负载均衡偏置**（借鉴 FlyLoRA / Switch Transformer 形式，冷门基因不再被热门长期霸榜）④ 新增**按宿主的注入观测**（`recall_calls.jsonl` 记录 `agent` / `targeted` / `injected` / `query`）⑤ **审核语义 last-write-wins 补齐**（`pi_evolve` / `light/store` / `metrics_collect` 三处此前遗漏的读取侧——此前被 quarantine 的基因在部分路径仍会被注入）⑥ 生产蒸馏只信**权威错误标志**（消除 9 例把成功命令误判为失败的噪声）。
+  **EN**: Guided deposit (`draft --error`) with auto-extracted signals; draft without FIX is rejected by the guard.
+
+- **0.14.3 本版要点**：① 召回侧修复「**隔离（quarantine）无法撤销已批准**」——台账改为按 assetId 的**最后一条状态**判定（last-write-wins）② 新增**叙述守卫**，把会话旁白/推理流水式文本挡在注入之外 ③ `distill_sessions.mjs` 由「诊断脚本」升级为**真实蒸馏适配器**（失败/重试的**参数差异**抽取 + 两级门 + 候选报告）④ `light-cli distill` 增加**内容去重**（重复沉淀不再堆积，也不会把已批准资产的审核状态打回）⑤ 召回新增**对靶 top-N**（与任务无关即不注入）。
+  **EN**: Quarantine can now revoke an approval via last-write-wins per assetId; added narration guard.
 
 ### 关于第三方静态 / 动态扫描结果的说明（中立声明）
 

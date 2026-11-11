@@ -1,6 +1,6 @@
 # FAQ（完整版）
 
-> SKILL.md 只保留高频速览；这里是完整 14 条。按「先自救（doctor/info）→ 再查此处」的顺序。
+> SKILL.md 只保留高频速览；这里是完整 17 条。按「先自救（doctor/info）→ 再查此处」的顺序。
 
 **Q1：召回输出「无可召回修法」是坏了吗？**
 不是。经验库从零开始，首次运行必然为空。想**立刻有东西可召回**，装起步包最快：
@@ -33,7 +33,7 @@ node code/light-cli.mjs doctor    # 环境自检
 node code/light-cli.mjs list      # 查看台账
 ```
 只有在用 evolver 集成（`--engine evolver`）时才需先 `npm install`。
-**Q8 补充（0.38）**：可选集成的最低运行版本为 pi-coding-agent 1.5.0 → Node ≥22.19.0、evolver 2.0.50 → Node ^22.13.0 或 ≥23.4.0；默认 light 后端仍只需 Node ≥22。**EN**: Optional integrations require Node >=22.19.0 (pi 1.5.0) or ^22.13.0/>=23.4.0 (evolver 2.0.50); the default light backend needs only Node >=22.
+**Q8 补充：可选集成的运行版本**：可选集成的最低运行版本为 pi-coding-agent 1.5.1 → Node ≥22.19.0、evolver 2.0.50 → Node ^22.13.0 或 ≥23.4.0；默认 light 后端仍只需 Node ≥22。**EN**: Optional integrations require Node >=22.19.0 (pi 1.5.1) or ^22.13.0/>=23.4.0 (evolver 2.0.50); the default light backend needs only Node >=22.
 
 **EN A5**: The default light backend has zero external dependencies - Node >= 22 suffices. `doctor` for environment self-check. npm install only needed for the evolver integration.
 
@@ -99,8 +99,8 @@ node code/light-cli.mjs info      # 看「召回次数 / 命中 / 待审」
 
 
 **Q16：文档里的「锁定依赖版本」和「上游实测版本」有什么区别？**
-前者是 `package.json` 的 `optionalDependencies` 锁定值（pi 0.74.2 / evolver 2.0.30），只在你主动安装可选集成时生效，A/B 流程零 npm 依赖；后者是每版开发前 C42 上游检查实测到的最新版（pi 1.5.0 / evolver 2.0.50），只用于兼容性评估与最低运行版本说明，**不是本项目安装的版本**。两者由同一生成器写入，语义不可混用。
-**EN A16**: Locked dependency versions (pi 0.74.2 / evolver 2.0.30) are the pinned optional integrations in package.json; upstream-checked versions (pi 1.5.0 / evolver 2.0.50) come from the C42 pre-development check and are used only for compatibility assessment, never installed.
+前者是 `package.json` 的 `optionalDependencies` 锁定值（pi 0.74.2 / evolver 2.0.30），只在你主动安装可选集成时生效，A/B 流程零 npm 依赖；后者是每版开发前 C42 上游检查实测到的最新版（pi 1.5.1 / evolver 2.0.50），只用于兼容性评估与最低运行版本说明，**不是本项目安装的版本**。两者由同一生成器写入，语义不可混用。
+**EN A16**: Locked dependency versions (pi 0.74.2 / evolver 2.0.30) are the pinned optional integrations in package.json; upstream-checked versions (pi 1.5.1 / evolver 2.0.50) come from the C42 pre-development check and are used only for compatibility assessment, never installed.
 
 **Q17： 常见英文技术术语对照表（错误提示与文档共用）**
 **EN A17**: Chinese–English glossary for terms appearing in CLI errors and docs.

@@ -12,13 +12,13 @@
 本机经代理装 SkillSpector，用清华 TUNA 镜像：
 
 ```bash
-pip install --index-url https://pypi.tuna.tsinghua.edu.cn/simple skillspector
+pip install --index-url https://pypi.tuna.tsinghua.edu.cn/simple <example-package>  # **EN**: placeholder package name; outputs below remain verbatim historical records
 ```
 
 报错极具误导性——看起来像"包不存在"：
 
 ```
-ERROR: Could not find a version that satisfies the requirement boto3>=1.34.0 (from skillspector) (from versions: none)
+ERROR: Could not find a version that satisfies the requirement boto3>=1.34.0 (from <example-package>) (from versions: none)
 ERROR: No matching distribution found for boto3>=1.34.0
 ```
 
@@ -31,7 +31,7 @@ ERROR: No matching distribution found for boto3>=1.34.0
 非显而易见的坑修完后，趁记忆新鲜用 `draft --error` 起稿：
 
 ```bash
-node code/light-cli.mjs draft --error "ERROR: Could not find a version that satisfies the requirement boto3>=1.34.0 (from skillspector) (from versions: none)" --context "在本机代理后 pip install SkillSpector，用清华 TUNA 镜像"
+node code/light-cli.mjs draft --error "ERROR: Could not find a version that satisfies the requirement boto3>=1.34.0 (from <example-package>) (from versions: none)" --context "在本机代理后 pip install <example-package>，用清华 TUNA 镜像"
 ```
 
 真实输出（注意它**诚实地暴露了自动抽取的局限**）：
@@ -41,7 +41,7 @@ node code/light-cli.mjs draft --error "ERROR: Could not find a version that sati
   signals_match : manual
   anti_patterns : （空·该信号族无无歧义单 token）
   负经验标签    : repeat-failed-approach
-  summary       : unknown 失败（在本机代理后 pip install SkillSpector，用清华 TUNA 镜像） [AVOID repeat-failed-approach]: ERROR: Could not find a version that satisfies the requirement boto3>=1.34.0 (fr
+  summary       : unknown 失败（在本机代理后 pip install <example-package>，用清华 TUNA 镜像） [AVOID repeat-failed-approach]: ERROR: Could not find a version that satisfies the requirement boto3>=1.34.0 (fr
   strategy      : AVOID: repeating the first approach after it failed, instead of inspecting the error. FIX: <在此填写可执行修法，例如 use encoding='gbk' / 先 chmod u+w 再写 / 先 ls 确认路径>
 
 未加 --commit：补全 strategy 里的 FIX 后，运行上面等价的 distill 命令（或加 --strategy 与 --commit 直接落库为待审草稿）。
