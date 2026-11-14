@@ -125,7 +125,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 本项目**不是**任何上游项目的一部分，也不代表它们各自的官方观点——它是一个独立的研究 Harness，站在一批优秀开源项目与公开方法论的肩膀上。
 
-### 二、理论启发（已读原文并核对）
+### 一、理论启发（已读原文并核对）
 
 **[The Universal Weight Subspace Hypothesis](https://arxiv.org/abs/2512.05117)**（Kaushik, Chaudhari, Vaidya, Chellappa, Yuille；arXiv:2512.05117，v1 2025-12-04，v3 2026-10-05）—— 1200+ 个模型（500 Mistral-7B LoRA / 500 ViT / 50 LLaMA-8B）做截断零中心 HOSVD，发现**同一架构内**的不同模型共享低维参数子空间。
 
@@ -144,7 +144,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 > **EN**: **[Periodic Weak Spots: Phase Sensitivity from Chunked KV-Cache Compression](https://arxiv.org/abs/2609.36322)** (ByteDance Seed) — chunked KV-cache compression introduces a new positional coordinate, *phase* (a token's position relative to compression-window boundaries), and long-context retrieval accuracy rises and falls with it. We cite it as the source of a **previously missing control variable**, not as a capability claim. The paper's own result we could **not** reproduce locally (neither confirmed nor falsified — see `docs/research.md` §21.3; our probes are ~90x smaller than the paper's and our primary model runs at ceiling and under rate limiting). What it actually changed is method: injected-block length mod 4 shifts the phase of everything after it, and recall is dynamic top-N, so the R1/R2 delta mixed semantics with phase luck. A length-matched R2-pad control arm now separates them (n=10 per arm, length Δ=0, both arms at the same phase): **semantic +100pp, phase 0pp**. Because the paper reproduces the effect by porting the CSA kernel onto a Qwen3-0.6B backbone pretrained from scratch, the causal axis is the compression scheme rather than vendor lineage — which is why genes carry `source_kv` and closed models are recorded as `unknown` rather than guessed. Second-hand items that do not appear in the paper at all (`CSA2`, `Harness`, `Kimi`, `KDA`, `MLA`, `QSA`, `Gated DeltaNet`) are not cited here.
 
-### 一、上游引擎与宿主
+### 二、上游引擎与宿主
 
 | 上游项目 | 在本研究中的角色 |
 |---|---|
@@ -158,7 +158,7 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 4. 适配器契约缺口：generic-chat transcript 需显式 `is_error` 标志才能产生 strong 信号（§13，已在本仓库 adapter 中修复）→ [EvoMap/evolver#626](https://github.com/EvoMap/evolver/issues/626)
 5. pi 侧编排 DX 两则：models.json `$ENV` 插值不生效（401 字面量）+ `./package.json` 未导出 → [earendil-works/pi#9258](https://github.com/earendil-works/pi/issues/9258)
 
-### 二、方法论与评测参考
+### 三、方法论与评测参考
 
 | 参考 | 借鉴之处 |
 |---|---|
@@ -176,9 +176,9 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 如果本研究对你的工作有帮助，也请给上面这些项目点 star——它们是真正的主角。
 
-### 三、0.38 工程方法论致谢（本版新增研读与借鉴）
+### 四、0.38 工程方法论致谢（本版新增研读与借鉴）
 
-<!-- evox-ack-sources-040: wechat-ai-product-20261105; lobehub/lobehub; deepseek-harness-superagent-20261031; deepseek-ai/dsh-superagent-prototype -->
+<!-- evox-ack-sources-041: wechat-ai-product-20261105; lobehub/lobehub; deepseek-harness-superagent-20261031; deepseek-ai/dsh-superagent-prototype; harnessmm-arxiv-2610.32813; wechat-harnessmm-20261111; jlon/pi-harnessmm; YuhuaJiang2002/HarnessMM; deepseek-ai/deepseek-harness -->
 
 - **《惭愧，我才真正看懂这个 AI 产品。》**（阿颖 / AI产品阿颖，2026-11-05，微信公众号）：产品视角提出「任务 > 会话」「下任务即给出验收清单」「Router / Worker 分工」「Fast Path / Slow Path 两级唤醒」。它让我们确认本项目 T1–T5 触发点与「检查清单 = 接受标准」的方向，并促成 0.38 把随包自检做成一等制品。
 - **[LobeHub](https://github.com/lobehub/lobehub)**（LobeHub LLC，canary 分支，Community License，附加分发条款）：本版实拉源码研读 `groupOrchestration`（Supervisor/Executor 状态机、广播默认禁工具、maxRounds）、`loop/index.ts`（`AgentLoopStopReason` 七值单点计算）、`.agents/skills/acceptance/SKILL.md`（`requiredEvidence` 缺制品即 hold delivery）、异构驱动目录（含 `pi.ts`）。启发 0.38 的「判定结果显式枚举」「验收须有可验证制品」「循环自检不可变轮次」三项设计稿。**仅借鉴方法论，未复制、未移植其源码**；其许可的附加条款不作为本项目的实现依据。
@@ -187,11 +187,21 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 
 > **EN**: 0.38 acknowledges three engineering-methodology sources read for this release: the WeChat article by 阿颖 (task-over-session, acceptance checklists, Router/Worker, two-tier wake-up); the LobeHub source (Supervisor/Executor state machine, `AgentLoopStopReason`, `requiredEvidence`, pluggable drivers incl. `pi.ts`) under its Community License; and DeepSeek Harness's Super-agent design note plus the MIT `dsh-superagent-prototype` (immutable authorization, untrusted external text). They informed our explicit outcome enum, packaged self-test evidence and untrusted-injection invariant. **Methodology only — no source was copied or derived**; this project is independent and represents no official view of those authors.
 
-## 项目状态（2026-11-10）
+### 五、0.41 核验并致谢的方法论来源（已读原文并核对）
+
+- **[HarnessMM: Recursive Self-Improvement for Harness Token Efficiency](https://arxiv.org/abs/2610.32813)**（Yuhua Jiang, Chang Xu, Feifei Gao, Li Zhao；清华大学 / 微软亚洲研究院；v1 2026-10-23、**v2 2026-11-12**）—— 核验后确认：主实验底座为 **Qwen3.5-4B**，HumanEval/MBPP 短题场景；EDG 是含因果依赖的图、GDR 有守卫/前驱/参数闭合三重约束、**CCS = Certified Callback Substitution（认证回调替换）是替换执行机制而非审计台账**；论文 §7 自报更硬的替换悖论反例（+79.68% tokens、−6.25 分）。给本项目的启发仅为**方法论**（召回收益须拆两本账、守卫升级须先做 A/B、量化结论须标场景限定），**未移植其实现**，详见 `docs/research.md` §22。
+- **《不动一行权重！清华微软把 DeepSeek 消耗狂砍 88%，成功率反飙 14%》**（微信公众号，2026-11-11）—— 作为**线索来源**致谢。核验发现其「三盆冷水」中「短题局限 / 弱守卫」来自社区评论而非论文正文，「少调 539 次归因为 RSI 治死循环」出自外媒推测；社区移植版 `pi-harnessmm` 的「省 25% / 多烧 22%」在论文与移植版 README 中均无一手数据，标记为 `[C]` **未采信、未写入任何交付结论**。
+- **[jlon/pi-harnessmm](https://github.com/jlon/pi-harnessmm)**（2026-11-02）与 **[YuhuaJiang2002/HarnessMM](https://github.com/YuhuaJiang2002/HarnessMM)** —— 研读 `<CHISEL_PLAN>` authoring contract 与原生 terminal 接口、核对四个概念的原始定义；**未复制源码**。
+- **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)**（dsh）—— 「一切皆插件 / 瀑布流钩子」与 `deriveMessages()` 全历史回喂架构，仅作问题背景对照。
+
+> **EN**: 0.41 acknowledges five additional methodology sources read and verified for this release: the HarnessMM paper (arXiv:2610.32813, v2, Tsinghua / MSRA), a WeChat explainer article, the `pi-harnessmm` port, the official HarnessMM implementation, and the DeepSeek Harness (`dsh`) repository. The paper's main experiments use **Qwen3.5-4B** on short function-level tasks; CCS is a **callback-substitution mechanism**, not an audit ledger. Only the methodology informed our work (separating reuse gains from other savings, A/B-testing guard upgrades, labelling extrapolation limits). **Methodology only — no source was copied or derived**; unverified second-hand figures (25%/22%, the 539-call attribution) were not adopted. Our project is independent and represents no official view of those authors.
+
+
+## 项目状态（2026-11-13）
 
 | 项 | 状态 |
 |---|---|
-| 当前版本 | 0.40.0（版本轨迹：0.3.0 首发 → 0.25.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.32.2 → 0.33.0 → 0.34.0 → 0.35.0 → 0.36.0 → 0.37.0 → 0.38.0 → 0.39.0 → 0.40.0） |
+| 当前版本 | 0.41.0（版本轨迹，从最早建仓起升序，与 GitHub releases 实测一致：0.1.0 → 0.5.0 → 0.7.0 → 0.8.0 → 0.9.0 → 0.10.0 → 0.11.0 → 0.12.0 → 0.13.1 → 0.14.0 → 0.14.2 → 0.14.3 → 0.14.4 → 0.14.5 → 0.14.6 → 0.14.7 → 0.14.8 → 0.15.0 → 0.16.0 → 0.17.0 → 0.18.0 → 0.18.1 → 0.19.0 → 0.19.1 → 0.20.2 → 0.20.3 → 0.21.0 → 0.22.0 → 0.23.0 → 0.24.0 → 0.25.0 → 0.26.0 → 0.27.0 → 0.28.0 → 0.29.0 → 0.30.0 → 0.31.0 → 0.32.0 → 0.32.1 → 0.33.0 → 0.34.0 → 0.35.0 → 0.36.0 → 0.37.0 → 0.38.0 → 0.39.0 → 0.40.0 → 0.41.0） |
 | 引擎 | 默认内置 light 引擎（零 npm 依赖，MIT）；evolver 为可选集成 |
 | 让经验真正生效 | 0.16.0 针对「沉淀了却不生效」的四个静默失效：① `info` 显示**闭环健康度**（召回次数/命中/待审 + 下一步命令）② 自己沉淀的基因自动过审（语义见 SKILL.md「审核状态机」）③ `install-hooks` 自动接线（**默认演练，加 `--yes` 才写入**）④ `starter` 一键装载 20 条通用起步基因 |
 | 召回（最后一公里） | 0.15.0 修掉「基因已入库却召回不到」四个断点：① **任务文本清洗**（剥宿主信封前缀/纯URL/心跳样板）② **CJK bigram 分词**（原整段成单 token ⇒ 中文任务与中文基因永不相交）③ **无任务意图不注入**（不再"取最近N条"凑数）④ **注入即登记 + `--negate` 回填**（闭合"注入→有效"漏斗）。私有节点实测有效召回率 **10%** ⇒ 目标 >60% |
@@ -201,10 +211,13 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
 | 生产蒸馏 | `distill_sessions.mjs` 直读宿主会话存储，**只信权威错误标志**（`isError` / 非零 `exit_code`，不再扫正文关键词）；两级门 + 候选报告 |
 | 自动召回 | 宿主原生钩子接入已落地（bootstrap 类与 `pre_llm_call` 类各一），并**按宿主记录注入埋点**（`agent` / `targeted` / `injected`） |
 | 供给现状（诚实） | 真实生产会话可自动抽取的干净修法对密度低（实测 `distillablePairs=0`）⇒ 基因库主要来自**人工 / 引导式沉淀** |
-| ClawHub | moderation **CLEAN**；static-analysis / skillspector 剩余 findings 均为功能固有（已被 moderate=clean 裁决覆盖，已文档化） |
-| skillhub | 评测均值 ≈4.54（15 维，0.14.7 版本）；errorHandling / stability / docQuality 均 4.5、usability 4.8；科恩实验室 **benign**；云鼎 suspicious 为 LLM 工具普遍特征（中立声明见下） |
-| 上游 | 4+1 项缺口已提交官方 issue（evolver #624-#627、pi #9258）；核心运行时不依赖其回应 |
+| ClawHub | 0.40 孤儿态已解除（`latest=0.40.0`、平台 moderation **CLEAN**、真实扫描约 92 分钟）；报告内另有 `clawscan.verdict=suspicious(medium)` 双层并存，逐条判读见 `SKILL.md`「权限与能力声明」 |
+| skillhub | 0.40 评测 **4.8333**/15 维（`trust.scan` 4→5 满分）；keen / sanbu 双 **benign**；评论 0 条 |
+| 上游 | 实测版本 **pi 1.5.2 / evolver 2.0.51**（C42 双源交叉核对：dist-tags.latest ＋ versions.time，2026-11-13 复核，与 12:56 前置实测一致）；**锁定依赖仍为 pi 0.74.2 / evolver 2.0.30**（可选集成兼容基线、默认不安装、A/B 主流程零 npm 依赖）——**上游有更新时本版只跟随『实测声明』不跟随『锁定版本』**，理由与安全公告处置见 `SKILL.md`「权限与能力声明」；4+1 项缺口已提交官方 issue（evolver #624-#627、pi #9258），**截至 2026-11-11 流程闭环 0/5**，能力补齐 2/5 但均未回链 |
 
+
+> **双语说明**：0.27.0 及以后的版本要点为「中文 + EN」双段；0.26.0 及更早的历史要点**正文为英文原文**（发布当时的形态），此处逐字保留、未补中文译文，以保持历史归档真实。
+> **EN**: Release notes from 0.27.0 onward carry both Chinese and English paragraphs; earlier entries (≤0.26.0) are preserved verbatim in English, as originally published.
 
 - **0.40.0（贡献通道与一致性收敛版）**：
   **中文**：① C42 上游复检确认 pi 1.5.1 扩展钩子契约保持、无需改集成代码，并同步上游实测版本声明；② 用户推送方向定为推送至服务器，服务器仅接收并留存、不纳入现有数据池、不设衔接通道；③ 服务器侧单独划分目录统一收纳用户推送基因、用户邮箱台账与后期项目预留需求；④ 邮箱字段选填、keyid 保持唯一必填技术身份，邮箱不进基因本体或任何公开产物；⑤ 广场适配包改从本版 publish_clean 生成 13 文件，新增 C39 内容同步判据；⑥ 修复 0.39 遗留的 FAQ 标题、代码层版本字面量、Q8 标记与历史示例包名，并新增零公开与阴性对照判据。
@@ -292,27 +305,27 @@ node code/pi_evolve.mjs <含陷阱data的模板目录> <任务文本文件> \
   **EN**: Shared gene pool (opt-in `--shareable` + `gene submit/import`, redaction gate fail-closed, idempotent merge by asset_id).
 
 
-### 早期版本要点（0.14.3–0.14.8，历史归档 · 严格降序）
+### 早期版本要点（0.14.3–0.14.8，历史归档 · 严格升序）
 
-> **EN**: Early release highlights (0.14.3–0.14.8, archived; strictly descending order). 历史正文逐字保留，仅补缺少的 EN 摘要。
+> **EN**: Early release highlights (0.14.3–0.14.8, archived; strictly ascending order). 历史正文逐字保留，仅补缺少的 EN 摘要。
 
-- **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
-  **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
-
-- **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
-  **EN**: Quality release: unified error output (`[pi-evox]` prefix + fix hints + consistent exit codes 0/1/2); bad-line content preview; configurable subprocess timeout (`EVOX_CLI_TIMEOUT_MS`); trap generator Python>=3.8 check; GBK end-to-end walkthrough.
-
-- **0.14.6（内容/UX 版）**：新增 `light-cli doctor` 首次运行自检 + SKILL.md「3 步就绪」；坏行警告补「如何修正」；实验 preflight（Node≥22 / pi≥0.85.1）；新增「何时该沉淀」决策框。
-  **EN**: Content/UX release: `light-cli doctor` first-run self-check + SKILL.md 3-step onboarding; bad-line warnings with how-to-fix; experiment preflight (Node>=22 / pi>=0.85.1); deposition decision box.
+- **0.14.3 本版要点**：① 召回侧修复「**隔离（quarantine）无法撤销已批准**」——台账改为按 assetId 的**最后一条状态**判定（last-write-wins）② 新增**叙述守卫**，把会话旁白/推理流水式文本挡在注入之外 ③ `distill_sessions.mjs` 由「诊断脚本」升级为**真实蒸馏适配器**（失败/重试的**参数差异**抽取 + 两级门 + 候选报告）④ `light-cli distill` 增加**内容去重**（重复沉淀不再堆积，也不会把已批准资产的审核状态打回）⑤ 召回新增**对靶 top-N**（与任务无关即不注入）。
+  **EN**: Quarantine can now revoke an approval via last-write-wins per assetId; added narration guard.
+- **0.14.4 本版要点**：① 新增**引导式沉淀** `light-cli draft --error`（自动抽 signals + 预填 AVOID + 写入 `anti_patterns`，未补 FIX 的占位符草稿被守卫拒绝落库）② `anti_patterns` 改为**单 token 字面量**（方案A 词汇对齐），使**注入冲突守卫**真正可触发 ③ 召回新增**负载均衡偏置**（借鉴 FlyLoRA / Switch Transformer 形式，冷门基因不再被热门长期霸榜）④ 新增**按宿主的注入观测**（`recall_calls.jsonl` 记录 `agent` / `targeted` / `injected` / `query`）⑤ **审核语义 last-write-wins 补齐**（`pi_evolve` / `light/store` / `metrics_collect` 三处此前遗漏的读取侧——此前被 quarantine 的基因在部分路径仍会被注入）⑥ 生产蒸馏只信**权威错误标志**（消除 9 例把成功命令误判为失败的噪声）。
+  **EN**: Guided deposit (`draft --error`) with auto-extracted signals; draft without FIX is rejected by the guard.
 
 - **0.14.5**：拉升 progressive / antiPatternFaq / boundary 等分项的评测分。
   **EN**: Evaluation-score lift pass (progressive / antiPatternFaq / boundary).
 
-- **0.14.4 本版要点**：① 新增**引导式沉淀** `light-cli draft --error`（自动抽 signals + 预填 AVOID + 写入 `anti_patterns`，未补 FIX 的占位符草稿被守卫拒绝落库）② `anti_patterns` 改为**单 token 字面量**（方案A 词汇对齐），使**注入冲突守卫**真正可触发 ③ 召回新增**负载均衡偏置**（借鉴 FlyLoRA / Switch Transformer 形式，冷门基因不再被热门长期霸榜）④ 新增**按宿主的注入观测**（`recall_calls.jsonl` 记录 `agent` / `targeted` / `injected` / `query`）⑤ **审核语义 last-write-wins 补齐**（`pi_evolve` / `light/store` / `metrics_collect` 三处此前遗漏的读取侧——此前被 quarantine 的基因在部分路径仍会被注入）⑥ 生产蒸馏只信**权威错误标志**（消除 9 例把成功命令误判为失败的噪声）。
-  **EN**: Guided deposit (`draft --error`) with auto-extracted signals; draft without FIX is rejected by the guard.
+- **0.14.6（内容/UX 版）**：新增 `light-cli doctor` 首次运行自检 + SKILL.md「3 步就绪」；坏行警告补「如何修正」；实验 preflight（Node≥22 / pi≥0.85.1）；新增「何时该沉淀」决策框。
+  **EN**: Content/UX release: `light-cli doctor` first-run self-check + SKILL.md 3-step onboarding; bad-line warnings with how-to-fix; experiment preflight (Node>=22 / pi>=0.85.1); deposition decision box.
 
-- **0.14.3 本版要点**：① 召回侧修复「**隔离（quarantine）无法撤销已批准**」——台账改为按 assetId 的**最后一条状态**判定（last-write-wins）② 新增**叙述守卫**，把会话旁白/推理流水式文本挡在注入之外 ③ `distill_sessions.mjs` 由「诊断脚本」升级为**真实蒸馏适配器**（失败/重试的**参数差异**抽取 + 两级门 + 候选报告）④ `light-cli distill` 增加**内容去重**（重复沉淀不再堆积，也不会把已批准资产的审核状态打回）⑤ 召回新增**对靶 top-N**（与任务无关即不注入）。
-  **EN**: Quarantine can now revoke an approval via last-write-wins per assetId; added narration guard.
+- **0.14.7（质量版）**：① 统一错误输出（`[pi-evox]` 前缀 + 「→ 修正：」指引 + 一致退出码 0/1/2）；② 坏行警告补**行内容预览**；③ 子进程调用加**可配超时**（`EVOX_CLI_TIMEOUT_MS`，默认 600000）；④ trap 生成器启动前校验 **Python≥3.8**；⑤ 新增 `examples/walkthrough-gbk.md` 端到端走查。
+  **EN**: Quality release: unified error output (`[pi-evox]` prefix + fix hints + consistent exit codes 0/1/2); bad-line content preview; configurable subprocess timeout (`EVOX_CLI_TIMEOUT_MS`); trap generator Python>=3.8 check; GBK end-to-end walkthrough.
+
+- **0.14.8（反馈驱动 + 护栏版）**：依据 skillhub 对 0.14.7 的评测（均值 ≈4.54；errorHandling / stability / docQuality 各 4.5、usability 4.8）定向补强——① **召回位置参数护栏**：query 裸传位置参数不再被静默忽略并回落成「注入入库尾部」，现提升为 query 并提示 `--query` 规范写法（消除静默 footgun）；② 反模式速查表新增「**为什么会错**（机制）」列，FAQ 补全可执行命令示例（针对 antiPatternFaq）；③ 新增「**目录与文档导航**」表并厘清 `exp/` 各子目录职责（针对 structure / docQuality）；④ 新增 `examples/walkthrough-json.md` 端到端走查（**数据格式类**陷阱，与 GBK 编码类互补）。
+  **EN**: Feedback-driven + guardrails: positional-query guard (no more silent fallback into tail injection); anti-pattern table gains a mechanism column; FAQ executable examples; doc navigation table; JSON walkthrough.
+
 
 ### 关于第三方静态 / 动态扫描结果的说明（中立声明）
 

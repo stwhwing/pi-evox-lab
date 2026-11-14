@@ -230,3 +230,19 @@ DeepSeek 臂（R1 12.5% / R2 75% / R2-pad 62.5%）因 `reasoning-only` 计数伪
 2. **可用性与能力分轴**：并发 8 时主脑 88% 请求被限流，单发 200ms 正常 ⇒ **不可读成"模型不会做"**（§20.3 同一纪律）。
 3. **推理型模型必须留足 token 预算**：否则 `content` 为空、`finish_reason: length`，与 §19.3 完全同一类伪影（本轮在 logprob 探针上又遇到一次）。
 4. **等长对照的标定不能用固定系数外推**：重复字符的 BPE 密度非常数（≈7.6 字符/token 会漂移），固定系数外推连错三次（Δ=30 / −9 / 31）；正解是**二分搜索 + 宽松上界** ⇒ Δ=0。
+
+
+## 22. 已核验未采纳：HarnessMM（0.41 研究索引）
+
+> 本节只登记**已核验但未采纳**的外部研究，防止重复核验，也不把未验证外推写成结论。完整致谢见 `README.md` 致谢节。
+
+| 项 | 内容 |
+|---|---|
+| 来源 | **arXiv:2610.32813**《HarnessMM: Recursive Self-Improvement for Harness Token Efficiency》，v1 2026-10-23 / **v2 2026-11-12**；清华 + 微软亚研院；官方实现 `YuhuaJiang2002/HarnessMM`、pi 移植 `jlon/pi-harnessmm`；**线索来源**：微信公众号《不动一行权重！清华微软把 DeepSeek 消耗狂砍 88%，成功率反飙 14%》（2026-11-11，经核验其「三盆冷水」部分出自社区评论而非论文正文，「539 次归因」出自外媒推测，故仅作线索、不作依据） |
+| 主实验约束 | 底座 **Qwen3.5-4B**；HumanEval(98) / MBPP(257) 单函数短题；每对 harness 共享同一 pinned backbone；换 MiMo-V2.6-Pro 后基线已达 96.94%→97.96% ⇒ 收益是「弱模型 × 啰嗦脚手架」的补偿效应 |
+| 概念核验 | EDG = 含因果依赖的有界可执行图（非清单）；GDR = `1{pred completed}·1{guard}·1{args closed}`；**CCS = Certified Callback Substitution（认证回调替换），κ_t 才是凭证**，不是 hits.jsonl 式台账；RSI 是训练期离线配置优化 |
+| 论文自报反例 | 附录 F.3：某 arm **+79.68% tokens、−6.25 分、93.75% episodes 有 fast actions**；§3.3 替换悖论 `C_removed > C_introduced` |
+| **不采纳理由** | ① 本项目是**跨会话语义经验召回**，任务确定性远低于「写代码→编译→测试」命令链，替换悖论风险更高；② 论文未提供**跨模型族迁移**证据，本机相位敏感性复现亦未闭合；③ 「只注入标签比不注入更差 +36pp」已证明召回内容质量决定变量，不宜把文本守卫直接换成结果状态守卫 |
+| 保留为 P2 课题 | 召回收益阈值与拆两本账、守卫 A/B、三变量过滤（脚手架冗余度 × 抗噪能力 × 任务确定性）、κ_t 式因果凭证结构、量化结论场景限定；**均须先做配对实验，实验结论另立版本再决策** |
+
+> **EN**: Verified-but-not-adopted index for HarnessMM (arXiv:2610.32813, v2). Its gains come from a weak backbone plus a verbose harness on short function-level tasks; CCS is a callback-substitution mechanism, not an audit ledger; the paper itself reports a +79.68% token regression arm. Our cross-session semantic recall has far lower task determinism, so no implementation was ported; all ideas remain gated behind paired experiments.

@@ -81,7 +81,7 @@ node code/light-cli.mjs approve gene_manual_ca900220
 ```
 [gene-share] 审核取证（approve 前自动执行，0.22）：
 [gene-share] 审核取证：gene_manual_ca900220
-  账本来源: D:/WB_Data/_skillspector_research/c5_demo/experiments
+  账本来源: ./experiments                    # 相对本机库目录（此处已按可移植写法脱敏）
   信号词: pip, proxy, mirror, pypi, SkillSpector, TUNA, 'versions, none', aliyun, 镜像即通
 ```
 
@@ -143,7 +143,7 @@ node code/light-cli.mjs report
 真实输出：
 
 ```
-库路径      : D:/WB_Data/_skillspector_research/c5_demo/assets
+库路径      : ./assets                       # 相对本机库目录（此处已按可移植写法脱敏）
 基因总数    : 1
 台账记录    : 2
 已审核(可注入): 1

@@ -64,7 +64,7 @@
 
 ## 发布态单一数据源声明（0.38 生成）
 
-<!-- evox-038-meta: upstream=pi@1.5.1,evolver@2.0.50; scan=baseline-ok; selftest=shipped; version=0.40.0 -->
+<!-- evox-038-meta: upstream=pi@1.5.2,evolver@2.0.51; scan=baseline-ok; selftest=shipped; version=0.41.0 -->
 
 本版上游实测、扫描基线与随包自检状态由生成器统一写入；判据 C40/C41/C42 直接读取本行，防止文档与实现漂移。
 **EN**: Upstream versions, scan baseline and packaged self-test status are emitted from one generator; gates C40/C41/C42 read this marker to prevent drift.

@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.40.0
+version: 0.41.0
 platforms: [linux, macos, windows]
 allowed-tools: Bash,Read,Write,Edit,Glob,Grep,env,network
 homepage: https://github.com/stwhwing/pi-evox-lab
@@ -17,46 +17,46 @@ metadata:
     envVars:
       - name: EVO_STORE_DIR
         required: false
-        description: 基因库目录（默认 ~/.evomap/assets）；仅 evolver 引擎模式读取
+        desc: 基因库目录（默认 ~/.evomap/assets）；仅 evolver 引擎模式读取
       - name: EVOX_HITS_DIR
         required: false
-        description: 命中登记目录（默认与基因库同级）
+        desc: 命中登记目录（默认与基因库同级）
       - name: EVOX_TOPN
         required: false
-        description: 召回 top-N 数量（默认由 skill 内部策略决定）
+        desc: 召回 top-N 数量（默认由 skill 内部策略决定）
       - name: EVOX_AUTO_APPROVE
         required: false
-        description: 沉淀是否自动批准（默认按 TTY/非 TTY 规则）
+        desc: 沉淀是否自动批准（默认按 TTY/非 TTY 规则）
       - name: EVOX_SOURCE_MODEL
         required: false
-        description: 覆盖溯源记录的服务模型名（默认从宿主会话读取）
+        desc: 覆盖溯源记录的服务模型名（默认从宿主会话读取）
       - name: EVOX_SOURCE_HOST
         required: false
-        description: 覆盖溯源记录的宿主名
+        desc: 覆盖溯源记录的宿主名
       - name: EVOX_HOME
         required: false
-        description: evomap 根目录（默认 ~/.evomap）
+        desc: evomap 根目录（默认 ~/.evomap）
       - name: EVO_POOL_DIR
         required: false
-        description: 共享基因池目录（跨实例同步）
+        desc: 共享基因池目录（跨实例同步）
       - name: EVO_IDENTITY_DIR
         required: false
-        description: 签名链身份目录（Ed25519 密钥对）
+        desc: 签名链身份目录（Ed25519 密钥对）
       - name: EVOX_ALIGN_INJECT_MOD4
         required: false
-        description: 注入块估算 token 数补齐到 4 的倍数（相位对齐实验开关）
+        desc: 注入块估算 token 数补齐到 4 的倍数（相位对齐实验开关）
       - name: EVOX_KV_COMPRESSION
         required: false
-        description: 标记本机模型的 kv 压缩族（none/csa-s4/stride2/unknown）
+        desc: 标记本机模型的 kv 压缩族（none/csa-s4/stride2/unknown）
       - name: EVOX_SAME_KV_WEIGHT
         required: false
-        description: 同 kv 压缩族基因的加权分（默认 +1.5，设 0 关闭）
+        desc: 同 kv 压缩族基因的加权分（默认 +1.5，设 0 关闭）
       - name: EVOX_GENE_DECAY
         required: false
-        description: 基因有效性衰减总开关（默认开；设 0 关闭，行为与此前版本一致）
+        desc: 基因有效性衰减总开关（默认开；设 0 关闭，行为与此前版本一致）
       - name: EVOX_GENE_DECAY_DAYS
         required: false
-        description: 衰减半衰期天数（默认 90：距上次反馈每过一个半衰期，该基因排序分减半）
+        desc: 衰减半衰期天数（默认 90：距上次反馈每过一个半衰期，该基因排序分减半）
 
 ---
 
@@ -322,12 +322,25 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | `docs/forensics-numbat.md` · `docs/providers.md` · `docs/security-and-license.md` | numbat 取证 PoC · LLM 配置 · 安全与许可 | 对靶验证 / 跑流程 C 前 / 引入生产前 |
 | `examples/walkthrough-*.md` · `traps/make_*_trap.py` | 端到端走查（GBK/JSON/流程 C）· 6 种陷阱生成器 | 第一次照着跑 / 流程 C |
 
+
+## 权限与能力声明（0.41 / O08 / O03）
+
+> **EN**: Permission and capability disclosure — runtime behaviour is unchanged; this section only makes existing capabilities explicit for security reviewers.
+
+- **`network` 能力**：仅用于可选集成（`evolver` 引擎模式）与用户显式 opt-in 的 `gene submit` 推送；默认 light 后端零外发、零 npm 依赖。不启用这些路径时不会发起任何网络请求。
+- **auto-approve 策略**：`EVOX_AUTO_APPROVE` 默认关闭；仅当操作者显式设置时，本地沉淀的基因才可能不经人工审核进入后续召回。平台扫描器对「自动生成修法可被复用」的 concern 属策略说明，不改变审核门与 fail-closed 语义。
+- **可选集成风险披露（O03）**：`package.json` 的 `optionalDependencies` 锁定 `@earendil-works/pi-coding-agent@0.74.2` 与 `@evomap/evolver@2.0.30`，是**可选集成的兼容基线，不是默认安装项**。**上游安全公告实测（2026-11-13 GitHub Security Advisory API）**：`earendil-works/pi` 公开 **4 条 GHSA**（GHSA-7v5m-pr3q-6453 / GHSA-r95r-rj6r-c39x / GHSA-jfgx-wxx8-mp94 / GHSA-mqxh-6gq7-558m，severity low/low/high/medium，公开于 2026-06-08）；`EvoMap/evolver` 公开 **6 条 GHSA**（含 1 条 critical，公开于 2026-04-20 / 04-27）。**GitHub API 未公开这些 advisory 的 CVE 编号与脆弱版本区间**，故**无法断言锁定版本是否受影响、亦无法据公告名推断修复版本**；按保守口径：pi 0.74.2 发布于 2026-05-21，**早于**其 4 条公告的公开时间，不能排除受影响 ⇒ 建议使用可选集成前升级并复验契约。本项目的 A/B 主流程与全部内置命令**不加载该包**；若需使用可选集成，请先升级到已修复版本并复验扩展钩子契约（见 `_upstream_check_0410.md`）。上游实测版本 pi 1.5.2 / evolver 2.0.51 仅为兼容性评估依据，绝不作为本项目安装版本。
+- **`inspectionStatus=partial` 说明**：ClawHub 平台层 `moderation.verdict=clean` 与报告内 `clawscan.verdict=suspicious(medium)` 两层结论并存；后者 25 条 HIGH 中 17 条为 `analysis-evasion` 噪声、2 条经源码核验为误报（`cleanup` 已 guard、`network` 已在 `allowed-tools` 声明），其余由本版 O01/O03 修复或披露。本项目不宣称扫描器零发现。
+- **注入内容不可信**：召回内容只作为提示文本，不改变权限、不触发工具、不提升信任档位；`REPAIR_SIGNAL_RE` / `NARRATION_RE` 双守卫保持 fail-closed。
+
 ## 致谢与上游
 
 **平台主文档口径（0.39）**：skillhub 分发包按平台约定**不含根 README.md**，本文件 `SKILL.md` 即该平台的主文档与权威入口；GitHub / ClawHub 包仍带根 README.md。三平台差异由发布清单唯一真源生成，不属缺失文件。
 > **EN**: On skillhub the package intentionally ships no root README.md; SKILL.md is the primary document and authoritative entry there. GitHub/ClawHub builds still include README.md. This difference is generated from the single manifest source, not a missing file.
 
 **上游引擎与宿主**：基于 [pi-coding-agent](https://github.com/earendil-works/pi) 与 [@evomap/evolver](https://github.com/EvoMap/evolver)。实测发现的 4+1 项上游缺口已提交官方 issue（evolver#624-#627、pi#9258），详见 README。
+
+**方法论致谢（0.41 新增 5 项，完整列表见 README）**：0.41 核验并记录 HarnessMM（arXiv:2610.32813, v2）、其微信公众号解读、`jlon/pi-harnessmm`、`YuhuaJiang2002/HarnessMM` 与 `deepseek-ai/deepseek-harness`；**仅借鉴方法论 / Methodology only，未复制源码、未采纳其未验证外推**（见 `docs/research.md` §22）。
 
 **方法论致谢（完整列表见 README）**：
 - **[numbat](https://github.com/perplexityai/numbat)**（Perplexity AI，Apache-2.0）—— agent 行为审计器。`timeline` 与 `harvest` 的方法论直接受其启发；PoC 手册见 `docs/forensics-numbat.md`。

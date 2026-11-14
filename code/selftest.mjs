@@ -15,7 +15,7 @@ const falsePositives = scanAll(genes).length;
 const guardOnline = typeof injectionScan === 'function' && typeof splitAvoidFix === 'function'
   && /PATTERNS/.test(injectionScan.toString());
 const payload = {
-  tool: 'pi-evox selftest', version: '0.40.0', guard_online: guardOnline,
+  tool: 'pi-evox selftest', version: '0.41.0', guard_online: guardOnline,
   legit_samples: genes.length, false_positives: falsePositives,
   sentinel: 'rules referenced; no malicious samples shipped',
 };

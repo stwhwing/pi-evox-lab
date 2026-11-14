@@ -8,7 +8,7 @@
 ## 规则
 | 场景 | 动作 |
 |---|---|
-| URL 指向内容页（文章/文档/博客） | 提示：先 `python D:/WB_Data/skills/markitdown-skill/scripts/url_to_markdown.py "<url>"`，对 Markdown 分析 |
+| URL 指向内容页（文章/文档/博客） | 提示：先 `python <markitdown-skill 安装目录>/scripts/url_to_markdown.py "<url>"`，对 Markdown 分析 |
 | 已知 API/JSON 端点 | 直接取（非内容页） |
 | 抓取失败（SPA/登录可见） | 允许降级用摘要，但**报告引用处必须标注「摘要级未核对」** |
 

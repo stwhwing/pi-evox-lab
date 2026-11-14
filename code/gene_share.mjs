@@ -66,16 +66,30 @@ function loadRedlineConfig() {
 }
 const USER_TERMS = loadRedlineConfig();
 
+/**
+ * 0.41 / O01：递归收集**导出对象里的每一个字符串**（此前只枚举 7 类固定字段，实测 4/5
+ * 藏私货的样本会漏过：notes / metadata.host / 嵌套 evidence[] / 顶层 raw_log）。
+ *  invariants：① 与导出序列化同一对象，不再有"导出有、扫描无"的字段；
+ *  ② WeakSet 防循环引用；③ 深度上限 64 防病态结构；④ 数组索引与对象键都进 path 便于定位；
+ *  ⑤ 只收集 string（RULES 判定不变），不改动任何守卫标准与 fail-closed 语义。
+ */
+const MAX_SCAN_DEPTH = 64;
 function collectTextFields(gene) {
   const out = [];
-  const push = (p, v) => { if (typeof v === 'string') out.push([p, v]); };
-  push('summary', gene?.summary);
-  push('generation_meta.source', gene?.generation_meta?.source);
-  push('provenance.contributor', gene?.provenance?.contributor);
-  (gene?.strategy || []).forEach((s, i) => push(`strategy[${i}]`, s));
-  (gene?.anti_patterns || []).forEach((s, i) => push(`anti_patterns[${i}]`, s));
-  (gene?.signals_match || []).forEach((s, i) => push(`signals_match[${i}]`, s));
-  (gene?.scope?.signals || []).forEach((s, i) => push(`scope.signals[${i}]`, s));
+  const seen = new WeakSet();
+  const walk = (v, p, depth) => {
+    if (v == null || depth > MAX_SCAN_DEPTH) return;
+    if (typeof v === 'string') { if (v.length) out.push([p, v]); return; }
+    if (typeof v !== 'object') return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    if (Array.isArray(v)) {
+      v.forEach((x, i) => walk(x, `${p}[${i}]`, depth + 1));
+    } else {
+      for (const [k, x] of Object.entries(v)) walk(x, p ? `${p}.${k}` : k, depth + 1);
+    }
+  };
+  walk(gene, '', 0);
   return out;
 }
 
