@@ -144,22 +144,26 @@ const exportable = (genes) => {
     if (isQuarantinedState(lww[g.asset_id])) return 'quarantined';
     return 'undecided';
   };
-  const out = [], blocked = [], pending = [];
+  const out = [], blocked = [], pending = [], sidecar = [];
   for (const g of genes) {
     if (g?.shareable !== true) continue;
-    // 0.29 B-3 池信任分级：按溯源字段判定——有 ≥2 个不同 (模型|宿主) 证据的才标 cross-source
-    {
-      const sm = (g.generation_meta || {}).source_model || '';
-      const sh = (g.generation_meta || {}).source_host || '';
-      g.trust = sm && sh ? 'single-source' : 'unknown-source';
-      g.trust_note = 'single-source = 仅一个沉积源；升级 cross-source 需 ≥2 个不同 (模型|宿主) 的 register-hit 证据';
-    }
+    // 0.42 D13：派生元数据一律不写进基因本体。canonicalV2 的签名域包含除 5 个签名元数据外的
+    // 全部字段；旧版在此赋 g.trust / g.trust_note，cmdSubmit 再 spread provenance，
+    // 使原本 verified 的基因入池后变成 tampered，他机 gene import 直接 BLOCKED
+    // （2026-11-15 实测 61 条 / 修复后又发现池内 24 条历史 tampered）。
+    // 现在只生成 detached 侧车行，基因对象原样导出，签名域逐字节稳定、可重复推池、不需私钥。
+    const sm = (g.generation_meta || {}).source_model || '';
+    const sh = (g.generation_meta || {}).source_host || '';
+    sidecar.push({ asset_id: g.asset_id,
+                   trust: sm && sh ? 'single-source' : 'unknown-source',
+                   trust_note: 'single-source = 仅一个沉积源；升级 cross-source 需 ≥2 个不同 (模型|宿主) 的 register-hit 证据',
+                   provenance: { source: 'local', tier: 'official', exported_at: new Date().toISOString() } });
     const st = stateOf(g);
     if (st !== 'approved') { pending.push({ id: g.id, state: st }); continue; }
     const gate = safetyGate(g);
     if (gate.ok) out.push(g); else blocked.push({ gene: g, violations: gate.violations });
   }
-  return { out, blocked, pending };
+  return { out, blocked, pending, sidecar };
 };
 const readJsonl = (p) => { try { return fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const writeJsonl = (f, rows) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''), 'utf8'); };
@@ -217,17 +221,24 @@ function cmdSubmit(args) {
     return blocked.length ? 2 : 0;
   }
   const pool = argOf(args, '--pool') || POOL_DIR;
-  const { out, blocked, pending } = exportable(store.readGenes());
+  const { out, blocked, pending, sidecar } = exportable(store.readGenes());
   const dest = path.join(pool, 'genes.jsonl');
+  const sideDest = path.join(pool, 'provenance.jsonl');
   const existing = readJsonl(dest);
   const have = new Set(existing.map((g) => g.asset_id));
   let added = 0;
   for (const g of out) {
     if (have.has(g.asset_id)) continue;
-    existing.push({ ...g, provenance: { source: 'local', tier: 'official', exported_at: new Date().toISOString(), ...(g.provenance || {}) } });
+    existing.push(g);            // 0.42 D13：原样写入，不追加任何字段
     have.add(g.asset_id); added++;
   }
-  withPoolLock(pool, () => writeJsonl(dest, existing));
+  withPoolLock(pool, () => {
+    writeJsonl(dest, existing);
+    const sideExisting = readJsonl(sideDest);
+    const sideHave = new Set(sideExisting.map((x) => x.asset_id));
+    for (const row of sidecar) if (!sideHave.has(row.asset_id)) { sideExisting.push(row); sideHave.add(row.asset_id); }
+    writeJsonl(sideDest, sideExisting);   // detached 侧车：按 asset_id 索引，append-only
+  });
   console.log(`[gene-share] 入池 ${added} 条（池中原有 ${existing.length} 条）→ ${dest}`);
   console.log(`[gene-share] 被闸门拦截 ${blocked.length}（未入池，未出网）`);
   if (pending.length) console.log(`[gene-share] 待审未推池 ${pending.length} 条（池=已审核集合；先 approve 再推）: ${pending.slice(0, 5).map((p) => p.id + '(' + p.state + ')').join(', ')}${pending.length > 5 ? ' …' : ''}`);

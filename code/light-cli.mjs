@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// 0.42 O07：默认不向用户暴露堆栈，仅在 EVOX_DEBUG=1 时输出诊断（必须位于 shebang 之后）。
+process.on('uncaughtException', (e) => {
+  console.error('[pi-evox] E_INTERNAL：命令执行异常，请重试或检查输入；恢复建议：先运行 node code/light-cli.mjs doctor');
+  if (process.env.EVOX_DEBUG === '1') console.error(e && e.stack ? e.stack : e);
+  process.exit(1);
+});
 /**
  * light-cli.mjs — 内置 light 后端命令行（零 npm 依赖）
  *

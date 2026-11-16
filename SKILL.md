@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.41.0
+version: 0.42.0
 platforms: [linux, macos, windows]
 allowed-tools: Bash,Read,Write,Edit,Glob,Grep,env,network
 homepage: https://github.com/stwhwing/pi-evox-lab
@@ -248,7 +248,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **会话围栏（0.27）**：`session open "<任务>"` 一步完成 T1 召回+记账，`session close "<结论>"` 收尾——未配对的 open/close 会被构建门禁拒绝（审计绑定）；
 - **效果量化与回填**：`report` 周报（L1 活性/L2 回填率/L3 复发，`--json` 机读）；`recall --record "<结论>"` 回填验证结论；`license verify <token>` 验证 Ed25519 签名许可；
 - **IO 韧性与错误码（0.34）**：瞬态错误自动重试（3 次/3s）→ 连续 5 次失败熔断 10s（IO 恢复即闭合）；全部失败附具名错误码 `[E_USAGE]`/`[E_ARGS]`/`[E_GUARD]`/`[E_NOTFOUND]`/`[E_INTERNAL]`（保留 0/1/2 退出码）——参数与完整表见 `docs/advanced.md`；
-- **理论出处**：异构验证的问题意识来自 arXiv:2512.05117（详见 README 致谢区与 `docs/research.md`）；逐版明细（溯源/别名触发词/许可/衰减参数）见 `docs/advanced.md` §Deployment。
+- **理论出处**：异构验证的问题意识来自 arXiv:2512.05117（详见下方「致谢与上游」节与 `docs/research.md`）；逐版明细（溯源/别名触发词/许可/衰减参数）见 `docs/advanced.md` §Deployment。
 
 ## 安全：四道门（0.16.0）
 
@@ -266,7 +266,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 ## 能力边界速查（什么时候别指望它）
 
-> 不适用场景 6 类（多机同写一库 / 100% 避坑保证 / 实时同步库 / 一次性任务 / 当权威知识库 / 跨架构直接复用）与量化边界（注入默认 5 条、库规模上限**未实测**、跨机无分布式锁、Node ≥22）**统一见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §1–§2**。
+> 不适用场景 6 类（多机同写一库 / 100% 避坑保证 / 实时同步库 / 一次性任务 / 当权威知识库 / 跨架构直接复用）与量化边界（注入默认 5 条、库规模上限**合成集已实测、真实宿主未验证**（EN: measured on synthetic sets; real host unverified）、跨机无分布式锁、Node ≥22）**统一见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §1–§2**。
 > **EN**: Capability limits ("when NOT to use") and quantitative bounds: `docs/boundary-and-triggers.md` §1–§2.
 
 ## 什么时候提醒：五个触发点（0.16.0 的核心设计）
@@ -345,6 +345,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 **方法论致谢（完整列表见 README）**：
 - **[numbat](https://github.com/perplexityai/numbat)**（Perplexity AI，Apache-2.0）—— agent 行为审计器。`timeline` 与 `harvest` 的方法论直接受其启发；PoC 手册见 `docs/forensics-numbat.md`。
 - **[FlyLoRA](https://arxiv.org/abs/2510.08396)**（NeurIPS 2025，清华大学）—— 负载均衡偏置与免训练合并不干扰两条原理的显式迁移来源（0.14.4）。
+- **[The Universal Weight Subspace Hypothesis](https://arxiv.org/abs/2512.05117)**（Kaushik, Chaudhari, Vaidya, Chellappa, Yuille；arXiv:2512.05117）—— 「异构验证（跨源复现）」问题意识的来源（0.30）：同架构不同模型共享低维参数子空间，其开放问题「继承共同偏差与失败模式是否构成瓶颈」正是本项目跨源复现的出发点；「同构风险」须按「模型 × 版本 × 宿主」联合计算，不能按架构算。**论文自身结论本机未复现**（既未证实也未证伪）；坊间「16 维」「投影 98–99% 误差保功能」等转述在原文不可核实，本项目不引用（见 `docs/research.md` §19）。
 - **[Periodic Weak Spots: Phase Sensitivity from Chunked KV-Cache Compression](https://arxiv.org/abs/2609.36322)**（ByteDance Seed）—— **相位轴**与**等长对照臂**这两项的来源（0.32）：分块 KV-cache 压缩引入「相位」这一新位置坐标，长上下文检索精度随其周期性起伏。本项目据此补上 R2-pad 等长中性对照臂，把继承增益从相位运气里分离出来（实测 n=10/臂、长度 Δ=0：语义 +100pp、相位 0pp）；并因论文把 CSA 核移植到 Qwen3-0.6B 骨架仍复现，把基因族字段定在**压缩方案**（`source_kv`）而非模型血统上。**论文自身结论本机未复现**（既未证实也未证伪），已在 `docs/research.md` §21.3 诚实标注；转述中越界的条目（`CSA2`、`Kimi`、`MLA` 等，原文 0 出现）本项目不引用。
 
 > **EN**: **[Periodic Weak Spots](https://arxiv.org/abs/2609.36322)** (ByteDance Seed) - source of the *phase* axis and of the length-matched control arm (0.32): chunked KV-cache compression introduces a new positional coordinate, phase, and long-context retrieval accuracy rises and falls with it. It is why we added the R2-pad control arm that separates the inheritance gain from phase luck (measured n=10/arm, length Δ=0: semantic +100pp, phase 0pp), and why the gene-family field is the **compression scheme** (`source_kv`) rather than vendor lineage - the paper reproduces the effect by porting the CSA kernel onto a Qwen3-0.6B backbone.
