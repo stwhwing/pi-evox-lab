@@ -14,6 +14,8 @@ node code/pi_evolve.mjs exp/encoding-trap-template examples/task-gbk.txt \
     --rounds 2 --fresh --auto-approve --llm-refine --root exp/loop-demo
 ```
 
+> ⚠️ 此命令含 `--fresh`（清空全局经验库，运行前自动备份到 `~/.evomap/assets/backup-<时间戳>/`，恢复见 FAQ Q3）——本文为一次真实运行的日志样例，复跑前请确认是否要清库。
+
 ## 关键输出（节选）
 
 ```
