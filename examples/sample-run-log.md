@@ -54,4 +54,4 @@ round | injected | totalTokens | input | output | toolCalls | errors
 
 - 陷阱模板生成：`python traps/make_encoding_trap.py`（写入 `exp/encoding-trap-template/`）；
 - 无注入对照组：去掉 `--fresh` 之外的注入来源（不配 `EVOLVER_REFINE_URL`、`.pi/extensions/` 下不放扩展桥）即可跑纯基线；
-- 更多实验（跨陷阱类别、跨模型、N≥5 统计）见 `docs/experiment-report.md`。
+- 更多实验（跨陷阱类别、跨模型、N≥5 统计）见 GitHub 仓库 `docs/experiment-report.md`（包内不含）。

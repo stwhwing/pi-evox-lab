@@ -5,7 +5,7 @@ displayName: "Pi EvoX Loop"
 description: "Give your coding agent an 'experience inheritance' runtime: recall validated fixes from an Evolver gene store at task start, register hits when a fix is actually used, and deposit newly-learned fixes after repairing a non-obvious failure. Optionally run controlled closed-loop experiments (R1 trap → distill → inject → R2) to measure inheritance gains. Every fix is traced to its model/host and checked across models. Use at the START of non-trivial tasks, after fixing a non-obvious failure, or when you want to measure agent self-evolution. Trigger words: 经验召回, 错题本, 经验继承, 自进化, evolver, 避坑, distill."
 description_zh: "给编码智能体装上「经验继承」运行时：任务开始时从 Evolver 基因库召回已验证修法（编号列表），相关则采用并在结束时登记命中；任务中修复了非显而易见的失败后，将修法入库供未来召回；可选跑受控闭环实验量化继承收益。每条修法都记录来源模型与宿主，并做跨模型核验。非平凡任务开始时、修复有价值失败后、或想测量 agent 自进化效果时使用。触发词：经验召回、错题本、经验继承、自进化、evolver、避坑、distill"
 description_en: "Experience-inheritance runtime for coding agents: recall validated fixes (numbered) at task start, register hits when used, deposit fixes after repairing failures; optional controlled closed-loop experiments to measure inheritance gains. Every fix is traced to its model/host and checked across models."
-version: 0.43.0
+version: 0.44.0
 platforms: [linux, macos, windows]
 allowed-tools: Bash,Read,Write,Edit,Glob,Grep,env,network
 homepage: https://github.com/stwhwing/pi-evox-lab
@@ -64,13 +64,13 @@ metadata:
 
 > 让 Agent 的每个坑只踩一次：失败经验自动入库（守卫过滤），同类任务自动召回已验证修法。
 >
-> **术语约定（0.29）**：正文以中文为主，技术字段在**首次出现时标注一次英文原名**（如「信号匹配 signals_match」），此后一律用中文，不再反复混排。完整中英对照见 `docs/faq.md` Q17。
+> **术语约定**：正文以中文为主，技术字段在**首次出现时标注一次英文原名**（如「信号匹配 signals_match」），此后一律用中文，不再反复混排。完整中英对照见 `docs/faq.md` Q17。
 >
-> **文档地图（0.21 分层）**：
+> **文档地图**：
 > - **新用户只需读三节**：30 秒上手 → 流程 A → 流程 B（约 60 行）；其余按需查。
-> - **一分钟判断要不要用**：`docs/one-pager.md`（0.30 新增）
+> - **一分钟判断要不要用**：`docs/one-pager.md`
 > - **最佳实践集中入口**：`examples/quickstart.md`（5 分钟闭环）+ `docs/overview.md`（项目概览）+ `docs/common-mistakes.md`（14 条反模式）——三份覆盖"上手/全景/避坑"。
-> - 本文件其余部分 = 触发点/安全摘要/反模式速查/导航；`docs/advanced.md` = 回填寻址/时间线/harvest/并发锁/共享库/宿主接入/运维/安全门明细；`docs/common-mistakes.md` = 常见错误用法完整清单；`docs/config-errors.md` = 常见配置错误；`docs/faq.md` = 完整 FAQ。
+> - **全部专题文档单一入口见 `docs/README.md`**（研究流程/运维细节的集中导航）；本文件其余部分 = 触发点/安全摘要/反模式速查/导航；`docs/advanced.md` = 回填寻址/harvest/并发/共享库/宿主接入/运维/安全门明细；`docs/common-mistakes.md` = 反模式清单；`docs/config-errors.md` = 配置错误；`docs/faq.md` = 完整 FAQ。
 > - `docs/research.md` = 流程 C 受控实验 + 陷阱设计纪律——**研究专用，绝大多数用户无需打开**。
 
 ## 30 秒上手（Quick-Start）
@@ -199,7 +199,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | FIX 是未填占位符 `<在此填写可执行修法>` | 注入后毫无价值 | 在 draft 里补上真实修法再提交 |
 | `retry with corrected args`（重试日志复述） | "重试然后好了"不是修法 | 写 AVOID(为何错)+FIX(怎么做) |
 | 旁白开场（Now I understand…）或缺修法信号词 | 推理流水不可执行 / 不像在描述坑与修法 | 同上 |
-| 有 AVOID 无 FIX（半成品） | 只有坑没有修法，注入后毫无价值（0.22 复审实证：3 条截断 deposit 全是此形态） | 补上可执行修法（参数/命令/编码） |
+| 有 AVOID 无 FIX（半成品） | 只有坑没有修法，注入后毫无价值（历史复审实证：3 条截断 deposit 全是此形态） | 补上可执行修法（参数/命令/编码） |
 
 ## 审核状态机（单一事实源）
 
@@ -217,7 +217,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - 与两层质量门的关系：depositionGate 在**入库前**拒收（上节），四道守卫在**召回侧**过滤（下节）——任何一层拒绝都不注入。
 - 无本地证据的基因（共享池/其他机器/起步包来源）按内容与来源审核，批准时注明。
 
-> **EN**: Review-with-evidence (0.20.3): before `approve`, run `evidence <gene_id>` to check the four local ledgers for events matching the gene's claimed failure/fix. Approve only when consistent; genes whose conclusions were overturned by later events stay quarantined with an audit note. Genes without local evidence (pool imports / other machines / starter pack) are reviewed on content and source, noted at approval.
+> **EN**: Review-with-evidence: before `approve`, run `evidence <gene_id>` to check the four local ledgers for events matching the gene's claimed failure/fix. Approve only when consistent; genes whose conclusions were overturned by later events stay quarantined with an audit note. Genes without local evidence (pool imports / other machines / starter pack) are reviewed on content and source, noted at approval.
 
 ## 基因签名与 provenance
 
@@ -233,11 +233,11 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 - **下载**：GitHub Release zip / npm（国内镜像见 FAQ Q7，附 sha256 校验）；
 - **宿主接入**：`light-cli.mjs install <claude-code|cursor|codex|agents-md>`（`--yes` 落盘）；OpenClaw/Hermes 用 `install-hooks`；触发规程可 `install-snippet` 写进任意指令文件；
 - **基因池协作**：`gene pull --pool <URL|命名> --tier official [--scene <场景>]`（签名验证）；`gene submit --bundle <file>` 回传维护者；命名池见 `~/.evomap/pools.json`；贡献条款见 CONTRIBUTING.md（CC-BY-4.0）；
-- **并发语义**（三层，完整行为表见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §5）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（LWW 台账裁定）；多宿主按 gene_id 寻址（0.18 起）；
+- **并发语义**（三层，完整行为表见 [`docs/boundary-and-triggers.md`](docs/boundary-and-triggers.md) §5）：单机多会话=withLock 文件锁；跨机=基因池 Git 化（LWW 台账裁定）；多宿主按 gene_id 寻址；
 - **召回打分与阈值（公开数值）**：signals 命中 +3/个 + 正文 token 交集 +1/个 + 负载均衡偏置 ±2；**低于阈值 2 分不注入**（不对靶注入比不注入更差，实测 +36pp）；分词=ASCII token（≥3 字符）+ 中文 2 字二元词——**多字中文短语写进 signals 无效**（`fix-signals` 可体检）；
-- **会话围栏（0.27）**：`session open "<任务>"` 一步完成 T1 召回+记账，`session close "<结论>"` 收尾——未配对的 open/close 会被构建门禁拒绝（审计绑定）；
+- **会话围栏**：`session open "<任务>"` 一步完成 T1 召回+记账，`session close "<结论>"` 收尾——未配对的 open/close 会被构建门禁拒绝（审计绑定）；
 - **效果量化与回填**：`report` 周报（L1 活性/L2 回填率/L3 复发，`--json` 机读）；`recall --record "<结论>"` 回填验证结论；`license verify <token>` 验证 Ed25519 签名许可；
-- **IO 韧性与错误码（0.34）**：瞬态错误自动重试（3 次/3s）→ 连续 5 次失败熔断 10s（IO 恢复即闭合）；全部失败附具名错误码 `[E_USAGE]`/`[E_ARGS]`/`[E_GUARD]`/`[E_NOTFOUND]`/`[E_INTERNAL]`（保留 0/1/2 退出码）——参数与完整表见 `docs/advanced.md`。
+- **IO 韧性与错误码**：瞬态错误自动重试（3 次/3s）→ 连续 5 次失败熔断 10s（IO 恢复即闭合）；全部失败附具名错误码 `[E_USAGE]`/`[E_ARGS]`/`[E_GUARD]`/`[E_NOTFOUND]`/`[E_INTERNAL]`（保留 0/1/2 退出码）——参数与完整表见 `docs/advanced.md`。
 
 ## 安全：四道门
 
@@ -284,7 +284,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 | 冷启动就期待避坑效果 | 召回是「对靶注入」，空库时物理上无可注入修法 | 先按流程 B 沉淀，价值复利增长 |
 | 生产环境开 `--auto-approve --llm-refine` | 人工审核门是唯一质量闸，跳过即让未复核内容直达注入 | 保留人工审核门 |
 
-> 完整目录与各文档职责表见 `README.md`「仓库结构」；高频入口：`docs/advanced.md`（生产运维/安全门明细/回填寻址）、`docs/glossary.md`（术语一页纸）、`docs/faq.md`（完整 17 问）、`docs/version-standards.md`（三轴版本口径）。
+> 完整目录与各文档职责表见 `docs/README.md`（skillhub 包无 README 时的等价入口）；高频入口：`docs/advanced.md`（生产运维/安全门明细/回填寻址）、`docs/glossary.md`（术语一页纸）、`docs/faq.md`（完整 17 问）、`docs/version-standards.md`（三轴版本口径）。
 
 ## 安全与数据外发声明（精简版）
 
@@ -305,7 +305,7 @@ node code/light-cli.mjs distill --category repair --signals bash,exception \
 
 ## 致谢与上游
 
-**平台主文档口径（0.39）**：skillhub 分发包按平台约定**不含根 README.md**，本文件 `SKILL.md` 即该平台的主文档与权威入口；GitHub / ClawHub 包仍带根 README.md。三平台差异由发布清单唯一真源生成，不属缺失文件。
+**平台主文档口径**：skillhub 分发包按平台约定**不含根 README.md**，本文件 `SKILL.md` 即该平台的主文档与权威入口；GitHub / ClawHub 包仍带根 README.md。三平台差异由发布清单唯一真源生成，不属缺失文件。
 > **EN**: On skillhub the package intentionally ships no root README.md; SKILL.md is the primary document and authoritative entry there. GitHub/ClawHub builds still include README.md. This difference is generated from the single manifest source, not a missing file.
 
 **上游引擎与宿主**：基于 [pi-coding-agent](https://github.com/earendil-works/pi) 与 [@evomap/evolver](https://github.com/EvoMap/evolver)。实测发现的 4+1 项上游缺口已提交官方 issue（evolver#624-#627、pi#9258），详见 README。
